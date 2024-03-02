@@ -453,3 +453,9 @@
    std::function<void()> func = std::bind(foo, 42);
    func();
    ```
+# std::pair
+1. `std::pair`作用是将两个数据组合成一个数据,这两个数据可以是同一类型或不同类型,如:
+   ```C++
+   eg:
+   std::pair<int, std::function<void()>> task;
+   ```

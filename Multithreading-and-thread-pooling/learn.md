@@ -195,7 +195,7 @@
 1. 条件变量是用来解决<mark>生产者-消费者问题</mark>的
 2. 使用条件变量时一般是和互斥锁一起用
 3. 条件变量的实际作用其实是阻塞,线程同步是靠互斥锁实现的
-4. <mark>`std::this_thread::sleep_for()`:让当前线程至少阻塞一段时间,此函数阻塞时长可能长于时间参数,因为CPU调度的随机性</mark>
+4. <mark>`std::this_thread::sleep_for()`:让当前线程至少阻塞一段时间,此函数阻塞时长可能长于时间参数,因为CPU调度的随机性.它只会影响当前线程的调用</mark>
 5. 相关函数:
    ```C++
    1. 创建条件变量:std::condition_variable cond;
@@ -264,10 +264,26 @@
    }
    //启动异步任务时,主线程和任务线程是可以一起执行的(并行);但当在主线程使用.get()方法时,就会阻塞主线程
    ```
+4. `std::future`是`C++11`中用于处理异步操作结果的标准库组件,它代表了一个可能尚未完成的异步操作,其创建方法:
+   ```C++
+   1. std::async
+   std::future<int> result = std::async(std::launch::async, calculate);
+   2. std::packaged_task
+   std::packaged_task<int(int, int)> task(add);//创建一个packaged_task,包装add函数.task就是一个packaged_task对象
+   std::future<int> fut=task.get_future();//获取与packaged_task关联的future对象
+   ```
+5. `std::future`提供了一种在异步任务完成后获取结果的方法`.get()`,这样就不用全局变量,并且可以在需要时再获取结果,使得更灵活的处理结果
+# std::packaged_task
+1. `std::packaged_task`是`C++`的模板类,用于包装可调用对象(函数等),它就是提供了一种将任务封装为可调用对象的方法.支持`std::packaged_task::operator()`直接执行任务,如:
+   ```C++
+   std::packaged_task<int()> task([]() { return 42; });//将一个任务lambda函数包装起来
+   task();
+   ```
 # 线程池
 1. 线程池主要解决两个问题:线程创建与销毁的开销以及线程竞争造成的性能瓶颈.通过预先创建一组线程并复用它们,线程池有效地降低了线程创建和销毁的时间和资源消耗.同时,通过管理线程并发数量,线程池有助于减少线程之间的竞争,增加资源利用率,并提高程序运行的性能
 2. 线程池通过预先创建和调度复用线程来实现资源优化.这个过程包括:创建线程、任务队列和调度、线程执行和回收
 3. 线程池由一个任务队列和一组处理队列的线程组成;<mark>线程池核心组件:任务、任务队列、一组线程、条件变量、互斥锁</mark>
+4. <span style="color:red;">添加任务调度功能的线程池只是在简单线程池上加一个优先级的功能,即将队列`queue`替换为`priority_queue`即可</span>
 # size_t的使用方法
 1. `size_t`通常定义为`typedef`到`unsigned int`或`unsigned long`,以便能够容纳系统可能的最大对象大小(因此`size_t`常用来表示大小和索引)
 2. `size_t`是一种数据类型,通常用来表示对象的大小或索引值:
@@ -398,7 +414,8 @@
       task();//运行这个任务函数
    }
    ```
-3. 2.的完整例子:
+3. 在`C++11`之前函数模板的返回类型必须显示指定,即:`typename add(F&&f, Args&&... args)`.在`C++11`中引入了<mark>`auto`关键字和尾返回类型语法</mark>,即:`auto add(F&&f, Args&&... args)->decltype(f(args...))`
+4. 2.的完整例子:
    ```C++
    class Test{
    private:
@@ -432,8 +449,10 @@
    }
    //threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
    ```
+5. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然鹅`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>
 # std::bind
 1. `std::bind`是位于头文件`functional`中,它用于创建一个可调用对象(函数对象、函数指针、成员函数指针等),并且可以绑定参数到该可调用对象
+2. `std::bind`返回一个可调用对象,即返回一个函数对象,该函数对象可以将其参数绑定到一个函数或成员函数
 # std::function<void()>
 1. 这是一个通用的<mark>函数包装器</mark>,用于存储任意可调用对象(函数、函数指针、Lambda表达式等),并提供一种统一的方式来调用这些可调用对象
 2. <span style="color:red;">严格来说`std::function<void()>`:表示不接受任何参数且无返回值的可调用对象,但是它仍然可以用作包装带有参数的函数的包装器:</span>
@@ -459,3 +478,60 @@
    eg:
    std::pair<int, std::function<void()>> task;
    ```
+# std::priority_queue
+1. `std::priority_queue`是`C++`标准库的一个容器适配器,它提供了一个优先级队列的实现,其中的元素按照一定的优先级进行排序.默认情况,它使用的是`std::less`作为比较函数,因此队列中的元素会按照降序进行排列
+2. 对于任务调度功能的线程池,因为`std::priority_queue`的元素为`std::pair<int, std::function<void()>>`类型,它不能直接使用`std::less`进行比较,所以要自定义比较函数(这里只给出了class重载运算符和定义函数的形式):
+   ```C++
+   1. class重载运算符()
+   class compare{
+      public:
+         bool operator()(const std::pair<int, std::function<void()>> &ls, const std::pair<int, std::function<void()>> &rs){
+            return ls.first>rs.first;//实现小顶堆
+         }
+   };
+   std::priority_queue<std::pair<int, std::function<void()>>, std::vector<std::pair<int, std::function<void()>>>, compare> tasks;
+   //std::priority_queue直接传入class对象
+   2. 定义函数(在类中调用)
+   bool compare(const std::pair<int, std::function<void()>> &ls, const std::pair<int, std::function<void()>> &rs){
+            return ls.first>rs.first;//实现小顶堆
+         }
+   class ThreadPool{
+      private:
+          std::priority_queue<std::pair<int, std::function<void()>>, std::vector<std::pair<int, std::function<void()>>>, decltype(&compare)> tasks;
+      public:
+         ThreadPool():tasks(compare){//在类的构造函数中使用需要在构造函数中声明,而不是定义处声明
+
+         }
+         ...
+   };
+  
+   //传入函数指针的方式
+   ```
+3. <mark>在`std::priority_queue`中,比较函数定义了元素之间的顺序关系,第一个元素大于第二个元素实现小顶堆;第一个元素小于第二个元素实现大顶堆</mark>
+# operator()
+1. 在`C++`中,`operator()`是一个特殊的成员函数,称为函数调用运算符重载.当类中定义了`operator()`函数时,对象就可以像函数一样被调用.这使得对象可以被用作函数,从而增加了灵活性和表达能力
+   ```C++
+   #include <iostream>
+   class Adder {
+   public:
+      //重载 operator()函数
+      int operator()(int a, int b) {
+         return a + b;
+      }
+   };
+   int main() {
+      Adder adder; // 创建 Adder 类的对象
+
+      // 使用对象作为函数调用
+      int result = adder(3, 4);
+      std::cout << "Result: " << result << std::endl; // 输出：Result: 7
+      return 0;
+   }
+   ```
+# std::make_shared
+1. `std::make_shared<>`是`C++`标准库提供的一个模板函数,用于创建动态分配的对象并返回一个`std::shared_ptr`智能指针来管理这个对象:
+   ```C++
+   auto str_ptr = std::make_shared<std::string>("Hello, world!");//创建一个动态分配的std::string对象,此对象具体为"Hello world!",并返回一个智能指针来管理它
+   ```
+# decltype
+1. `decltype`是`C++11`引入的关键字,用于推断表达式的类型,并返回该类型,如函数模板中:`decltype(f(args...));`

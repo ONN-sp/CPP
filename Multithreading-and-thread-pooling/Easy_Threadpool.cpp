@@ -17,7 +17,7 @@ namespace ljj{
             std::mutex task_mtx;
             bool stop;
         public:
-            ThreadPool(size_t thread_nums):stop(false){//构造函数:向线程池添加线程(线程里面要利用条件变量控制实现任务执行)
+            ThreadPool(size_t thread_nums):stop(false){//构造函数:向线程池添加线程(线程里面要利用条件变量控制实现任务执行).在这个构造函数中并没有直接调用std::thread的构造函数来创建线程,而是通过emplace_back()函数以lambda函数作为参数来实现线程的创建
                 for(int i=0;i<thread_nums;i++){
                     threads.emplace_back([this](){//threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
                         while(1){//线程不能终止,要一直执行任务队列的任务

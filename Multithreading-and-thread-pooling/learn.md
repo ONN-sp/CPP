@@ -301,71 +301,6 @@
    size_t vecSize = vec.size(); // 获取向量的大小
    4. 函数返回值:一些函数返回size_t类型,用于表示返回值的大小或索引
    ```
-# 类(需移至C++ primer的学习日志中)
-1. `C++`中,类的成员变量可以在类的构造函数中初始化,也可以使用成员初始化列表来初始化(冒号实现初始化列表):
-   ```C++
-   1. 构造函数中初始化:
-   #include <iostream>
-   class MyClass {
-   public:
-      MyClass(int value) {
-         // 在构造函数中初始化成员变量
-         myInt = value;
-      }
-      void printValue() {
-         std::cout << "myInt: " << myInt << std::endl;
-      }
-   private:
-      int myInt;
-   };
-   int main() {
-      MyClass obj(42);
-      obj.printValue(); // 输出: myInt: 42
-      return 0;
-   }
-   2. 初始化列表初始化:
-   #include <iostream>
-   class MyClass {
-   public:
-      // 使用成员初始化列表初始化成员变量
-      MyClass(int value) : myInt(value) {}
-      void printValue() {
-         std::cout << "myInt: " << myInt << std::endl;
-      }
-   private:
-      int myInt;
-   };
-   int main() {
-      MyClass obj(42);
-      obj.printValue(); // 输出: myInt: 42
-      return 0;
-   }
-   ```
-2. <span style="color:red;">`C++`中的类构造函数在创建对象时会被自动调用.构造函数是用来初始化对象的特殊成员函数,其名称和类名相同,没有返回类型,可以有返回参数也可以没有.当创建一个类的对象时,编译器会自动调用适当的构造函数来初始化对象的成员变量</span>:
-   ```C++
-   #include <iostream>
-   class MyClass {
-   public:
-      // 无参构造函数
-      MyClass() {
-         std::cout << "无参构造函数被调用" << std::endl;
-      }
-      // 有参构造函数
-      MyClass(int value) {
-         std::cout << "有参构造函数被调用，参数为: " << value << std::endl;
-      }
-   };
-   int main() {
-      MyClass obj1;        // 调用无参构造函数
-      MyClass obj2(42);    // 调用有参构造函数
-      return 0;
-   }
-   ```
-3. `C++`类的析构函数会在对象被销毁时自动调用.具体地说:
-   ```C++
-   1. 当对象超出其作用域时,析构函数会被自动调用
-   2. 当对象是动态分配的,通过delete手动释放内存时析构函数会被调用
-   ```
 # std::move
 1. `std::move`是`C++11`引入的一个函数模板,它用于将对象转换为右值引用,通常用于实现移动语义.它的基本用法是将左值转换为右值,从而告诉编译器可以使用移动操作(<mark>`C++`的移动操作是将资源从一个对象转移到另一个对象的操作,它是一种性能优化技术,通常用于避免不必要的资源拷贝</mark>)来处理对象
    ```C++
@@ -403,53 +338,6 @@
       return 0;
    }
    ```
-# 函数模板
-1. 在函数模板中,当使用右值引用作为模板参数时(`F&&`),可以根据实参的类型来推导出参数类型是左值引用还是右值引用,此时可以被称为"万能引用"
-2. 留出具体执行任务函数的接口(即函数内容是不定的),写一个函数模板:
-   ```C++
-   std::function<void()> task;
-   template<class F, class... Args>//不用打分号
-   void function_interface(F&& f, Args&&... args){//f是要调用的函数地址(函数名),args是参数;...表示可以有任意的参数个数
-      task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-      task();//运行这个任务函数
-   }
-   ```
-3. 在`C++11`之前函数模板的返回类型必须显示指定,即:`typename add(F&&f, Args&&... args)`.在`C++11`中引入了<mark>`auto`关键字和尾返回类型语法</mark>,即:`auto add(F&&f, Args&&... args)->decltype(f(args...))`
-4. 2.的完整例子:
-   ```C++
-   class Test{
-   private:
-      std::function<void()> task;
-   public:
-      template<class F, class... Args>//不用打分号
-      void function_interface(F&& f, Args&&... args){//f是要调用的函数地址(函数名),args是参数;...表示可以有任意的参数个数
-         task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-         task();
-      }
-   };
-
-   void func(int i){
-      std::cout << I << std::endl;
-   }
-
-   int main(){
-      Test A;
-      A.function_interface(func, 2);
-      return 0;
-   }
-   ```
-# 匿名函数
-1. 匿名函数格式:`[capture](parameters) ->return-type{//函数体}`
-2. 匿名函数若没有参数,则可以省略`()`,即`[]{...}`
-3. 当函数主体只有`return`或者返回为`void`,那么`->return-type`可以被省略
-4. 在线程池(线程数组)中添加线程时可以直接使用`lambda`表达式:
-   ```C++
-   threads.emplace_back([this](){
-      //函数体
-   }
-   //threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
-   ```
-5. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然鹅`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>
 # std::bind
 1. `std::bind`是位于头文件`functional`中,它用于创建一个可调用对象(函数对象、函数指针、成员函数指针等),并且可以绑定参数到该可调用对象
 2. `std::bind`返回一个可调用对象,即返回一个函数对象,该函数对象可以将其参数绑定到一个函数或成员函数

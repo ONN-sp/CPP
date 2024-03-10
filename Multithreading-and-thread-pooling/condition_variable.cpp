@@ -34,7 +34,7 @@ void consumer(){
     while(1){
         std::unique_lock<std::mutex> lock(mtx);
         //队列为空就要等待
-        g_cv.wait(lock, [](){return !g_queue.empty();});//cv.wait(lock, pred),pred是一个可调用对象,通常是一个函数对象(函数指针、Lambda表达式等).pred是判断线程是否需要等待的条件(这里的不需要等待不等于被唤醒,唤醒是在wait的基础上说的),如果pred返回false则wait函数继续等待,直到被唤醒或者超时;如果pred返回true则会直接不等待
+        g_cv.wait(lock, [](){return !g_queue.empty();});//cv.wait(lock, pred),pred是一个可调用对象,通常是一个函数对象(函数指针、Lambda表达式等).pred是判断线程是否需要等待的条件,如果pred返回false则wait函数继续等待;如果pred返回true则会直接不等待
         int value = g_queue.front();
         g_queue.pop();
         std::cout << "Consumer :" << value << std::endl;

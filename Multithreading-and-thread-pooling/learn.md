@@ -376,7 +376,27 @@
    ```
 # std::priority_queue
 1. `std::priority_queue`是`C++`标准库的一个容器适配器,它提供了一个优先级队列的实现,其中的元素按照一定的优先级进行排序.默认情况,它使用的是`std::less`作为比较函数,因此队列中的元素会按照降序进行排列
-2. 对于任务调度功能的线程池,因为`std::priority_queue`的元素为`std::pair<int, std::function<void()>>`类型,它不能直接使用`std::less`进行比较,所以要自定义比较函数(这里只给出了class重载运算符和定义函数的形式):
+2. 在`C++`中,可以通过几种方式自定义比较函数:
+   ```C++
+   1. 使用函数指针
+   bool compare(int a, int b) {
+      return a > b; // 最大堆
+   }
+   std::priority_queue<int, std::vector<int>, decltype(&compare)> pq(&compare);
+   //也可以不用取地址符,因为函数名在大多数时候就是函数指针
+   std::priority_queue<int, std::vector<int>, decltype(compare)> pq(compare);
+   2. 使用函数对象
+   struct Compare {//写成class Compare类也行
+      bool operator()(int a, int b) {
+         return a > b; // 最大堆
+      }
+   };
+   std::priority_queue<int, std::vector<int>, Compare> pq;
+   3. 使用匿名函数
+   auto compare = [](int a, int b) { return a > b; };//compare就是此时匿名函数的函数名
+   std::priority_queue<int, std::vector<int>, decltype(compare)> pq(compare);
+   ```
+3. 对于任务调度功能的线程池,因为`std::priority_queue`的元素为`std::pair<int, std::function<void()>>`类型,它不能直接使用`std::less`进行比较,所以要自定义比较函数(这里只给出了class重载运算符和定义函数的形式):
    ```C++
    1. class重载运算符()
    class compare{
@@ -403,12 +423,12 @@
   
    //传入函数指针的方式
    ```
-3. <mark>在`std::priority_queue`中,比较函数定义了元素之间的顺序关系,第一个元素大于第二个元素实现小顶堆(表示优先级别的`priority`参数最小的表示最高优先级,即堆顶`top()`);第一个元素小于第二个元素实现大顶堆</mark>
+4. <mark>在`std::priority_queue`中,比较函数定义了元素之间的顺序关系,第一个元素大于第二个元素实现小顶堆(表示优先级别的`priority`参数最小的表示最高优先级,即堆顶`top()`);第一个元素小于第二个元素实现大顶堆</mark>
 # operator()
-1. 在`C++`中,`operator()`是一个特殊的成员函数,称为函数调用运算符重载.当类中定义了`operator()`函数时,对象就可以像函数一样被调用.这使得对象可以被用作函数,从而增加了灵活性和表达能力
+1. 在`C++`中,`operator()`是一个特殊的成员函数,称为函数调用运算符重载.这种方式常用于创建函数对象.当类中定义了`operator()`函数时,对象就可以像函数一样被调用.这使得对象可以被用作函数,从而增加了灵活性和表达能力
    ```C++
    #include <iostream>
-   class Adder {
+   class Adder {//定义了一个函数对象类
    public:
       //重载 operator()函数
       int operator()(int a, int b) {

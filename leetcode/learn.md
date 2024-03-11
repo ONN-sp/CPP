@@ -378,3 +378,5 @@
 3. <mark>对于快指针`fast=fast->next->next`这种,对于奇数个链表节点和偶数个链表节点的判断链表终点的条件是不一样的(应该是`fast==nullptr || fast->next==nullptr`),因为`nullptr->next`是不存在的.</mark>(环行链表题目也有涉及)
 # 环行链表
 1. 检查链表中是否存在环的思路:利用快慢指针,可以理解为两个跑步的人,只要有圈,速度快的一定会和速度慢的相遇;而快指针为`fast=fast->next->next`,慢指针`slow=slow->next`
+# 环形链表Ⅱ
+1. 

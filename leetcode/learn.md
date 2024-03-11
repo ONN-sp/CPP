@@ -379,4 +379,12 @@
 # 环行链表
 1. 检查链表中是否存在环的思路:利用快慢指针,可以理解为两个跑步的人,只要有圈,速度快的一定会和速度慢的相遇;而快指针为`fast=fast->next->next`,慢指针`slow=slow->next`
 # 环形链表Ⅱ
-1. 
+1. 此题的思路:
+   ```s
+   1. 为了实现O(1)的空间复杂度,还是要用快慢指针;
+   2. fast=head->next;slow=head;
+   2. 在快指针fast和慢指针slow相遇时,设环外部分长度为a,环起点至相遇点长度为b,环的其余部分长度为c;假设快慢指针在环内长度为b处相遇,则当slow走了a+b时,fast指针走了a+b+n(b+c)=a+(n+1)b+nc;
+   3. 因为fast=fast->next->next;slow=slow->next.因此fast指针走过的距离为slow指针的2倍,那么a+(n+1)b+nc-1=2(a+b)=>a=c+(n-1)(b+c)-1;
+   4. 此时再设一个指针ListNode* ptr=head;由3可知,当ptr走到环起点,即走a长度;此时slow->next为环起点;
+   5. 那么只需判断ptr==slow->next即可,若满足则刚好走到了环起点;
+   ```

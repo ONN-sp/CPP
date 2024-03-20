@@ -12,7 +12,7 @@ struct ListNode {
 class Solution {
 public:
     ListNode* mergeTwoLists(ListNode* list1, ListNode* list2) {
-        ListNode* prehead = new ListNode(-1);
+        ListNode* prehead = new ListNode(-1);//虚拟头节点
         ListNode* pre = prehead;//不能一上来就把pre设为list1或list2,这样会让下面陷入死循环    
         while(list1!=nullptr && list2!=nullptr){
             if(list1->val > list2->val){

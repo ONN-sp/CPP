@@ -10,7 +10,7 @@
    ```
 ## isspace
 
-# strcasecmp()  C函数
+## strcasecmp()  C函数
 1. `strcasecmp`不区分大小写;而`std::strcmp`要区分大小写
 
 ##  stat

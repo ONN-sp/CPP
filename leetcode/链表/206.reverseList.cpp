@@ -26,7 +26,7 @@ public:
             cur=nex;     
         }
         return pre;
-        
+      
     }
 };
 //时间复杂度:O(n)

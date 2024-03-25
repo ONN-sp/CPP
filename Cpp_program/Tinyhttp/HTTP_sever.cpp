@@ -1,6 +1,7 @@
 //服务器端
 #include <iostream>
 #include <sys/socket.h>
+#include <fstream>
 #include <sys/stat.h>
 #include <cstring>
 #include <cctype>
@@ -10,10 +11,115 @@
 #include <arpa/inet.h>
 
 /**
+ * @brief 把HTTP响应的头部信息写到套接字sock中
+ * 
+ * @param sock 
+ * @param filename 
+ */
+void headers(int sock, const char* filename){
+    char buffer[1024];
+    (void)filename;//这一行为了告诉编译器我们有意不使用这个参数,而使编译器不会发出未使用参数的警告
+    std::string response;
+
+    response += "HTTP/1.1 200 OK\r\n";
+    send(sock, response.c_str(), response.length(), 0);
+
+    response.clear();
+    response += "Server: my server\r\n";
+    send(sock, response.c_str(), response.length(), 0);
+
+    response.clear();
+    response += "Content-Type: text/html\r\n";
+    send(sock, response.c_str(), response.length(), 0);
+
+    response.clear();
+    response += "\r\n";
+    send(sock, response.c_str(), response.length(), 0);
+}
+
+/**
+ * @brief 主要处理找不到请求的文件时向浏览器输出的html提示信息---404
+ * 
+ * @param sock 
+ */
+void not_found(int sock){
+    std::string buffer;
+
+    buffer += "HTTP/1.1 404 NOT FOUND\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Server: my server\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Content-Type: text/html\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+    
+    //发送http响应报文的主体信息
+    buffer.clear();
+    buffer += "<HTML><TITLE>Sorry, not found!</TITLE>\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "<BODY><P>The server could not fulfill\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Your request because the resource specified\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "is unavailable or nonexistent.\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "</BODY></HTML>\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+}
+
+void cat(int sock, std::ifstream resource){}
+
+void unimplemented(int sock){}
+
+void execute_cgi(int sock, const char* path, const char* method, const char* query_string){}
+
+/**
+ * @brief  调用cat函数把服务器文件返回给浏览器
+ * 
+ * @param client 
+ * @param filename 
+ */
+void server_file(int sock, const char* filename){
+    std::ifstream resource;//声明一个输入文件流对象resource
+    int num_chars = 1;
+    //感觉可以不用处理buffer  ???
+    char buffer[1024];//声明一个字符数组buffer
+    buffer[0] = 'A';
+    buffer[1] = '\0';
+
+    while((num_chars>0)&&std::strcmp("\n",buffer))//读取并丢弃请求头信息,直到遇到空行
+        num_chars = get_line(sock, buffer, sizeof(buffer));
+    
+    resource.open(filename);//打开filename文件,并将其关联到resource对象
+    if(!resource.is_open())//打开失败
+        not_found(sock);
+    else{
+        headers(sock, filename);//调用headers,给客户端回复HTTP响应行+响应头部信息
+        cat(sock, resource);//调用cat函数,发送文件内容
+    }
+    resource.close();//关闭文件资源
+}
+
+/**
  * @brief 只要发现读取的数据c为'\n'就认为是一行结束;如果读到'\r',就再用MSG_PEEK的方式查看下一个字符,如果是'\n',则从socket中读出;否则将回车符转换为换行符
  * 
  */
-int get_line(int sock, char* buffer, int size){
+int get_line(const int sock, char* buffer, const int size){
     int num_chars = 0;//初始化一个计数器用于记录读取的字符数
     char c = '\0';//初始化为空字符
     int n;//用于存储recv的返回值,返回的是读取的字符数
@@ -44,7 +150,7 @@ int get_line(int sock, char* buffer, int size){
  * 
  * @param sock 
  */
-void accept_request(int sock){
+void accept_request(const int sock){
     char buffer[1024];//用于存储从客户端接收的数据
     int num_chars;//用于存储接收到的字符数
     char method[255];//用于存储HTTP请求方法

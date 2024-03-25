@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unordered_map>
 using namespace std;
 
 class Node {
@@ -13,9 +14,6 @@ public:
         random = NULL;
     }
 };
-
-//递归+哈希表
-
 
 //迭代+节点拆分
 class Solution {
@@ -51,3 +49,22 @@ public:
 };
 //时间复杂度：O(n)
 //空间复杂度：O(1)
+
+//哈希+回溯
+class Solution {
+public:
+    unordered_map<Node*, Node*> m;
+    Node* copyRandomList(Node* head) {
+        if(!head)
+            return nullptr;
+        if(!m.count(head)){
+            Node* new_head = new Node(head->val);
+            m[head] = new_head; 
+            new_head->next = copyRandomList(head->next);
+            new_head->random = copyRandomList(head->random);
+        }
+        return m[head];
+    }
+};
+//时间复杂度：O(n)
+//空间复杂度：O(n)

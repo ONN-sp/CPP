@@ -4,11 +4,19 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <cstring>
+#include <string>
 #include <cctype>
 #include <cstdlib>
 #include <thread>
+#include "HTTP_sever.h"
 #include <unistd.h>
 #include <arpa/inet.h>
+
+/**
+* @brief 构建一个新的 http 服务器对象
+* 
+*/
+HTTP_server::HTTP_server(){};
 
 /**
  * @brief 把HTTP响应的头部信息写到套接字sock中
@@ -16,7 +24,7 @@
  * @param sock 
  * @param filename 
  */
-void headers(int sock, const char* filename){
+void HTTP_server::headers(int sock, const char* filename){
     char buffer[1024];
     (void)filename;//这一行为了告诉编译器我们有意不使用这个参数,而使编译器不会发出未使用参数的警告
     std::string response;
@@ -42,7 +50,7 @@ void headers(int sock, const char* filename){
  * 
  * @param sock 
  */
-void not_found(int sock){
+void HTTP_server::not_found(int sock){
     std::string buffer;
 
     buffer += "HTTP/1.1 404 NOT FOUND\r\n";
@@ -82,11 +90,164 @@ void not_found(int sock){
     send(sock, buffer.c_str(), buffer.length(), 0);
 }
 
-void cat(int sock, std::ifstream resource){}
+/**
+ * @brief 读取服务器上某个文件写到socket套接字中
+ * 
+ * @param sock 
+ * @param resource 
+ */
+void HTTP_server::cat(int sock, std::ifstream resource){
+    std::string line;
+    // 逐行读取文件内容并发送给客户端(不是一个字符串(空白字符分割)读取:resource >> buffer)
+    while(std::getline(resource, line)){
+        // 发送数据给客户端
+        send(sock, line.c_str(), line.length());
+    }
+}
 
-void unimplemented(int sock){}
+/**
+ * @brief 返回给浏览器表明收到的HTTP请求所用的method不被支持
+ * 
+ * @param sock 
+ */
+void HTTP_server::unimplemented(int sock){
+    std::string buffer;
 
-void execute_cgi(int sock, const char* path, const char* method, const char* query_string){}
+    buffer += "HTTP/1.1 501 Method Not Implemented\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Server: my server\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Content-Type: text/html\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+    
+    //发送http响应报文的主体信息
+    buffer.clear();
+    buffer += "<HTML><HEAD><TITLE>Method Not Implemented\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "</TITLE></HEAD>\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "<BODY><P>HTTP request method not supported.\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "</BODY></HTML>\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+}
+
+/**
+ * @brief 运行CGI程序
+ * 
+ * @param sock 
+ * @param path 
+ * @param method 
+ * @param query_string 
+ */
+void HTTP_server::execute_cgi(int sock, const char* path, const char* method, const char* query_string){
+    char buffer[1024];
+    int cgi_output[2];//用于CGI输出的管道   cgi_output[0]为输出管道的读取端    cgi_output[1]为为输出管道的写入端
+    int cgi_input[2];//用于CGI输入的管道    cgi_input[0]为输出管道的读取端    cgi_input[1]为为输出管道的写入端
+    pid_t pid;//进程ID
+    int status;//进程状态
+    char c;
+    int num_chars = 1;//读取的字符数
+    int content_length = -1;//请求内容的长度
+
+    buffer[0] = 'A';
+    buffer[1] = '\0';
+    //如果是GET请求,则读取并丢弃请求头,直到读取到空行(说明后面就是请求正文了)
+    if(std::strcmp(method, "GET") == 0)
+        while((num_chars>0)&&std::strcmp("\n", buffer))
+            num_chars = get_line(sock, buffer, sizeof(buffer));
+    else{//如果是POST请求
+        num_chars = get_line(sock, buffer, sizeof(buffer));
+        while((num_chars>0)&&std::strcmp("\n", buffer)){
+            buffer[15] = '\0';//15的原因是为了截取Content-Length头部信息
+            if(std::strcmp(buffer, "Content-Length:") == 0)
+                content_length = std::stoi(&(buffer[16]));
+            num_chars = get_line(sock, buffer, sizeof(buffer));
+        }
+        //如果请求内容长度无效,返回错误
+        if(content_length == -1){
+            bad_request(sock);
+            return;
+        }
+    }
+
+    //发送HTTP响应头
+    memset(buffer, '\0', sizeof(buffer));
+    std::strcpy(buffer, "HTTP/1.1 200 OK\r\n");
+    send(sock, buffer, std::strlen(buffer), 0);
+
+    //创建CGI输出管道
+    if(pipe(cgi_output) < 0){
+        cannot_execute(sock);
+        return;
+    }
+    //创建CGI输入管道
+    if(pipe(cgi_input) < 0){
+        cannot_execute(sock);
+        return;
+    }
+    //创建子进程执行CGI脚本
+    if((pid==fork()) < 0){
+        cannot_execute(sock);
+        return;
+    }
+    if(pid==0){//子进程:执行CGI程序
+        //CGI环境变量
+        std::string meth_env;
+        std::string query_env;
+        std::string length_env;
+        //重定向标准输入输出到管道
+        dup2(cgi_output[1], 1);//重定向子进程的标准输出到(输出)管道的写入端(即标准输出的内容被发送到管道的写入端而不是屏幕)
+        dup2(cgi_input[0], 0);//重定向子进程的标准输入到(输入)管道的读取端(即标准输入的内容不是从键盘得到,而是管道的读取端)
+        close(cgi_output[0]);
+        close(cgi_input[1]);
+        //设置请求方法环境变量
+        meth_env = meth_env+"REQUEST_METHOD="+method;
+        putenv(meth_env.c_str());
+        //如果是GET请求,设置查询字符串的环境变量
+        if(std::strcmp(method, "GET") == 0){
+            query_env = query_env + "QUERY_STRING" + query_string;
+            putenv(query_env.c_str());
+        }
+        else{//POST请求,设置内容长度环境变量
+            query_env = query_env + "CONTENT_LENGTH" + query_string;
+            putenv(query_env.c_str());
+        }
+        execl(path, path, nullptr);//执行CGI脚本
+        exit(0);//执行失败退出   
+    }
+    else{//父进程
+        close(cgi_output[1]);//关闭输出管道的写端
+        close(cgi_input[0]);//关闭输入管道的读端
+        //如果是POST请求,向输入管道的写端写入数据
+        if(std::strcmp(method, "POST") == 0)
+            for(int i=0;i<content_length;i++){
+                recv(sock, &c, 1, 0);
+                write(cgi_input[1], &c, 1);
+            }
+        //从CGI输出管道的读取端读取数据并发送给客户端(不管是"GET"还是"POST"请求方法,都会从CGI读取数据的)
+        while(read(cgi_output[0], &c, 1) > 0)
+            send(sock, &c, 1, 0);
+        close(cgi_output[0]);
+        close(cgi_input[1]);
+        //等待子进程结束
+        waitpid(pid, &status, 0);    
+    }
+}
 
 /**
  * @brief  调用cat函数把服务器文件返回给浏览器
@@ -94,7 +255,7 @@ void execute_cgi(int sock, const char* path, const char* method, const char* que
  * @param client 
  * @param filename 
  */
-void server_file(int sock, const char* filename){
+void HTTP_server::server_file(int sock, const char* filename){
     std::ifstream resource;//声明一个输入文件流对象resource
     int num_chars = 1;
     //感觉可以不用处理buffer  ???
@@ -119,7 +280,7 @@ void server_file(int sock, const char* filename){
  * @brief 只要发现读取的数据c为'\n'就认为是一行结束;如果读到'\r',就再用MSG_PEEK的方式查看下一个字符,如果是'\n',则从socket中读出;否则将回车符转换为换行符
  * 
  */
-int get_line(const int sock, char* buffer, const int size){
+int HTTP_server::get_line(const int sock, char* buffer, const int size){
     int num_chars = 0;//初始化一个计数器用于记录读取的字符数
     char c = '\0';//初始化为空字符
     int n;//用于存储recv的返回值,返回的是读取的字符数
@@ -150,7 +311,7 @@ int get_line(const int sock, char* buffer, const int size){
  * 
  * @param sock 
  */
-void accept_request(const int sock){
+void HTTP_server::accept_request(const int sock){
     char buffer[1024];//用于存储从客户端接收的数据
     int num_chars;//用于存储接收到的字符数
     char method[255];//用于存储HTTP请求方法
@@ -237,7 +398,7 @@ void accept_request(const int sock){
  * @param port 
  * @return int 
  */
-int startup(short* port){
+int HTTP_server::startup(short* port){
     int httpd_sock = 0;
     sockaddr_in address;
     //创建监听的套接字
@@ -273,14 +434,22 @@ int startup(short* port){
     }
 }
 
+/**
+ * @brief 销毁 http 服务器对象
+ * 
+ */
+HTTP_server::~HTTP_server(){};
+
+
 int main(){
     int server_sock = -1;//监听时的套接字标识符
     short port = 80;//监听端口
     int client_sock = -1;//通信时的套接字标识符
     sockaddr_in client_name;
     int addrlen = sizeof(client_name);
+    HTTP_server http;
 
-    server_sock = startup(&port);//启动
+    server_sock = http.startup(&port);//启动
     std::cout << "httpd running on port " << port << std::endl;
     while(1){
         //阻塞等待客户端的连接
@@ -289,7 +458,7 @@ int main(){
             return -1;
         }
 
-        std::thread new_thread(accept_request, client_sock);
+        std::thread new_thread(http.accept_request, client_sock);
         new_thread.detach();
     }
     close(server_sock);

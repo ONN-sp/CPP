@@ -8,6 +8,9 @@ class HTTP_server{
         HTTP_server(){};
         void headers(int, const char*);
         void not_found(int);
+        void bad_request(int);
+        void cannot_execute(int);
+        void error_die(char*);
         void cat(int, std::ifstream);
         void execute_cgi(int, const char*, const char*, const char*);
         void server_file(int, const char*);

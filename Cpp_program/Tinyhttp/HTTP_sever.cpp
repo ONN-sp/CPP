@@ -91,6 +91,60 @@ void HTTP_server::not_found(int sock){
 }
 
 /**
+ * @brief 返回给客户端这是个错误请求 400
+ * 
+ * @param sock 
+ */
+void HTTP_server::bad_request(int sock){
+    std::string buffer;
+
+    buffer += "HTTP/1.1 400 BAD REQUEST\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Content-Type: text/html\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "<P>Your browser sent a bad request\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+    
+    buffer.clear();
+    buffer += "such as a POST without a Content-Length.\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+}
+
+/**
+ * @brief 主要处理发生在执行CGI程序时出现的错误
+ * 
+ * @param sock 
+ */
+void HTTP_server::cannot_execute(int sock){
+    std::string buffer;
+
+    buffer += "HTTP/1.1 500 Internal Server Error\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "Content-Type: text/html\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+
+    buffer.clear();
+    buffer += "<P>Error prohibited CGI execution.\r\n";
+    send(sock, buffer.c_str(), buffer.length(), 0);
+}
+
+/**
+ * @brief 把错误信息写到cerr,并退出
+ * 
+ * @param sc 
+ */
+void HTTP_server::error_die(const char* sc){
+    std::cerr << sc << std::endl;
+    exit(1);
+}
+
+/**
  * @brief 读取服务器上某个文件写到socket套接字中
  * 
  * @param sock 
@@ -201,11 +255,11 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
         return;
     }
     //创建子进程执行CGI脚本
-    if((pid==fork()) < 0){
+    if((pid==fork()) < 0){//在fork()调用之后,父进程和子进程都会一起执行下面的代码
         cannot_execute(sock);
         return;
     }
-    if(pid==0){//子进程:执行CGI程序
+    if(pid==0){//pid==0是用来确定当前是子进程.  子进程:执行CGI程序
         //CGI环境变量
         std::string meth_env;
         std::string query_env;
@@ -227,8 +281,8 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
             query_env = query_env + "CONTENT_LENGTH" + query_string;
             putenv(query_env.c_str());
         }
-        execl(path, path, nullptr);//执行CGI脚本
-        exit(0);//执行失败退出   
+        execl(path, path, nullptr);//执行CGI脚本 
+        exit(0);   
     }
     else{//父进程
         close(cgi_output[1]);//关闭输出管道的写端
@@ -358,7 +412,7 @@ void HTTP_server::accept_request(const int sock){
         query_string = url;
         while((*query_string!='?')&&(*query_string!='\0'))
             query_string++;
-        if(*query_string=='?'){//当前字符是?,则意味着查询字符串的开始
+        if(*query_string=='?'){//当前字符是'?',则意味着查询字符串的开始
             cgi = 1;//
             *query_string = '\0';//将'?'设为'\0',目的是将url中的查询字符串和其它url分隔开
             query_string++;

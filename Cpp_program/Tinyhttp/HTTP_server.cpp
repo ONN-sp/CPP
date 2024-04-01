@@ -1,4 +1,3 @@
-//服务器端
 #include <iostream>
 #include <sys/socket.h>
 #include <fstream>
@@ -8,7 +7,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <thread>
-#include "HTTP_sever.h"
+#include <functional>
+#include <sys/wait.h>
+#include "HTTP_server.h"
 #include <unistd.h>
 #include <arpa/inet.h>
 
@@ -150,12 +151,12 @@ void HTTP_server::error_die(const char* sc){
  * @param sock 
  * @param resource 
  */
-void HTTP_server::cat(int sock, std::ifstream resource){
+void HTTP_server::cat(int sock, std::ifstream& resource){
     std::string line;
     // 逐行读取文件内容并发送给客户端(不是一个字符串(空白字符分割)读取:resource >> buffer)
     while(std::getline(resource, line)){
         // 发送数据给客户端
-        send(sock, line.c_str(), line.length());
+        send(sock, line.c_str(), line.length(), 0);
     }
 }
 
@@ -238,12 +239,10 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
             return;
         }
     }
-
     //发送HTTP响应头
     memset(buffer, '\0', sizeof(buffer));
     std::strcpy(buffer, "HTTP/1.1 200 OK\r\n");
     send(sock, buffer, std::strlen(buffer), 0);
-
     //创建CGI输出管道
     if(pipe(cgi_output) < 0){
         cannot_execute(sock);
@@ -255,33 +254,35 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
         return;
     }
     //创建子进程执行CGI脚本
-    if((pid==fork()) < 0){//在fork()调用之后,父进程和子进程都会一起执行下面的代码
+    if((pid=fork()) < 0){//在fork()调用之后,父进程和子进程都会一起执行下面的代码
         cannot_execute(sock);
         return;
     }
     if(pid==0){//pid==0是用来确定当前是子进程.  子进程:执行CGI程序
         //CGI环境变量
-        std::string meth_env;
-        std::string query_env;
-        std::string length_env;
+        char meth_env[255];
+        char query_env[255];
+        char length_env[255];
         //重定向标准输入输出到管道
-        dup2(cgi_output[1], 1);//重定向子进程的标准输出到(输出)管道的写入端(即标准输出的内容被发送到管道的写入端而不是屏幕)
+        dup2(cgi_output[1], 1);//重定向子进程的标准输出到(输出)管道的写入端(即标准输出的内容被发送到管道的写入端而不是屏幕);
         dup2(cgi_input[0], 0);//重定向子进程的标准输入到(输入)管道的读取端(即标准输入的内容不是从键盘得到,而是管道的读取端)
         close(cgi_output[0]);
         close(cgi_input[1]);
         //设置请求方法环境变量
-        meth_env = meth_env+"REQUEST_METHOD="+method;
-        putenv(meth_env.c_str());
-        //如果是GET请求,设置查询字符串的环境变量
+        std::strcpy(meth_env, "REQUEST_METHOD=");
+        std::strcat(meth_env, method);
+        putenv(meth_env);//形参类型为char*
         if(std::strcmp(method, "GET") == 0){
-            query_env = query_env + "QUERY_STRING" + query_string;
-            putenv(query_env.c_str());
+            std::strcpy(query_env, "QUERY_STRING=");
+            std::strcat(query_env, query_string);
+            putenv(query_env);
         }
         else{//POST请求,设置内容长度环境变量
-            query_env = query_env + "CONTENT_LENGTH" + query_string;
-            putenv(query_env.c_str());
+            std::strcpy(length_env, "CONTENT_LENGTH=");
+            std::strcat(length_env, std::to_string(content_length).c_str());
+            putenv(length_env);
         }
-        execl(path, path, nullptr);//执行CGI脚本 
+        execl(path, path, nullptr);//执行CGI脚本,它的输出会被写入到cgi_output管道中 
         exit(0);   
     }
     else{//父进程
@@ -293,7 +294,7 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
                 recv(sock, &c, 1, 0);
                 write(cgi_input[1], &c, 1);
             }
-        //从CGI输出管道的读取端读取数据并发送给客户端(不管是"GET"还是"POST"请求方法,都会从CGI读取数据的)
+        //从CGI输出管道的读取端读取数据并发送给客户端(execl()执行cgi程序后会把其标准输出写入到cgi_output中)
         while(read(cgi_output[0], &c, 1) > 0)
             send(sock, &c, 1, 0);
         close(cgi_output[0]);
@@ -303,7 +304,7 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
     }
 }
 
-/**
+/*
  * @brief  调用cat函数把服务器文件返回给浏览器
  * 
  * @param client 
@@ -355,9 +356,9 @@ int HTTP_server::get_line(const int sock, char* buffer, const int size){
         else{
             c = '\n';//读取失败,则设c='\n',进而结束循环
         }
-        buffer[num_chars] = '\0';//添加空字符
-        return num_chars;
     }
+	buffer[num_chars] = '\0';//添加空字符
+    return num_chars;
 }
 
 /**
@@ -370,7 +371,7 @@ void HTTP_server::accept_request(const int sock){
     int num_chars;//用于存储接收到的字符数
     char method[255];//用于存储HTTP请求方法
     char url[255];//用于存储请求的URL
-    std::string path;//用于存储请求的文件路径
+    char path[512];//用于存储请求的文件路径
     size_t i, j;
     struct stat st;
     int cgi = 0;// 如果服务器决定这是一个CGI程序,则为真
@@ -420,8 +421,8 @@ void HTTP_server::accept_request(const int sock){
     }
 
     //构建文件路径
-    path += url;//c++中可以直接将char[]拼接string
-    path = path.c_str();//转换为C风格字符串,因为stat不接受string类型
+	std::strcpy(path, "htdocs");
+    std::strcat(path, url);//拼接
 
     //如果路径以'/'结尾,则此时url未把index.html加进去,需要在这处理
     if(path[std::strlen(path)-1]=='/')
@@ -438,6 +439,7 @@ void HTTP_server::accept_request(const int sock){
             std::strcat(path, "/index.html");//将index.html追加到路径
         if((st.st_mode&S_IXUSR)||(st.st_mode&S_IXGRP)||(st.st_mode&S_IXOTH)) //如果文件有可执行权限
             cgi = 1;
+		std::cout << "cgi: " << cgi << std::endl;
         if(!cgi)
             server_file(sock, path);//直接提供文件内容
         else    
@@ -454,9 +456,10 @@ void HTTP_server::accept_request(const int sock){
  */
 int HTTP_server::startup(short* port){
     int httpd_sock = 0;
+	int opt = 1;
     sockaddr_in address;
     //创建监听的套接字
-    if((httpd_sock = socket(AF_INET, SOCK_STREAM, 0))){//AF_INET=ipv4，SOCK_STREAM:流式传输协议(如TCP)，SOCK_STREAM+0表示使用流式传输协议中的TCP
+    if((httpd_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0){
         std::cerr << "socket error" << std::endl;
         return -1;
     }
@@ -467,8 +470,8 @@ int HTTP_server::startup(short* port){
     }
     //设置套接字地址结构
     address.sin_family = AF_INET;//地址族协议,IPV4
-    address.sin_addr.s_addr = htonl(INADDR_ANY);//long类型的主机字节序->网络字节序
     address.sin_port = htons(*port);//short类型的主机序列->网络序列,小端->大端
+	address.sin_addr.s_addr = INADDR_ANY;//long类型的主机字节序->网络字节序
     //绑定IP和端口
     if (bind(httpd_sock, (struct sockaddr *)&address, sizeof(address)) < 0) {//sockaddr结构体是IPv4协议族对应的结构体
         std::cerr << "bind error" << std::endl;
@@ -477,15 +480,16 @@ int HTTP_server::startup(short* port){
     //如果端口没有设置,就提供一个随机端口
     if(*port == 0){
         socklen_t namelen = sizeof(address);//socklen_t是一种数据类型,通常用于表示套接字地址(IP+端口)结构的长度,它通常是一个无符号整数类型
-        if(getsockname(httpd_sock, reinterpret_cast<sockaddr *>(&name), &namelen) == -1)
+        if(getsockname(httpd_sock, reinterpret_cast<sockaddr *>(&address), &namelen) == -1)
             std::cerr << "getsockname error" << std::endl;
-        *port = ntohs(name.sin_port);
+        *port = ntohs(address.sin_port);
     }
     //监听套接字
     if (listen(httpd_sock, 128) < 0) {//一次性同时监听的最大数是128,此参数默认也是128
         std::cerr << "listen" << std::endl;
         return -1;
     }
+	return httpd_sock;
 }
 
 /**
@@ -497,7 +501,7 @@ HTTP_server::~HTTP_server(){};
 
 int main(){
     int server_sock = -1;//监听时的套接字标识符
-    short port = 80;//监听端口
+    short port = 9999;//监听端口
     int client_sock = -1;//通信时的套接字标识符
     sockaddr_in client_name;
     int addrlen = sizeof(client_name);
@@ -511,8 +515,7 @@ int main(){
             std::cerr << "accept" << std::endl;
             return -1;
         }
-
-        std::thread new_thread(http.accept_request, client_sock);
+        std::thread new_thread(std::bind(&HTTP_server::accept_request, &http, client_sock));
         new_thread.detach();
     }
     close(server_sock);

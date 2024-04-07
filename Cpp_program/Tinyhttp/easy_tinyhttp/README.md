@@ -19,10 +19,19 @@
    * 在父进程中,关闭cgi_input的读取端和cgi_output的写入端,如果POST的话,把POST数据写入cgi_input,已被重定向到STDIN,读取cgi_output的管道输出到客户端,该管道输入是STDOUT.接着关闭所有管道,等待子进程结束
    * 关闭与浏览器的连接,完成一次http请求与回应,因为http无连接
 ![](流程.png)
-1. 程序执行方法:
+3. 项目构建方法`Linux`:
+   * git clone git@github.com:ONN-sp/CPP.git
+   * 解压缩 unzip CPP-main.zip
+   * cd Cpp_program/Tinyhttp/easy_tinyhttp
    * g++ -c HTTP_server.cpp -o HTTP_server.o
    * g++ HTTP_server.o -o HTTP-server.exe
    * ./HTTP_server.exe
+4. 项目构建准备工作:
+   * cd htdocs
+   * sudo chmod 600 index.html
+   * sudo chmod 600 index2.html
+   * sudo chmod 777 color.cgi
+   * sudo chmod 777 date.cgi
 `index.html`:测试`color.cgi`脚本
 `index2.html`:测试`date.cgi`脚本
-1. 语言：C++11 已经在Ubuntu 20.04.1上成功测试
+5. 语言：C++11 已经在Ubuntu 20.04.1上成功测试

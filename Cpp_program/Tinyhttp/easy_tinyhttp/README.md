@@ -32,6 +32,7 @@
    * sudo chmod 600 index2.html
    * sudo chmod 777 color.cgi
    * sudo chmod 777 date.cgi
+
 `index.html`:测试`color.cgi`脚本
 `index2.html`:测试`date.cgi`脚本
-5. 语言：C++11 已经在Ubuntu 20.04.1上成功测试
+1. 语言：C++11 已经在Ubuntu 20.04.1上成功测试

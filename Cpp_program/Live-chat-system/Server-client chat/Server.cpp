@@ -14,6 +14,7 @@ int main() {
     sockaddr_in address;//使用sockaddr_in结构体的原因是使sockaddr结构体中IP和port的赋值变得简单，否则就需要使用指针来移动ip和port到sockaddr.sa_data数组中去
     int addrlen = sizeof(address);
     char buffer[BUFFER_SIZE] = {0};
+    int opt = 1;
 
     // 创建监听的套接字
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0){//AF_INET=ipv4，SOCK_STREAM:流式传输协议(如TCP)，SOCK_STREAM+0表示使用流式传输协议中的TCP

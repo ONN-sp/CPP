@@ -43,7 +43,117 @@
     * 高并发性:通过IO多路复用,一个线程可以同时处理多个IO时间,因此能够更高效地处理大量并发连接
     * 低延迟
     * 简化代码逻辑
-17. IO事件:指的是输入/输出操作发生或完成时发生的事件.在计算机系统中,IO事件通常与IO操作相关联,例如从文件读取数据、向网络发送数据等,具体IOP事件包括:
+14. IO事件:指的是输入/输出操作发生或完成时发生的事件.在计算机系统中,IO事件通常与IO操作相关联,例如从文件读取数据、向网络发送数据等,具体IOP事件包括:
     * 可读事件:当一个IO通道(套接字、管道、文件等)中有数据可读时(如套接字的读缓冲区有数据时),会触发可读事件
     * 可写事件:当一个IO通道有足够的空间可以接收新的数据时,会触发可写事件
     * 异常事件:当IO通道发生异常(如套接字连接中断、套接字错误等)时,会触发异常事件
+15. `epoll`的相关操作函数:
+    ```C++
+    1. int epoll_create(int size);//创建epoll实例,通过一颗红黑树管理待检测集合,这个参数在新版linux已经没什么用了,只需给一个大于0的数就行
+    2. int epoll_create1(int flags);//flags是一个整数,可以传递0或一个标志位EPOLL_CLOEXEC(意味着在调用exec函数时会关闭该文件描述符)
+    3. int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event);//管理红黑树上的文件描述符(添加、修改、删除)
+    //epfd:epoll的文件描述符,epoll_create的返回值
+    //op:指定epoll树上的操作.EPOLL_CTL_ADD、EPOLL_CTL_MOD、EPOLL_CTL_DEL等
+    //fd:待操作的文件描述符
+    //event:文件描述符fd对应的事件(如:读事件、写事件、异常事件)
+    4. int epoll_wait(int epfd, struct epoll_event* events, int maxevents, int timeout);//检测epoll树中是否有就绪的文件描述符,返回值是就绪文件描述符的个数
+    //maxevents:指定events数组的最大容量
+    //events:就是内核将就绪事件复制到的用户空间
+    ```
+16. 在服务器端使用`epoll`:
+    * 创建`epoll`实例(树):`int epfd = epoll_create1(0);`
+    * 将用于监听的套接字添加到`epoll`树中:
+        ```C++
+        struct epoll_event ev;
+        ev.events = EPOLLIN;
+        ev.data.fd = lfd;
+        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD, lfd, &ev);
+        ```
+    * 检测添加到`epoll`树的文件描述符是否就绪:`int num = epoll_wait(epfd, evs, size, -1);`
+      - 如果是监听描述符,则建立连接:
+        ```C++
+        int cfd = accept(curfd, NULL, NULL);
+        ev.events = EPOLLIN;
+        ev.data.fd = cfd;
+        epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &ev);
+        ```
+      - 如果是通信文件描述符,则进行通信:
+        ```C++
+        int len = recv(curfd, buf, sizeof(buf), 0);
+        if(len==0){
+            epoll_ctl(epfd, EPOLL_CTL_DEL, curfd, NULL);
+            close(curfd);
+        } 
+        else if(len>0){
+            send(curfd, buf, len, 0);
+        }
+        ```
+17. `struct epoll_event`结构体:
+    ```C++
+    typedef union epoll_data{
+        void *ptr;
+        int fd;
+        uint32_t u32;
+        uint64_t u64;
+    }epoll_data_t;
+
+    struct epoll_event{
+        uint32_t events;//EPOLLIN、EPOLLOUT、EPOLLRDHUP、EPOLLPRI、EPOLLERR、EPOLLHUP、EPOLLET等
+        epoll_data_t data;//用户所操作的共用体数据(内核不会拿来用,用户写程序需要用,比如:使用其中的fd来记录此时的就绪的文件描述符的具体值),这个数据需要用户在epoll_ctl()前传入,一般是使用fd
+    }
+    ```
+18. `poll`效率比`select  poll`更高效的原因:
+    * 事件通知方式:`epoll`使用事件通知的方式,而不是轮询
+    * 文件描述符管理:`epoll`使用红黑树的数据结构来管理文件描述符,这使得`epoll`能快速处理大量的描述符,而不会随着文件描述符数量的增加而降低性能
+    * 无限扩展性:`epoll`支持边缘触发模式,这意味着它能够处理非阻塞的IO
+    * 内核空间与用户空间的拷贝次数减少:`epoll`可以使用`epoll_ctl()`一次性注册大量的文件描述符(使用`EPOLL_CTL_AD_BATCH`操作):
+        ```C++
+        int epfd = epoll_create(1);
+        struct epoll_event events[MAX_EVENTS];
+        // 设置事件类型
+        for (int i = 0; i < MAX_EVENTS; ++i) {
+            events[i].events = EPOLLIN;  // 这里只关心可读事件
+            events[i].data.fd = i + 1;   // 假设文件描述符从1开始
+        }
+        // 一次性注册多个文件描述符
+        int ret = epoll_ctl(epfd, EPOLL_CTL_ADD_BATCH, 1, events);//此时的fd=1表示要注册的一系列文件描述符的起始位置
+        ```
+19. 事件通知方式:
+    * `select`:使用轮询方式,即程序会主动的反复询问内核每个文件描述符是否有(IO)事件发生.`select`发生轮询主要是在阻塞等待的步骤处,在调用`select`函数后,程序会进入阻塞状态,等待文件描述符上的事件发生,这个等待过程实际上是通过<mark>程序不断主动轮询所有的文件描述符</mark>来完成的
+    * `epoll`:使用事件通知的方式,当文件描述符上有(IO)事件发生时,内核会主动通知程序,而不需要程序不断地询问.`epoll`通过内核通知的机制：
+        - 就绪事件列表:内核维护了一个就绪事件列表,当程序调用`epoll_ctl()`函数向`epoll`实例注册文件描述符时,内核会在内部维护一个数据结构来管理这些文件描述符及对应的事件,当文件描述符上有事件发生时,内核就会将这些就绪事件添加到就绪事件列表中.就绪事件列表是由内核自动维护的,程序无需显式操作
+        - 用户态缓冲区:当程序调用`epoll_wait()`函数时,<mark>内核就会主动将就绪事件从内核空间复制到用户空间的缓冲区</mark>中,程序可以从这个缓冲区中读取就绪事件
+20. <span style="color:red;">在服务器使用`select  poll  epoll`的构造流程都是类似的,思路都是一致的.如:对于就绪的文件描述符要分成监听文件描述符和通信文件描述符两种情况单独处理</span>
+21. `epoll`的水平触发模式(LT):LT也是默认工作模式.其特点:
+    * 读事件:如果文件描述符对应的读缓冲区还有数据,读事件就会被触发,`epoll_wait()`解除阻塞
+        - 当读事件被触发,`epoll_wait()`解除阻塞,之后就可以接收数据了
+        - 如果接收数据的buf很小,不能全部将缓冲区数据读出,那么读事件会继续被触发,直到数据被全部读出,如果接收数据的内存相对较大,读数据的效率也会较高
+    * 写事件:如果文件描述符对应的写缓冲区可写,写事件就会被触发,其特点:
+        - 当写事件被触发,`epoll_wait()`解除阻塞,之后就写入数据了
+        - 如果写缓冲区没有被写满,写事件会一直被触发
+22. `epoll`的边沿触发模式(ET),ET模式在很大程度上减少了`epoll`事件被重复触发的次数,因此效率要比`LT`模式高:
+    * 读事件:当读缓冲区有新的数据进入,读事件被触发一次,没有新数据不会触发该事件
+        - 如果有新数据进入到读缓冲区,该事件被触发,`epoll_wait()`解除阻塞
+        - 如果数据没有被全部读走,并且没有新数据进入,那么读事件就不会再次被触发(注:不会清空缓冲区)(这种情况只是针对通信套接字符中的`read/recv`,而`accept`是不会读不完的)
+        - 如果数据被全部读走或只读走一部分,此时有新数据进入,读事件被触发,并且还是只通知一次 
+    * 写事件:当写缓冲区状态可写,写事件只会触发一次
+        - 如果写缓冲区可写,写事件被触发,`epoll_wait()`解除阻塞
+        - 写缓冲区从不满到被写满,期间写事件只会被触发一次
+        - 写缓冲区从满到不满,状态会变为可写,写事件只会被触发一次
+23. 设置ET模式:
+    ```C++
+    ev.events = EPOLLIN | EPOLLET;//读事件+ET模式
+    ```
+24. 总的来说,`epoll`的边沿模式下`epoll_wait()`检测到文件描述符有新事件才会再次通知,如果不是新的事件就不会通知,通知的次数比LT模式少,效率更高  
+25. 通俗理解:ET模式就是要文件描述符一次就绪后,就要把事件做完,如果没做完,就会自动留到下一次解除`epoll_wait`阻塞才会被一起做(如:如果数据只被读走一部分,此时如果没有新数据进入,那么下一次epoll_wait()的时候这个文件描述符是不就绪的;如果有新数据进入,读事件才会再被触发);LT模式就是可以慢慢完成事件,没做完下一次还是就绪状态
+26. `epoll`使用ET模式:
+    * <mark>`epoll`在边沿模式下,必须要将套接字设置为非阻塞模式</mark>(不然会在最后一次读(写)完(满)缓冲区时会一直阻塞在`recv`(`send`)).此时会引发一个bug,在非阻塞模式下,当缓冲区读(写)完(满),再调用`recv`(`send`)函数会继续从(向)缓冲区读(写)数据,此时就会直接报错`Resource temporarily unavailable`,对应的全局变量`errno`被设置为`EAGAIN/EWOULDBLOCK`,所以此时应该直接判断`erron`是否为`EAGAIN`,进而来知道是否缓冲区空(满)了
+    * 将套接字默认的阻塞行为修改为非阻塞:
+        ```C++
+        #include <fcntl.h>
+        
+        int flag = fcntl(cfd, F_GETFL);
+        flag |= O_NONBLOCK;
+        fcntl(cfd, F_SETFL, flag);
+        ```
+

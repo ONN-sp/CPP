@@ -1,11 +1,10 @@
-//对于多客户端连接到服务器的IO多路复用实现中监听文件描述符只有一个,通信文件描述符可能有多个
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
 #include <unistd.h>
 #include <arpa/inet.h>//linux提供的头文件
 #include <sys/socket.h>//linux提供的头文件
-#include <sys/select.h>
+#include <sys/epoll.h>
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -46,43 +45,56 @@ int main() {
 
     std::cout << "Server listening on port " << PORT << std::endl;
 
-    // select函数  IO多路复用
-    fd_set redset;
-    FD_ZERO(&redset);
-    FD_SET(server_fd, &redset);
-    int maxfd = server_fd;//默认情况下只有一个server_fd文件描述符
+    // epoll函数  IO多路复用
+    int epfd = epoll_create(1);// 1.
+    if(epfd < 0){
+        std::cerr << "epoll create" << std::endl;
+        exit(0);
+    }
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = server_fd;// !!!
+    int ep_fd = epoll_ctl(epfd, EPOLL_CTL_ADD, server_fd, &ev);// 2.
+    if(ep_fd < 0){
+        std::cerr << "epoll ctl" << std::endl;
+        exit(0);
+    }
+    
+    struct epoll_event evs[1024];
+    int size = sizeof(evs)/sizeof(evs[0]);
     while(1){
-        fd_set tmp = redset;
-        int ret = select(maxfd+1, &tmp, NULL, NULL, NULL);
-        // 判断是不是就绪的用于监听的文件描述符
-        if(FD_ISSET(server_fd, &tmp)){
-            // 接收客户端的连接
-            if ((cfd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {//cfd表示通信时的套接字标识符
-                std::cerr << "accept" << std::endl;
-                return -1;
+        int num = epoll_wait(epfd, evs, size, -1);// 3.
+        for(int i=0; i<num; i++){
+            int fd = evs[i].data.fd;// !!!
+            if(fd == server_fd){//监听文件描述符
+                if ((cfd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {//cfd表示通信时的套接字标识符
+                    std::cerr << "accept" << std::endl;
+                    return -1;
+                }
+                ev.events = EPOLLIN;
+                ev.data.fd = cfd;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &ev);
             }
-            FD_SET(cfd, &redset);
-            maxfd = std::max(cfd, maxfd);
-        }
-        for(int i=0;i<=maxfd;i++){
-            if(i!=server_fd && FD_ISSET(i, &tmp)){//判断i是否是用于通信的描述符
-                memset(buffer, 0, BUFFER_SIZE);//memset函数是内存赋值函数(常用于初始化)，用来给某一块内存空间进行赋值的.第一个参数要是指针(地址)
-                int valread = recv(i, buffer, BUFFER_SIZE, 0);
+            else{
+                char buffer[1024];
+                memset(buffer, 0, BUFFER_SIZE);
+                int valread = recv(fd, buffer, BUFFER_SIZE, 0);
                 if (valread < 0) {
                     std::cerr << "Recv error" << std::endl;
                     exit(1);
                 }
                 else if(valread == 0){
                     std::cerr << "Connection closed by client" << std::endl;
-                    FD_CLR(i, &redset);//不是从tmp中删除
-                    close(i);
+                    epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
+                    close(fd);
                     break;
 
                 }
                 std::cout << "Client say: " << buffer << std::endl;
                 // 发送给客户端
+                                         
                 std::cout << "Server say: ";
-                send(i, buffer, strlen(buffer), 0);
+                send(fd, buffer, strlen(buffer), 0);
                 std::cout << buffer << std::endl;
             }
         }

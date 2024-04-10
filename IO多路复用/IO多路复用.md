@@ -156,4 +156,5 @@
         flag |= O_NONBLOCK;
         fcntl(cfd, F_SETFL, flag);
         ```
+27. `epoll`相关的操作函数是线程安全的函数,所以对这些函数操作时不需要加锁
 

@@ -30,7 +30,7 @@ void acceptConn(FDInfo info, sockaddr_in address, int addrlen){
     if ((cfd = accept(info->fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {//cfd表示通信时的套接字标识符
                     std::cerr << "accept" << std::endl;
                     delete info;
-                    return -1;
+                    return;
     }
     mtx.lock();
     FD_SET(cfd, info->rdset);
@@ -56,7 +56,7 @@ void communication(FDInfo info){
         close(info->fd);
         mtx.unlock();
         delete info;
-        return NULL;
+        return;
     }
     std::cout << "Client say: " << buffer << std::endl;
     // 发送给客户端

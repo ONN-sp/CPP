@@ -24,10 +24,11 @@
 1. 项目构建方法`Linux`:
    * git clone git@github.com:ONN-sp/CPP.git
    * 解压缩 unzip CPP-main.zip
-   * cd Cpp_program/Tinyhttp/easy_tinyhttp
+   * cd Cpp_program/Tinyhttp/upgrade_tinyhttp
    * g++ -c HTTP_server.cpp -o HTTP_server.o
-   * g++ HTTP_server.o -o HTTP-server.exe
-   * ./HTTP_server.exe
+   * g++ -c ThreadPool.cpp -o ThreadPool.o
+   * g++ HTTP_server.o ThreadPool.o -o output
+   * ./output
 2. 项目构建准备工作:
    * cd htdocs
    * sudo chmod 600 index.html

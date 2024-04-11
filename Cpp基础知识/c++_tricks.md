@@ -174,5 +174,13 @@
    =>输出:  a
 
    //cin.getline()读取时,当输入的长度超过预设字符个数,cin.getline会设置失效位,即cin.rdstate()=4,那么后续就不能继续读取到ch2了.但是第一次输入后,输入缓冲区有abc'\0'(读取换行符,并将换行符替换成'\0',并从输入缓冲区抹去).第二次的cin.getline()直接会读入一个换行符,所以输出a和换行.
-   eg:
+   ```
+# 2024/4/11
+1. 模板函数的定义和声明都应该定义在`.h`中
+2. `g++`编译多个源文件:
+   ```C++
+   g++ -c file1.cpp -o file1.o
+   g++ -c file2.cpp -o file2.o
+   g++ file1.o file2.o -o output
+   ./output
    ```

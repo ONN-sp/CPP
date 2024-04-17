@@ -1245,8 +1245,12 @@ void Swap(AnyType &a, AnyType &b);
 3. 递归的维护变量保存在栈中
 4. 递归就是类似循环,子问题需要把计算结果返回给上一级问题进行处理
 5. 递归中的递推和回溯过程:<mark>递推是顺序向下处理下一级(层)问题;而回溯是把这一级(层)的计算结果返回给上一级(层)问题进行处理</mark>
-# 重载运算符
-1. `operator`:
+# operator
+1. `C++11`中`operator`是一个关键字,其重载用法分为三类:
+   * `operator`可以重载运算符`+ - =`等
+   * `operator`可以重载函数调用运算符`operator()`
+   * `operator`可以做类型转换运算符
+2. `operator`用作重载运算符:
    ```C++
    1. 在C++中,可以通过重载运算符来改变操作符的行为,使其适用于自定义的类或结构体
    2. MyClass operator+(const MyClass& other) const;//最后一个const表示这是常量成员函数,以确保它不会修改对象的状态;若结构体或类不会修改对象的成员变量,那么需要声明为常量成员函数
@@ -1259,6 +1263,38 @@ void Swap(AnyType &a, AnyType &b);
         }
     };
     ```
+3. `operator`重载函数调用运算符(即可以把类实例化后的对象当作函数名直接调用)=>=>(`type operator()`):
+   ```C++
+   class Adder{
+    public:
+        int operator()(int a, int b){
+            return a+b;
+        }
+   };
+   // 使用函数对象进行加法运算
+   Adder add;
+   int result = add(3, 4);
+   ```
+4. `operator`类型转换操作符=>(`operator type()`).<mark>类型转换函数必须是成员函数,不能指定返回类型,并且形参表必须为空,返回值和转换后的类型是相同的</mark>.定义了类型转换运算符:
+   ```C++
+    class Inet6SocketAddress{
+        private:
+         int ipv6;
+         int port;
+         ...
+        public:
+            Inet6SocketAddress(int ipv6, int port, ...){
+                ...
+            }
+            operator Address() const{
+                return  ConvertTo();// ConvertTo()是将给定ipv6 port等对应信息转换为一个IPv6地址的转换函数,返回类型为Address
+            }
+    };
+    Inet6SocketAddress inet6_addr(/* initialize with IPv6 address */);
+    Address addr = inet6_addr; // 类型转换运算符在这个时候被隐式调用,将 inet6_addr 转换为 Address 对象
+    //执行过程:实例化一个Inet6SocketAddress对象+隐式调用operator类型转换操作,转换为Address类型(其实就是调用operator Address()这个成员函数来返回的一个Address类型,进一步解读就是利用ConverTo()函数(使用Inet6SocketAddress类中的成员变量转换为一个Address对象)来返回一个Address对象)
+    ```
+    在需要`Address`对象的地方,可以直接使用`Inet6SocketAddress`对象,而不需要显示地调用转换函数
 # this
 1. `C++`的`this`指针不仅适用于类,也适用于结构体.`this`指针指向当前对象的地址,无论是类还是结构体,都可以使用`this`指针来访问当前对象的成员变量和成员函数
     

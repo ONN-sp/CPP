@@ -977,15 +977,38 @@ void Swap(AnyType &a, AnyType &b);
    }
    ```
 7. 访问命名空间中名称的方法:<mark>作用域解析运算符`::`</mark>,`std::cout`,即叫做使用`std`名称限定`cout`
-8. `C++`中提供了`using`声明和`using`编译(关键字`using namespace`)两种简化命名空间使用的方法
+8. 域解析符`::`也可以用于访问类中的函数:
+   ```C++
+   1. 访问类的静态成员函数
+    class MyClass {
+    public:
+        static void myStaticFunction() {
+            // 静态成员函数实现
+        }
+    };
+    // 在类外部使用域解析符访问静态成员函数
+    MyClass::myStaticFunction();
+    2. 在类外部定义实现类的成员函数
+    class MyClass {
+    public:
+        void myMemberFunction() {
+            // 成员函数实现
+        }
+    };
+    // 在类外部定义实现类的成员函数
+    void MyClass::myMemberFunction() {
+        // 成员函数的实现
+    }
+    ```
+9.  `C++`中提供了`using`声明和`using`编译(关键字`using namespace`)两种简化命名空间使用的方法
    ```C++
    eg:
    using std::cout;//using声明,仅使特定的标识符可用
    using namespace std;//using编译,使整个命名空间都可用
    ```
-9.  `using`编译指令和`using`声明增加了名称冲突的可能性
-10. 编译器不允许同时使用两个`using`声明
-11. <span style="color:red;">命名空间的使用原则:</span>
+10. `using`编译指令和`using`声明增加了名称冲突的可能性
+11. 编译器不允许同时使用两个`using`声明
+12. <span style="color:red;">命名空间的使用原则:</span>
     ```C++
     1. 命名空间只能全局范围内定义,不能在局部定义命名空间<=>命名空间可以是全局的,也可以位于另一个命名空间中,但不能位于代码块({}花括号内部叫代码块,包括main()也算)中
     2. 命名空间内可以存放变量和函数

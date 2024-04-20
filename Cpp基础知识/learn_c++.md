@@ -991,9 +991,9 @@ void Swap(AnyType &a, AnyType &b);
     2. 在类外部定义实现类的成员函数
     class MyClass {
     public:
-        void myMemberFunction() {
-            // 成员函数实现
-        }
+        void myMemberFunction(); 
+            // 成员函数d的声明
+        
     };
     // 在类外部定义实现类的成员函数
     void MyClass::myMemberFunction() {
@@ -1200,6 +1200,21 @@ void Swap(AnyType &a, AnyType &b);
    ```
    `Point* p1(3, 4)`这样是错误的,这是因为`Point*`表示一个指向`Point`对象的指针,而不是一个用于实例化的对象</span>
 10. <mark>`C++`中的成员函数可以直接访问类的所有成员变量,无论这些成员变量是`private  public  portected`,成员函数都可以直接访问类的成员变量</mark>
+11. `c++`类的实例化有三种方式:
+    ```C++
+    Class MyClass{
+        ...        
+    };
+    1. 隐式创建(栈):
+    MyClass t1;//隐式创建并调用无参构造函数
+    MyClass t2(...);//隐式创建并调用有参构造函数
+    2. 显示创建(栈):
+    MyClass t1 = MyClass;//显示创建并调用无参构造函数
+    MyClass t2 = MyClass(...);//显示创建并调用有参构造函数
+    3. 显示new创建(堆):
+    MyClass t1 = new MyClass;//显示new创建并调用无参构造函数
+    MyClass t2 = new MyClass(...);//显示new创建并调用有参构造函数
+    ```
 # nullptr
 1. 在`C++`中,`nullptr`表示空指针常量,即空指针,可以用于任何指针类型的初始化、比较和赋值操作.`nullptr`取代了传统的`NULL`或`0`来表示空指针,具有更好的类型安全性和可读性.在链表中有时为了方便解题可以将空指针想做`head`的前一个节点,这样有时可以将`head`节点与其它节点使用相同的迭代公式(见`leetcode 206翻转链表`).总的来说,`nullptr`提供了一种更安全和更明确的方式来处理空指针,避免了与整数0的混淆
 # 虚函数

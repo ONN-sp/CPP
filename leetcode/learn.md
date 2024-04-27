@@ -440,3 +440,32 @@
    * 重复这一过程直到得到最终的有序链表
    ![](markdown图片集/2024-04-06-13-45-58.png)
 3. 优先队列合并:此时是维护当前每个链表没有被合并的元素的最前面一个,`k`个链表就最多有`k`个满足这样条件的元素,每次再这些元素里面选取`val`属性最小的元素合并到答案中.在选取最小元素时,用优先队列实现
+# LRU缓存
+1. 双向链表+哈希表:本题需要改变数据的访问时间,即既需要能随机访问(哈希表),又需要能把访问过的数据插入头部(相当于把最久不访问的放在了尾部).双向链表按照被使用的顺序存储了这些键值对,靠近头部的键值对是最近使用的,而靠近尾部的键值对是最久未使用的;哈希表即为普通的哈希映射,通过缓存数据的键映射到其在双向链表中的位置
+   ![](markdown图片集/2024-04-27-21-11-55.png)
+2. `.erase()`:删除指定的键值对:
+   ```C++
+   1. 删除特定键对应的值
+   std::unordered_map<int, std::string> myMap;
+   // 添加一些键值对到myMap中
+   myMap.erase(5); // 删除键为5的元素
+   2. 删除通过迭代器指定的元素
+   std::unordered_map<int, std::string> myMap;
+   // 添加一些键值对到myMap中
+   auto it = myMap.find(5);
+   if (it != myMap.end()) {
+      myMap.erase(it); // 删除迭代器it指向的元素
+   }
+   3. 删除一定范围内的元素
+   std::unordered_map<int, std::string> myMap;
+   // 添加一些键值对到myMap中
+   auto start = myMap.find(3);
+   auto end = myMap.find(7);
+   myMap.erase(start, end); // 删除从start到end范围内的元素（不包括end）
+   4. 删除特定键值对应的元素(C++20及以后才有)
+   std::unordered_map<int, std::string> myMap;
+   // 添加一些键值对到myMap中
+   myMap.extract(5); // 删除键为5的元素
+   ```
+
+

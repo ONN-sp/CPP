@@ -1,6 +1,6 @@
 # 基础语法
 1. C++对大小写字母敏感
-2. C++用cout代替C中的`printf`,但是`cout`可以直接输出变量,不用加格式字符串,这和python类似.对于cout,系统会自动根据数据或变量类型进行输出
+2. C++用`cout`代替C中的`printf`,但是`cout`可以直接输出变量,不用加格式字符串,这和python类似.对于`cout`,系统会自动根据数据或变量类型进行输出
 3. 双斜杠 `//`  注释
 4. 预处理文件(头文件)`<iostream>`包括的是输入输出指令
 5. 程序使用`cin`和`cout`作为输入和输出时必须`include<iostream>`文件
@@ -35,7 +35,7 @@
 19. C++中的自动类型转换:
     * 将一种算术类型值赋给另一种算术类型的变量时,C++将对值进行转换;
     * 表达式中包含不同的类型时,C++将对值进行转换;
-    + 将参数传递给函数时,C++将对值进行转换;
+    * 将参数传递给函数时,C++将对值进行转换;
 20. 强制类型转换:`(typeName) value` OR `typeName value`
 21. 查看变量类型:`typeid(variable).name()`
 22. 定义常量
@@ -47,7 +47,7 @@
     eg:
     const int SCREEN_WIDTH = 960;
     eg:
-    //使用全局变量(非常变量)
+    //使用全局变量(不是常变量)
     int SCREEN_WIDTH = 960;
     ```
 23. 全局变量在整个源文件的作用域都有效,只需要在一个源文件中定义全局变量,在其他不包含该全局变量的源文件的头文件用`extern`关键字声明即可
@@ -65,7 +65,7 @@
     int a[3];(×)
     cin >> a;//整数型数组不能直接对数组整体输入,只能单个元素的输入
     eg:
-    int a[3];
+    int a[3];(√)
     cin >> a[1];//整数型数组不能直接对数组整体输入,只能单个元素的输入
     ```
 27. <mark>`C++`里面的`cin`和`cout`对单个元素变量的输入和输出可以直接对变量进行操作,而不像`C`中的格式化输入(需要取地址)和输出.`C++`对字符数组(字符串)的输入和输出可以直接操作数组名</mark>
@@ -99,11 +99,11 @@
         ```
     * 初始化列表中可以不包含任何东西,这将把所有元素都设置为0;
     * 列表初始化禁止缩窄转换;
-7. ![Alt text](markdown图像集/image-10.png)字符串(字符数组)其实可以看作字符串起来再加一个`\0`
+7. ![Alt text](markdown图像集/image-10.png)字符串(字符数组)其实可以看作字符串起来再加一个`'\0'`
 8. <mark>字符串的索引`str[i]`是一个字符类型(`char`)</mark>
 # 字符串
 1. C++处理字符串有两种方式:
-    * C-风格字符串:以空字符`'\0'`结尾,在利用初始化列表`{'l','o','v','e','\0'}`初始化字符串时,要显示的在最后一位给`'\0'`,否则不是字符串
+    * C-风格字符串:以空字符`'\0'`结尾,在利用初始化列表`{'l','o','v','e','\0'}`初始化字符串时,<mark>要显示的在最后一位给`'\0'`,否则不是字符串</mark>
     * 可以利用字符串常量,如:`char str1 = "Love";`用引号括起的字符串隐式地包括结尾的空字符,因此不用显示地包括它,存储时系统会自动添加`'\0'`将字符串读到char str1数组中,会自动加上空字符
 2. `"S"`表示的是两个字符(字符`'S'`和`'\0'`)
 3. 拼接字符串:C++允许拼接字符串字面值,如: 
@@ -151,7 +151,7 @@
     字符串复制: str1 = str2
     字符串大小: .size(), str1.size()
     ```
-12. `string`对象可以直接用下标索引,但前提是索引的位置是有字符的
+12. `string`对象可以直接用下标索引,但前提是索引的位置是有字符的(这一点和`vector`容器一样)
 13. 将一行输入读取到`string`对象中去
     ```C++
     getline(cin, str); //这里没用句点表示法,因为这个getline()不是类方法.另外,也没有指出字符串长度的参数,因为string对象将根据字符串的长度自动调整自己的大小
@@ -181,9 +181,12 @@
 6. 结构体初始化赋值可以直接花括号赋值
 7. 可以同时完成定义结构和创建结构变量的工作
    ![Alt text](markdown图像集/image-7.png)
-8. 最好将结构体的定义和初始化分开,初始化时:
+8. 结构体变量的定义和初始化:
     ```C++
-    inflatable 结构体名称; a={};
+    inflatable a = 
+    {
+        ...
+    }; 
     ```
 9.  结构数组:`inflatable gifts[100]`; //假定inflatable是已经定义的`结构体名称.gifts`是一个数组,其中的每个元素都是inflatable对象
 10. 结构数组初始化时:结果为一个被括在花括号中、用逗号分隔的值列表,其中每个值本身又是一个被括在花括号中、用逗号隔开的值列表
@@ -266,7 +269,7 @@
    #red,orange等为符号常量,它们对应整数值0~4.这些常量称为枚举量
    #对于枚举,只定义了赋值运算符,没有定义算术运算符
    #枚举量是整型,可被提升为int类型,但int类型不能自动转换为枚举类型(band=3是非法的)
-   #枚举定义可以省略枚举类型名称
+   #枚举定义可以省略枚举类型名称,即可以省略spectrum
    ```
 2. 可以显示地指定整数值来覆盖默认值
    ```C++
@@ -380,8 +383,8 @@
     eg:
     short tell[10];
     cout << tell << endl;
-    coutr << &tell << endl;
-    #从数字上说,这两个地址相同;但从概念上说,tell是以一个2字节内存块的地址,而&tell是一个20字节内存块的地址.因此,tell+1是将地址+20
+    cout << &tell << endl;
+    #从数字上说,这两个地址相同;但从概念上说,tell是以一个2字节内存块的地址,而&tell是一个20字节内存块的地址.因此,此时的&tell+1是将地址+20
     ``` 
 16. 
     ```C++
@@ -424,16 +427,37 @@
     3. 动态存储:new和delete管理了一个内存池(堆),堆和用于静态变量和自动变量的内存是分开的.使用new和delete能够在一个函数中分配内存,在另一个函数中释放它.因此,使用new和delete让程序员对程序如何使用内存有更大的控制权
     ```
 25. 如果使用`new`在堆中创建变量后,没有`delete`,那么会发生<mark>内存泄露</mark>
-26. `Vector`对象
+26. `Vector`对象(更详细的见`leetcode/learn.md`)
     ```C++
     1. vector类似string类,也是一个动态数组.可以在运行阶段设置vector对象的长度,可在末尾附加新数据,还可以插入新数据.
     2. vertor是使用new创建动态数组的替代,vector本质管理内存还是new和delete,但这些工作是自动完成的
     3. 使用vector对象要包含头文件vector,还要包含命名空间std
-    4. vertor<typeName> vt(n_elem);#创建一个保存typeName类型的vector对象vt,可存储n_elem个元素,n_elem可以是整型常量也可以是整型变量
+    4. vertor<typeName> vt(n_elem);#创建一个每个元素都是typeName类型的vector对象vt,可存储n_elem个元素,n_elem可以是整型常量也可以是整型变量
     5. vector对象会根据vector包的各种方法(插入、删除等)自动调整长度
     6. vector对象使用堆
     7. vector类不能直接用cin输入(因为vector类中没有这个cin方法),要借用vector.push_back()这些方法
-    8. vector类不能直接用cout打印动态数组名,可以用迭代的方法打印
+    8. vector类不能直接用cout打印vector对象,可以用一下方法访问和遍历
+        * 下标法:
+        std::vector<int> vec = {1, 2, 3, 4, 5};
+        for (size_t i = 0; i < vec.size(); ++i) {
+            // 使用 vec[i] 访问当前索引处的元素
+            // 例如：
+            // std::cout << vec[i] << std::endl;
+        }
+        * for循环:
+        std::vector<int> vec = {1, 2, 3, 4, 5};
+        for (int element : vec) {
+            // 对每个元素执行操作
+            // 例如：
+            // std::cout << element << std::endl;
+        } 
+        3. 迭代器:
+        std::vector<int> vec = {1, 2, 3, 4, 5};
+        for (auto it = vec.begin(); it != vec.end(); ++it) {
+            // 使用 *it 访问当前迭代器指向的元素
+            // 例如：
+            // std::cout << *it << std::endl;
+        }
     ```
 27.  `array`对象
     ```C++
@@ -714,7 +738,7 @@
    * 让指针指向一个常量对象,这样可以防止使用该指针来修改所指向的值
    * 将指针本身声明为常量
 7. 可以利用两个指针来表示元素区间:一个指针标识数组的开头,另一个指针标识数组的尾部(指向最后一个元素后面的指针)
-8. <span style="color:red;">引用传递和指针传递·这两种方式都可以直接修改实参的值,如果需要防止无意修改内容,则可以用`const`;而按值传递自动会避免这种情况,因为按值传递会创建副本</span>-----------
+8. <span style="color:red;">引用传递和指针传递·这两种方式都可以直接修改实参的值,如果需要防止无意修改内容,则可以用`const`;而按值传递自动会避免这种情况,因为按值传递会创建副本</span>
 9. 传递常规变量(非引用)时,函数将使用该变量的拷贝;但传递数组时,函数将使用原来的数组
 10. `C++`对于返回值类型有限制,不能是数组,但可以是指针、结构和对象等(若需要返回数组,则可以利用指针)
 11. 函数在执行返回语句后结束,如果函数包含多条返回语句,则函数在执行遇到的第一条返回语句后结束
@@ -957,7 +981,7 @@ void Swap(AnyType &a, AnyType &b);
    }
    //threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
    ```
-6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>
+6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>(`std::move`见`Multithreading-and-thread-pooling/learn.md`)
 # 命名空间
 1. 变量对程序而言可见的范围被称为作用域
 2. 组织编写程序的策略:
@@ -1036,9 +1060,9 @@ void Swap(AnyType &a, AnyType &b);
 # 链表
 1. 链表是一种通过指针串联在一起的线性结构,每个节点由两部分组成,一个是数据域一个是指针域(存放指向下一个节点的指针),最后一个节点的指针域指向`null`
 2. 双链表:
-   ![](Cpp基础知识图片集/2024-03-04-09-56-20.png)
+   ![](markdown图像集/2024-03-04-09-56-20.png)
 3. 循环链表:
-   ![](Cpp基础知识图片集/2024-03-04-09-57-13.png)
+   ![](markdown图像集/2024-03-04-09-57-13.png)
 4. 数组是在内存中是连续分布的,但是链表在内存中不是连续分布的
 5. 单链表的定义:
    ```C++
@@ -1068,6 +1092,7 @@ void Swap(AnyType &a, AnyType &b);
       task();//运行这个任务函数
    }
    ```
+   `std::forward`见`Multithreading-and-thread-pooling/learn.md`
 3. 在`C++11`之前函数模板的返回类型必须显示指定,即:`typename add(F&&f, Args&&... args)`.在`C++11`中引入了<mark>`auto`关键字和尾返回类型语法</mark>,即:`auto add(F&&f, Args&&... args)->decltype(f(args...))`
 4. 2.的完整例子:
    ```C++
@@ -1083,7 +1108,7 @@ void Swap(AnyType &a, AnyType &b);
    };
 
    void func(int i){
-      std::cout << I << std::endl;
+      std::cout << i << std::endl;
    }
 
    int main(){
@@ -1233,7 +1258,7 @@ void Swap(AnyType &a, AnyType &b);
    ```
 8. <mark>如果一个类中只包含纯虚函数,那么这个类就是抽象类,不能被直接实例化(类似`java`的`interface`),而只能用作基类.派生类必须实现基类中的所有纯虚函数,否则它们也会成为抽象类</mark>
 # final 
-1. `C++`中,`final`关键字通常用于类的继承和虚函数的声明,它的作用是阻止派生类对基类中的虚函数进行重写,或者防止派生类再次派出新的子类(不想哪个基类或者虚函数被重写就把`final`写在哪):
+1. `C++`中,`final`关键字通常用于类的继承和虚函数的声明,它的作用是阻止派生类对基类中的虚函数进行重写,或者防止派生类再次派出新的子类(不想哪个类或者虚函数被重写就把`final`写在哪):
    ```C++
    1. 禁止派生类重写虚函数:
     class Base {
@@ -1335,5 +1360,219 @@ void Swap(AnyType &a, AnyType &b);
     在需要`Address`对象的地方,可以直接使用`Inet6SocketAddress`对象,而不需要显示地调用转换函数
 # this
 1. `C++`的`this`指针不仅适用于类,也适用于结构体.`this`指针指向当前对象的地址,无论是类还是结构体,都可以使用`this`指针来访问当前对象的成员变量和成员函数
+# assert
+1. `assert`是用于在程序中插入断言,即一种条件判断.它通常在调试阶段用于验证程序的假设是否成立,头文件包含`#include <cassert>`:
+   ```C++
+   1. 只有expression:
+   int x = 5;
+   assert(x == 5);
+   2. 带消息的断言(逗号操作符或&&):
+   assert(x==5 && "x must be 5);
+   assert((void("x must be 5"), x==5));//void用来抑制警告
+   ```
+# 智能指针
+1. 智能指针就是帮我们管理(可以成为托管)动态分配的内存,它会帮助我们自动释放`new`出来的内存.从而避免内存泄露
+2. `auto_ptr`是`C++98`定义的智能指针模板,可以将`new`获得的地址赋给这个对象,此时当对象过期时,其析构函数自动使用`delete`来释放内存:
+    ```C++
+    1.
+    用法:
+    #include <memory>
+    auto_ptr<类型> 变量名(new 类型);
+    如:
+    auto_ptr<string> str(new string("你好世界));
+    auto_ptr<vector<int>> av(new vector<int>());//调用默认构造函数
+
+    2.
+    智能指针可以像普通指针那样使用:因为重载了*和->运算符
+    // 定义指向Test类的智能指针
+    auto_ptr<Test> test(new Test);
+    test->getDebug();
+    *(test).getDebug();
     
+    3.
+    成员函数:
+    .get():获取智能指针托管的指针地址
+    .release():取消智能指针对动态内存的托管,也就是智能指针不再对该指针进行管理,改由管理员进行管理
+    .reset():如果函数内不指定参数指针,则释放掉智能指针托管的指针内存,并将该智能指针置为NULL;如果有参数指针,则将托管的指针和此参数进行比较如果地址不一致,那么会析构掉原来托管的指针(动态内存被delete且智能指针置为NULL),然后使用参数的指针替代,然后智能指针就会托管参数的那个指针了
+    ```
+3. `C++11`后开始就不使用`auto_ptr`了,用`unique_ptr`替代了,其原因为:
+    ```C++
+    1. 复制或赋值都会改变资源的所有权,即排他所有权模式,一个对象指针只能被一个智能指针管理:
+    // auto_ptr 被C++11抛弃的主要原因
+    auto_ptr<string> p1(new string("I'm Li Ming!"));
+    auto_ptr<string> p2(new string("I'm age 22."));
+    cout << "p1：" << p1.get() << endl;
+    cout << "p2：" << p2.get() << endl;
+    // p2赋值给p1后，首先p1会先将自己原先托管的指针释放掉，然后接收托管p2所托管的指针，
+    // 然后p2所托管的指针制NULL，也就是p1托管了p2托管的指针，而p2放弃了托管
+    p1 = p2;	
+    cout << "p1 = p2 赋值后：" << endl;
+    cout << "p1：" << p1.get() << endl;
+    cout << "p2：" << p2.get() << endl;
+    2. 在STL容器中使用auto_ptr存在着重大风险,因为容器内的原始必须支持可复制和可赋值:
+    vector<auto_ptr<string>> vec;
+    auto_ptr<string> p3(new string("I'm P3"));
+    auto_ptr<string> p4(new string("I'm P4"));
+    // 必须使用std::move修饰成右值，才可以进行插入容器中
+    vec.push_back(std::move(p3));
+    vec.push_back(std::move(p4));
+    cout << "vec.at(0)：" <<  *vec.at(0) << endl;
+    cout << "vec[1]：" <<  *vec[1] << endl;
+    // 风险来了：
+    vec[0] = vec[1];	// 如果进行赋值，问题又回到了上面一个问题中
+    cout << "vec.at(0)：" << *vec.at(0) << endl;// 报错,此时vec[0]为NULL
+    cout << "vec[1]：" << *vec[1] << endl;
+    3. 不支持对象数组的内存管理:
+    auto_ptr<int[]> array(new int[5]);	// 不能这样定义
+    ```
+4. `unique_ptr`特性;
+    ```C++
+    1. 基于排他所有权模式,两个指针不能指向同一个资源
+    2. 无法进行左值unique_ptr赋值(auto_ptr可以),也无法进行左值复制和赋值操作,但允许临时右值复制和赋值(std::move)
+    unique_ptr<string> p1(new string("I'm Li Ming!"));
+    unique_ptr<string> p2(new string("I'm age 22."));     
+    cout << "p1：" << p1.get() << endl;
+    cout << "p2：" << p2.get() << endl;
+    p1 = p2;					// 禁止左值赋值
+    unique_ptr<string> p3(p2);	// 禁止左值赋值构造
+    unique_ptr<string> p3(std::move(p1));
+    p1 = std::move(p2);	// 使用move把左值转成右值就可以赋值了，效果和auto_ptr赋值一样
+    cout << "p1 = p2 赋值后：" << endl;
+    cout << "p1：" << p1.get() << endl;
+    cout << "p2：" << p2.get() << endl;
+    3. 在STL容器中使用unique_ptr,不允许直接赋值(此时使用右值赋值后还是会出现auto_ptr问题1)
+    4. 支持对象数组的内存管理
+    // 会自动调用delete [] 函数去释放内存
+    unique_ptr<int[]> array(new int[5]);	// 支持这样定义
+    ```
+5. `auto_ptr`和`unique_ptr`智能指针都有内存管理陷阱,即基于排他所有权.为了解决,出现了`shared_ptr`:当复制或拷贝(赋值)时,引用计数加1,当共享指针被销毁(`.reset()`)或置空(`nullptr`或`NULL`)或重新赋值(`ptr1=ptr2`,此时原先对象的引用次数减1)时,引用计数减1,如果计数为0,代表已经没有指针指向这块内存,那就释放.<mark>`shared_ptr`使用引用计数来管理资源的生命周期</mark>,每当创建一个`shared_ptr`指向某个资源时,引用计数会增加;当`shared_ptr`被销毁时,引用计数会减少.只有当引用计数变为零时,动态内存才会被释放
+    ```C++
+    用法:和auro_ptr一样
+    shared_ptr<T> sp1;
+    shared_ptr<T> sp2(new T());
+    shared_ptr<T[]> sp4;
+    shared_ptr<T[]> sp5(new T[]);
+    
+    eg:
+    shared_ptr<Person> sp1;
+    shared_ptr<Person> sp2(new Person(2));
+    // 获取智能指针管控的共享指针的数量	use_count()：引用计数
+    cout << "sp1	use_count() = " << sp1.use_count() << endl;
+    cout << "sp2	use_count() = " << sp2.use_count() << endl << endl;
+    // 共享
+    sp1 = sp2;//引用计数+1
+    cout << "sp1	use_count() = " << sp1.use_count() << endl;
+    cout << "sp2	use_count() = " << sp2.use_count() << endl << endl;
+    shared_ptr<Person> sp3(sp1);//引用计数+1
+    cout << "sp1	use_count() = " << sp1.use_count() << endl;
+    cout << "sp2	use_count() = " << sp2.use_count() << endl;
+    cout << "sp2	use_count() = " << sp3.use_count() << endl << endl;
+    eg:
+    shared_ptr<int> up1(new int(10));  // int(10) 的引用计数为1
+    shared_ptr<int> up2(new int(11));   // int(11) 的引用计数为1
+    up1 = up2;	// int(10) 的引用计数减1,计数归零内存释放，up2共享int(11)给up1, int(11)的引用计数为2
+    eg:
+    shared_ptrr<int> up1(new int(10));
+    up1 = nullptr ;	// int(10) 的引用计数减1,计数归零内存释放.此时不会直接释放对应管理的动态内存,要等计数=0才释放 
+    // 或
+    up1 = NULL; // 作用同上 
+    ```
+6. `shared_ptr`在循环引用时容易造成无法释放资源,因此在使用`shared_ptr`时注意避免对象交叉使用智能指针的情况,否则易导致内存泄漏:
+    ```C++
+    class Girl;
+    class Boy {
+    public:
+        Boy() {
+            cout << "Boy 构造函数" << endl;
+        }
+        ~Boy() {
+            cout << "~Boy 析构函数" << endl;
+        }
+        void setGirlFriend(shared_ptr<Girl> _girlFriend) {
+            this->girlFriend = _girlFriend;
+        }
+    private:
+        shared_ptr<Girl> girlFriend;
+    };
+    class Girl {
+    public:
+        Girl() {
+            cout << "Girl 构造函数" << endl;
+        }
+        ~Girl() {
+            cout << "~Girl 析构函数" << endl;
+        }
+        void setBoyFriend(shared_ptr<Boy> _boyFriend) {
+            this->boyFriend = _boyFriend;
+        }
+    private:
+        shared_ptr<Boy> boyFriend;
+    };
+    void useTrap() {
+        shared_ptr<Boy> spBoy(new Boy());
+        shared_ptr<Girl> spGirl(new Girl());
+        // 陷阱用法
+        spBoy->setGirlFriend(spGirl);
+        spGirl->setBoyFriend(spBoy);
+        // 此时boy和girl的引用计数都是2
+    }
+    int main(void) {
+        useTrap();
+        system("pause");
+        return 0;
+    }
+    //此时运行结束根本没有释放内存,因为当我们执行useTrap函数时，注意，是没有结束此函数，boy和girl指针其实是被两个智能指针托管的，所以他们的引用计数是2.useTrap函数结束后，函数中定义的智能指针被清掉，boy和girl指针的引用计数减1，还剩下1，对象中的智能指针还是托管他们的，所以函数结束后没有将boy和gilr指针释放的原因就是于此
+    ```
+7. 构建`shared_ptr`也可以使用`make_shared`初始化对象,这样分配的内存效率更高.`make_shared`函数的主要功能是在动态内存中分配一个对象并初始化它,返回指向此对象的`shared_ptr`:
+    ```C++
+    用法:
+    make_shared<T>(构造T类型对象需要的参数列表,即初始化)
+    shared_ptr<int> a = make_shared<int>(2);//或
+    auto a = make_shared<int>(2);
+    struct MyClass {
+        int data;
+        MyClass(int d) : data(d) {}
+    };
+    std::shared_ptr<MyClass> ptr3 = std::make_shared<MyClass>(MyClass(42));
+    ```
+8. `make_shared`相比直接使用`new`来创建`shared_ptr`的优点:
+   * 更高效:`make_shared`只需要一次动态分配内存,它同时创建了`shared_ptr`和(`new`的)对象本身,而直接使用`new`则需要两次分配(一次为对象,一次为共享指针控制块)
+   * 异常安全:`make_shared`能够保证分配动态内存时的异常安全性,因为对象和共享指针控制块是一起分配的,这样可以避免分配对象成功但分配共享指针控制块失败的情况
+9.  `weak_ptr`是`c++11`引入的一种智能指针,它设计用于解决`shared_ptr`的循环引用问题.`weak_ptr`只可以从一个`shared_ptr`或另一个`weak_ptr`对象构造,它的构造和析构不会引起引用记数的增加或减少(因此可以解决循环引用问题):
+    ```C++
+    1.
+    shared_ptr<Boy> spBoy(new Boy());
+    shared_ptr<Girl> spGirl(new Girl());
+    // 弱指针的使用
+    weak_ptr<Girl> wpGirl_1;			// 定义空的弱指针
+    weak_ptr<Girl> wpGirl_2(spGirl);	// 使用共享指针构造
+    wpGirl_1 = spGirl;					// 允许共享指针赋值给弱指针
+    cout << "spGirl \t use_count = " << spGirl.use_count() << endl;
+    cout << "wpGirl_1 \t use_count = " << wpGirl_1.use_count() << endl;     
+    1. 
+    // 弱指针不支持 * 和 -> 对指针的访问
+    /*wpGirl_1->setBoyFriend(spBoy);
+    (*wpGirl_1).setBoyFriend(spBoy);*/
+    3.
+    // 在必要的使用可以转换成共享指针
+    shared_ptr<Girl> sp_girl;
+    sp_girl = wpGirl_1.lock();//weak_ptr->shared_ptr
+    cout << sp_girl.use_count() << endl;
+    // 使用完之后，再将共享指针置NULL即可
+    sp_girl = NULL;
+    ```
+10. `weak_ptr`允许你观察由`shared_ptr`管理的对象,但是它不会增加对象的引用计数.当你需要访问`weak_ptr`指向的对象时,你必须先将`weak_ptr`转换为`shared_ptr`,如果`weak_ptr`指向的对象已经被释放,转换操作会失败.`weak_ptr`一般用于处理中间过程
+11. 对于`shared_ptr  auto_ptr  unique_ptr`它们的成员方法都是一样的,`* ->`运算符也都是重载了的
+12. 智能指针托管的内存的释放时间:
+    * 对于`shared_ptr`,每当创建一个`shared_ptr`指向某个资源时,引用计数会增加;当`shared_ptr`被销毁时,引用计数会减少.只有当引用计数变为零时,动态内存才会被释放
+    * 对于`unique_ptr`(`auto_ptr`一样),它独占所有权,因此在其被销毁时(作用域),它管理的动态内存会被释放
+    * 对于`weak_ptr`,它不增加引用计数,只是用来观察`shared_ptr`管理的资源.当没有任何`shared_ptr`指向资源时,`weak_ptr`将失效,但并不影响资源的生命周期
+
+
+
+
+
+
+
+
     

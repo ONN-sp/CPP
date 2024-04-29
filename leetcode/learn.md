@@ -13,7 +13,7 @@
    ```
 4. ![Alt text](markdown图片集/image.png)
 5. 无序容器(关联式容器)使用键值对(pair类型)的方式存储数据,关联式容器的底层实现采用的树存储结构,更确切的说是红黑树结构;而无序容器的底层实现采用的是哈希表的存储结构
-6. `std::unordered_map<std::typename, std::typename> umap`
+6. `std::unordered_map<std::typename, std::typename> u_map`
 7. 无序容器
    ```C++
    1. unordered_map:存储键值<key, value>类的元素,其中各个键值的值不允许重复,且该容器中存储的键值是无序的
@@ -28,7 +28,15 @@
    *.find(key):查找key对应的值
    *.count(key):查找以key为键的键值对个数
    ```
-10. <span style="color:red;">`unordered_map`的`key`只能用基本数据类型(包括`string`),但是结构体、类或数组`vector`等都是不行的;而哈希表的`value`可以是数组等其它复杂类型</span>
+10. `unordered_map`的几种访问、遍历方法:
+    ```C++
+    1. 下标访问法,利用key
+    2. .at(key)成员方法,返回的是key对应的value
+    3. .find(key)成员方法,返回的是迭代器
+    4. for(auto i:mm),返回的是键值对,不是迭代器.即i.first和i.second
+    5. begin()/end(),遍历整个容器中的键值对,返回的是迭代器,即i->first和i->second
+    ```
+11. <span style="color:red;">`unordered_map`的`key`只能用基本数据类型(包括`string`),但是结构体、类或数组`vector`等都是不行的;而哈希表的`value`可以是数组等其它复杂类型</span>
 # 字母异位词分组
 1. 整个`vector`容器不能直接用标准输出流进行输出
 2. <mark>`vector`容器只有非空的时候才能使用`[]`索引的方法.若是直接下标访问空的会报错</mark>
@@ -339,7 +347,7 @@
             }
             return false;
       }
-      2. 利用lower_bound()函数:
+      1. 利用lower_bound()函数:
       bool searchMatrix(vector<vector<int>>& matrix, int target) {
          for(auto& i:matrix){
             auto t = lower_bound(i.begin(),i.end(),target);//找到第一个不小于target的元素,并返回其迭代器
@@ -467,5 +475,163 @@
    // 添加一些键值对到myMap中
    myMap.extract(5); // 删除键为5的元素
    ```
+# 二叉树
+1. 二叉搜索树:有序树,左子树上所有节点均小于其根节点的值;右子树上所有节点均大于其根节点的值;左右子树也是二叉搜索树
+2. 平衡二叉搜索树(AVL树):它是一棵空树或它的左右两个子树的高度差的绝对值不超过1,并且左右两个子树都是一颗平衡二叉树
+3. 二叉树可以链式存储(就是一个链表),也可以顺序存储(数组):
+   ```C++
+   struct TreeNode{
+      int val;
+      TreeNode* left;
+      TreeNode* right;
+      TreeNode():val(0),left(nullptr),right(nullptr){}
+      TreeNode(int _val):val(_val),left(nullptr),right(nullptr){}
+      TreeNode(int _val, TreeNode* _left, TreeNode* _right):val(_val),left(_left_),right(_right){}
+   }
+   ```
+4. 二叉树的遍历方法:深度优先遍历(`DFS`):前中后序遍历;广度优先遍历(`BFS`):层序遍历.前中后指的是中间节点(根节点)的遍历顺序,即前序:中左右;中序:左中右;后续:左右中
+5. 深度优先遍历和广度优先遍历是两种常见的图遍历算法,用于在图(或树)数据结构中搜索特定元素或者找到特定路径
+   * `DFS`:从起始顶点开始,不断沿着图的一条路径往下搜索,直到到达最深的顶点,然后回溯,继续探索其它路径.<mark>DFS常用递归或栈来实现</mark>
+   ![](markdown图片集/2024-04-28-20-46-30.png)
+   * `BFS`:从起始顶点开始,先访问其所有相邻的顶点,然后逐层访问与起始顶点距离为2的顶点,依次类推,直到找到目标顶点或遍历完整个图.<mark>BFS常用队列实现</mark>
+   ![](markdown图片集/2024-04-28-20-46-46.png) 
+6. 二叉树的遍历:递归;迭代(非递归)
+7. 写递归时的注意点:
+   * 确定递归函数的参数和返回值:确定哪些参数是递归过程中需要处理的,那么就在递归函数里加上这个参数,并且还要明确每次递归的返回值是什么进而确定递归函数的返回类型
+   * 确定终止条件:对于二叉树遍历,终止条件一般是`cur==nullptr`
+   * 确定单层递归的逻辑:确定每一层递归需要处理的信息,在这就会重复调用自己来实现递归的过程(如:前序遍历,即中左右)
+8. 递归法遍历二叉树:递归法`DFS`的三种二叉树遍历方法可以只用交换两行代码就能相互转换,只需要按照遍历顺序写递归逻辑顺序就行
+   ```C++
+   1. 前序遍历:中左右
+   void traversal(TreeNode* cur, vector<int>& res){
+        if(cur==nullptr)
+            return;
+        res.emplace_back(cur->val);//中
+        traversal(cur->left, res);//左
+        traversal(cur->right, res);//右
+   }
+   vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        traversal(root, res);
+        return res;
+   }
+   2. 中序遍历:左中右
+   void traversal(TreeNode* cur, vector<int>& res){
+        if(cur==nullptr)
+            return;
+        traversal(cur->left, res);//左
+        res.emplace_back(cur->val);//中
+        traversal(cur->right, res);//右
+   }
+   vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        traversal(root, res);
+        return res;
+   }
+   3. 后序遍历:左右中
+   void traversal(TreeNode* cur, vector<int>& res){
+        if(cur==nullptr)
+            return;
+        traversal(cur->left, res);//左
+        traversal(cur->right, res);//右
+        res.emplace_back(cur->val);//中
+   }
+   vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        traversal(root, res);
+        return res;
+   }
+   4. 层序遍历
+   
+   ```
+9. 非递归法遍历二叉树:使用栈来实现.在非递归法(迭代)中有两个操作:处理(将元素放入结果数组中),访问(一次循环遍历到的节点).对于前序和后序遍历(先序遍历是中左右,后序遍历是左右中,那么只需要调整一下先序遍历的代码顺序,就变成中右左的遍历顺序,然后再翻转结果数组,输出结果顺序就是左右中了),它们要访问的元素和要处理的元素顺序是一致的(也就是处理元素时不用等几次循环后才处理,而是一次循环后就处理此时遍历到的节点),即此刻访问到的元素就是要处理的元素,所以它们之间可以相互的简单转换(也就是有统一的迭代方法).然而中序遍历不是这样的,所以中序遍历的非递归法需要不同来处理,即要借用一个`cur`指针的遍历来帮助访问节点,使访问和处理一致.<mark>需要注意的是,在几种非递归法遍历时每一次处理(放入`res`数组)都是"中"节点</mark>详见[https://www.programmercarl.com/%E4%BA%8C%E5%8F%89%E6%A0%91%E7%9A%84%E8%BF%AD%E4%BB%A3%E9%81%8D%E5%8E%86.html#%E6%80%9D%E8%B7%AF](https://www.programmercarl.com/%E4%BA%8C%E5%8F%89%E6%A0%91%E7%9A%84%E8%BF%AD%E4%BB%A3%E9%81%8D%E5%8E%86.html#%E6%80%9D%E8%B7%AF)
+    ```C++
+    1. 前序遍历
+    vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        stack<TreeNode*> st;
+        if(root==nullptr)
+            return res;
+        st.push(root);
+        while(!st.empty()){//只需一个条件
+           TreeNode* cur = st.top();
+           st.pop();
+           res.emplace_back(cur->val);//中.处理完栈就把栈顶元素的左右孩子push进来
+           if(cur->right)
+               st.push(cur->right);//右(因为栈是先进后出,所以右写在左前面,这和前序遍历的顺序有点不同,但是本质一样的)
+           if(cur->left)
+               st.push(cur->left);//左
+        }
+        return res;
+    }
+    2. 后序遍历:中左右->中右左->左右中
+    vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        stack<TreeNode*> st;
+        if(root==nullptr)
+            return res;
+        st.push(root);
+        while(!st.empty()){//只需一个条件
+           TreeNode* cur = st.top();
+           st.pop();
+           res.emplace_back(cur->val);//中
+           if(cur->left)
+               st.push(cur->left);//左
+           if(cur->right)
+               st.push(cur->right);//右
+        }
+        reverse(res.begin(), res.end());
+        return res;
+    }
+    3. 中序遍历
+    vector<int> inorderTraversal(TreeNode* root) {
+        vector<int> res;
+        stack<TreeNode*> st;
+        if(root==nullptr)
+            return res;
+        TreeNode* cur = root;
+        while(cur!=nullptr || !st.empty()){//两个条件缺一不可
+            if(cur!=nullptr){//指针访问到非叶子节点
+                st.push(cur);
+                cur = cur->left;//左
+            }
+            else{//cur此时为空就从栈弹出top()  
+                cur = st.top();//从栈里弹出的数据,就是要处理的数据(放进res)
+                st.pop();
+                res.emplace_back(cur->val);
+                cur = cur->right;//右
+            }     
+        }
+        return res;
+    }
+    4. 层序遍历
 
-
+    ```
+10. 代码随想录有对三种`DFS`遍历方式进行统一的一个迭代程序,其实就是在要处理的节点(程序处理的都是此时的"中")放入栈之后,紧接着放入一个空指针作为标记
+11. `stack`容器适配器:`stack`是一种单端开口的容器,实际上该容器模拟的就是栈存储结构,即无论是向里存数据还是从中取数据,都只能从这一个开口实现操作.`stack`位于`<stack>`头文件中,`st
+12. ack`适配器默认采用`deque`基础容器
+    ![](markdown图片集/2024-04-29-09-19-57.png)
+    ![](markdown图片集/2024-04-29-09-24-19.png)
+# 二叉树的中序遍历
+1. 递归法和迭代法
+# 二叉树的最大深度
+1. 二叉树的高度和深度在大多数情况下是一样的概念,对于<mark>求二叉树的高度和深度的逻辑通常是使用后序遍历</mark>,即处理过程("中")在后面
+2. 本题也可以使用前序,但是比后序更复杂
+3. 计算高度和深度是从下往上算,即叶子节点处为1,往上一层就加1:
+   ```C++
+   1. 后序遍历求深度/高度
+   int getDepth(TreeNode* node){
+      if(node == nullptr)//到了叶子节点的孩子节点
+         return 0;
+      int leftDepth = getDepth(node->left);//左
+      int rightDepth = getDepth(node->right);//右
+      int depth = 1 + max(leftDepth, rightDepth);//中
+      return depth;
+   }
+   //精简代码
+   int getDepth(TreeNode* node){
+      if(node == nullptr)//到了叶子节点的孩子节点
+         return 0;
+      return 1+max(getDepth(node->left), getDepth(node->right));
+   }
+   ```

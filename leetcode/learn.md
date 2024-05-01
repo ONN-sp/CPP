@@ -503,7 +503,7 @@
 8. 递归法遍历二叉树:递归法`DFS`的三种二叉树遍历方法可以只用交换两行代码就能相互转换,只需要按照遍历顺序写递归逻辑顺序就行
    ```C++
    1. 前序遍历:中左右
-   void traversal(TreeNode* cur, vector<int>& res){
+   void traversal(TreeNode* cur, vector<int>& res){//必须是引用传递
         if(cur==nullptr)
             return;
         res.emplace_back(cur->val);//中
@@ -541,8 +541,22 @@
         traversal(root, res);
         return res;
    }
-   4. 层序遍历
-
+   4. 层序遍历(层序遍历的递归法没有迭代法好理解,递归法中不是一层一层的向res结果数组中添加结果)
+   void layerOrder(TreeNode* cur, vector<vector<int>>& res, int depth){
+         if(cur==nullptr)
+               return;
+         if(res.size()==depth)//！！！
+               res.emplace_back(vector<int>());
+         res[depth].emplace_back(cur->val);
+         layerOrder(cur->left, res, depth+1);
+         layerOrder(cur->right, res, depth+1);
+   }    
+   vector<vector<int>> levelOrder(TreeNode* root) {
+      int depth=0;//用来表示第几层
+      vector<vector<int>> res;
+      layerOrder(root, res, 0);
+      return res;
+   }
    ```
 9. 非递归法遍历二叉树:使用栈来实现.在非递归法(迭代)中有两个操作:处理(将元素放入结果数组中(放入的元素是栈中弹出的元素)),访问(一次循环遍历到的节点).对于前序和后序遍历(先序遍历是中左右,后序遍历是左右中,那么只需要调整一下先序遍历的代码顺序,就变成中右左的遍历顺序,然后再翻转结果数组,输出结果顺序就是左右中了),它们要访问的元素和要处理的元素顺序是一致的(也就是处理元素时不用等几次循环后才处理,而是一次循环后就处理此时遍历到的节点),即此刻访问到的元素就是要处理的元素,所以它们之间可以相互的简单转换(也就是有统一的迭代方法).然而中序遍历不是这样的,它的访问和处理是不一致的(一进来肯定是先访问的根节点),所以中序遍历的非递归法需要不同来处理,即要借用一个`cur`指针的遍历来帮助访问节点,使访问和处理一致.<mark>需要注意的是,在几种非递归法遍历时每一次处理(放入`res`数组)都是"中"节点</mark>详见[https://www.programmercarl.com/%E4%BA%8C%E5%8F%89%E6%A0%91%E7%9A%84%E8%BF%AD%E4%BB%A3%E9%81%8D%E5%8E%86.html#%E6%80%9D%E8%B7%AF](https://www.programmercarl.com/%E4%BA%8C%E5%8F%89%E6%A0%91%E7%9A%84%E8%BF%AD%E4%BB%A3%E9%81%8D%E5%8E%86.html#%E6%80%9D%E8%B7%AF)
     ```C++
@@ -605,7 +619,28 @@
         return res;
     }
     4. 层序遍历
-
+    vector<vector<int>> levelOrder(TreeNode* root) {
+        vector<vector<int>> res;
+        queue<TreeNode*> qu;
+        if(root==nullptr)
+            return res;
+        qu.push(root);
+        while(!qu.empty()){
+            int size = qu.size();//用来记录这一层的节点数
+            vector<int> temp;
+            while(size--){          
+                TreeNode* cur = qu.front();
+                temp.emplace_back(cur->val);
+                qu.pop();//移除cur,加入进它的左右孩子节点
+                if(cur->left)
+                    qu.push(cur->left);
+                if(cur->right)
+                    qu.push(cur->right);
+            }
+            res.emplace_back(temp);
+        } 
+        return res;     
+     }
     ```
 10. 代码随想录有对三种`DFS`遍历方式进行统一的一个迭代程序,其实就是在要处理的节点(程序处理的都是此时的"中")放入栈之后,紧接着放入一个空指针作为标记
 11. `stack`容器适配器:`stack`是一种单端开口的容器,实际上该容器模拟的就是栈存储结构,即无论是向里存数据还是从中取数据,都只能从这一个开口实现操作.`stack`位于`<stack>`头文件中,`st
@@ -638,3 +673,26 @@
    ```
 # 翻转二叉树
 1. 此题只要把每一个节点的左右孩子翻转一下,就可以达到整体翻转的效果.<mark>翻转二叉树在使用递归法时前序遍历和后序遍历都可以,而中序遍历不是很方便</mark>
+# 对称二叉树
+1. <mark>对于从孩子节点往上处理的问题一般就要优先考虑后序遍历</mark>
+2. 此题的终止条件不止一个
+3. 递归法:必须使用后序遍历,因为要从孩子节点往上处理
+# 二叉树的直径
+1. 二叉树直径长度=树中任意两节点最短路径的最大值(不重复走边);两节点之间的路径长度=它们之间边的数目
+2. 两个叶子节点之间路径=根节点左右儿子的深度之和
+3. 求直径(即求路径长度的最大值)等效于求路径经过节点数的最大值减1.任意一条路径均可以被看作由某个节点为起点,从其左孩子和右孩子向下遍历的路径拼接得到.假设我们知道对于该节点R的左孩子向下遍历经过最多的节点数L(即以左孩子为根的子树的深度)和其右孩子向下遍历经过最多的节点数R(即以右孩子为根的子树的深度),那么以该节点R为起点的路径经过节点数的最大值即为L+R+1,即此子树的直径为L+R+1-1
+4. 此题中的递归其实就是求"二叉树的最大深度"的递归,只是处理过程多了一个计算直径的更新过程
+# 二叉树的层序遍历
+1. 迭代法更好理解,思路更清晰:
+   ![](markdown图片集/层序遍历.gif)
+2. 递归法没有迭代法那么直观,因为它不是一层一层的,它其实用的是深度优先搜索:
+   ![](markdown图片集/层序遍历递归.gif)
+3. 在`C++`中,`stack  queue  priority_queue`容器适配器没有迭代器,因此访问元素的唯一方式是遍历容器适配器,通过不断移除(`pop`)访问过的元素,再去访问下一个元素:
+   ```C++
+   while (!my_queue.empty())
+    {
+        std::cout << my_queue.front() << std::endl;
+        //访问过的元素出队列
+        my_queue.pop();
+    }
+    ```

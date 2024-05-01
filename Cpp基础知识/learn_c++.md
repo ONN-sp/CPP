@@ -1001,7 +1001,7 @@ void Swap(AnyType &a, AnyType &b);
    }
    ```
 7. 访问命名空间中名称的方法:<mark>作用域解析运算符`::`</mark>,`std::cout`,即叫做使用`std`名称限定`cout`
-8. 域解析符`::`也可以用于访问类中的函数:
+8. <mark>域解析符`::`也可以用于访问类中的函数:</mark>
    ```C++
    1. 访问类的静态成员函数
     class MyClass {
@@ -1010,7 +1010,7 @@ void Swap(AnyType &a, AnyType &b);
             // 静态成员函数实现
         }
     };
-    // 在类外部使用域解析符访问静态成员函数
+    // 在类外部使用域解析符访问静态成员函数,此时不用先实例化该类的对象,才能访问成员函数
     MyClass::myStaticFunction();
     2. 在类外部定义实现类的成员函数
     class MyClass {

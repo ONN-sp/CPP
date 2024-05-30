@@ -5,7 +5,7 @@
    * `reactor`:负责事件监听和事件分发->(`select  epoll_wait等`)
    * `acceptor`:负责连接事件(`accept`)
    * `handler`:负责读写事件(`recv  send`)
-5. `reactor`三种模型(可以忽略,):
+5. `reactor`三种模型:
    * 单线程:`reactor acceptor handler`都是一个线程执行
    ![](单线程reactor.png)
    * 多线程:`reactor acceptor handler`都是一个线程执行,但是与此同时,会有一个线程池由若干`worker`线程组成,即此时的`handler`只负责读取请求`recv`和写回结果`send`,而具体的业务处理由`worker`线程完成

@@ -1406,12 +1406,12 @@ void Swap(AnyType &a, AnyType &b);
     cout << "p1：" << p1.get() << endl;
     cout << "p2：" << p2.get() << endl;
     // p2赋值给p1后，首先p1会先将自己原先托管的指针释放掉，然后接收托管p2所托管的指针，
-    // 然后p2所托管的指针制NULL，也就是p1托管了p2托管的指针，而p2放弃了托管
+    // 然后p2所托管的指针为NULL，也就是p1托管了p2托管的指针，而p2放弃了托管
     p1 = p2;	
     cout << "p1 = p2 赋值后：" << endl;
     cout << "p1：" << p1.get() << endl;
     cout << "p2：" << p2.get() << endl;
-    2. 在STL容器中使用auto_ptr存在着重大风险,因为容器内的原始必须支持可复制和可赋值:
+    2. 在STL容器中使用auto_ptr存在着重大风险,因为容器内的元素必须支持可复制和可赋值:
     vector<auto_ptr<string>> vec;
     auto_ptr<string> p3(new string("I'm P3"));
     auto_ptr<string> p4(new string("I'm P4"));

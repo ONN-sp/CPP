@@ -35,4 +35,5 @@
 
 `index.html`:测试`color.cgi`脚本
 `index2.html`:测试`date.cgi`脚本
-1. 语言：C++11 已经在Ubuntu 20.04.1上成功测试
+5. 语言：C++11 已经在Ubuntu 20.04.1上成功测试
+6. 无法使用`webbench`进行压测,原因见`\upgrade_tinyhttp\README.md`

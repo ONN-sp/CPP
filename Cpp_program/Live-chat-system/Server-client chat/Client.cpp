@@ -24,7 +24,7 @@ int main() {
     serv_addr.sin_port = htons(PORT);//主机序列->网络序列,小端->大端
 
     // 指定服务器实际ip地址
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {//十进制ip->二进制ip
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {//点分十进制ip->二进制ip
         std::cerr << "Invalid address/ Address not supported" << std::endl;
         return -1;
     }

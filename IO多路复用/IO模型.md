@@ -26,7 +26,7 @@
       std::cout << "Received signal: " << signal << std::endl;
    }
    int main() {
-      // 设置信号处理函数
+      // 设置信号处理函数  SIGIO=异步I/O信号
       signal(SIGIO, handle_signal);//将SIGIO信号与handle_signal函数关联起来.当SIGIO信号触发时,系统会调用 handle_signal 函数
       // 打开一个文件
       int fd = open("example.txt", O_RDONLY);
@@ -34,13 +34,14 @@
          std::cerr << "Error opening file!" << std::endl;
          return 1;
       }
-      // 设置文件描述符为异步模式
+      //设置文件描述所有者为当前进程
       if (fcntl(fd, F_SETOWN, getpid()) < 0) {
          std::cerr << "Error setting owner!" << std::endl;
          return 1;
       }
+      // 设置文件描述符为异步模式
       int flags = fcntl(fd, F_GETFL);
-      if (fcntl(fd, F_SETFL, flags | O_ASYNC) < 0) {
+      if (fcntl(fd, F_SETFL, flags | O_ASYNC) < 0) {//启用异步I/O
          std::cerr << "Error setting async mode!" << std::endl;
          return 1;
       }

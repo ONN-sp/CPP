@@ -282,7 +282,7 @@ void HTTP_server::execute_cgi(int sock, const char* path, const char* method, co
             std::strcat(length_env, std::to_string(content_length).c_str());
             putenv(length_env);
         }
-        execl(path, path, nullptr);//执行CGI脚本,它的输出会被写入到cgi_output管道中 
+        execl(path, path, nullptr);//执行CGI脚本,它的输出会被写入到cgi_output管道中(因为标准输出被重定向了)  
         exit(0);   
     }
     else{//父进程

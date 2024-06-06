@@ -335,7 +335,7 @@ void HTTP_server::execute_cgi(SocketInfo* info,  const char* path, const char* m
         close(cgi_output[0]);
         close(cgi_input[1]);
         //等待子进程结束
-        waitpid(pid, &status, 0);    
+        waitpid(pid, &status, 0); //如果没有,则子进程可能会变成僵尸进程   
     }
 }
 

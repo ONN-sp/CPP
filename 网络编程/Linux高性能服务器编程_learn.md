@@ -190,7 +190,7 @@
     int getpeername(int sockfd, struct sockaddr* address, socklen_t* address_len);
     //获取sockfd对应的远端socket地址(对等方的ip和port),并将其存储于address.它常用于在客户端和服务器之间连接建立后获取对方的地址信息
     ```
-23. <mark>`socket`默认是阻塞的,即它里面的`connect accept  recv  send`等这些是阻塞函数</mark>,可以直接将套接字设为非阻塞,此时对应的API函数都是非阻塞的了
+23. <mark>套接字`socket`默认是阻塞的,即它里面的`connect accept  recv  send`等这些是阻塞函数</mark>,可以直接将套接字设为非阻塞,此时对应的API函数都是非阻塞的了
 24. <span style="color:red;">在网络编程中,`INADDR_ANY`是特殊的常量,通常用于服务器端套接字的绑定操作,以指示服务器可以接受来自任何网络接口的连接请求.具体来说,`INADDR_ANY`的值为`0.0.0.0`,它可以使服务器监听服务器所在的主机上的所有IP地址(主机可能有多个网卡,如以太网和无线,或多重IP地址),此时不管连接请求是通过哪个接口或哪个IP地址发送过来的,服务器都能接受</span>
 25. 在客户端中,`connect`用于将客户端套接字连接到指定的服务器地址和端口,如果是写的`127.0.0.1`,那么表示服务器也在客户端的本机上:
     ```C++
@@ -314,4 +314,226 @@
     ```
 12. 对于多进程程序而言,父进程一般需要跟踪子进程的退出状态.当子进程结束运行时,内核不会立即释放该进程的进程表表项,以满足父进程后序对该子进程退出信息的查询(若父进程还在).在子进程结束运行之后,父进程读取其退出状态之前,此时称该子进程为僵尸进程;当父进程结束或异常终止,而子进程继续运行,即父进程退出之后,子进程退出之前,也称该子进程为僵尸进程(僵尸进程会占据内核资源,应该避免).`wait  waitpid`在父进程中调用,以等待子进程的结束,并获取子进程的返回信息,从而避免了僵尸进程的产生,或者使子进程的僵尸态立即结束(常用`waitpid`)
 13. 如果要实现父、子进程之间的双向数据传输,就必须使用两个管道,或者使用`socketpair`创建双向管道,但这个不常用
-14. 
+14. 在进程同步中,信号量通常用于解决多个进程访问共享资源时的竞争条件和资源争用问题,而最常用的是二进制信号量,它类似于线程中的互斥锁.<mark>对于(二进制)信号量,其重要的是利用`semop`写出对应的两个操作`P  V`</mark:
+    * P操作:也称为`wait`或`down`操作.这个操作试图将信号量值减1(类似`lock`),若信号量值已经为0,则此时进程会被阻塞,直到信号量值大于0
+    * V操作:也称为`signal`或`up`操作.这个操作试图将信号量值加1(类似`unlock`),若有进程因为信号量值为0而被阻塞,那么这个操作会唤醒其中一个进程(各进程抢操作系统资源决定)
+15. 针对信号量集的三个函数:
+    ```C++
+    1. int semget(key_t key, int num_sems, int sem_flags);//创建一个信号量集,或获取一个已经存在的信号量集
+    //key:标识一个全局唯一的信号量集,可以用ftok()函数生成
+    //num_sems:指定要创建/获取的信号量集中信号量的数目
+    //sem_flags:指定一组标志,它可以是权限标志(如'0666')或者是创建标志(如'IPC_CREAT')或它们的组合.IPC_CREAT表示如果不存在则创建一个新的信号量集;`0666`表示所有用户(用户、组和其它用户)都具有读和写的权限,但没有执行权限.0666|IPC_CREAT常用于创建需要被多个进程访问的系统资源,如文件、共享内存和信号量
+    //semget成功返回一个正整数值(信号量集的标识符),失败返回-1
+    2. int semop(int semid, struct sembuf *sops, size_t nsops);//通过semop定义出信号量的P和V操作
+    //semid:信号量集的标识符,由semget返回
+    //sops:指向一个sembuf结构数组的指针,该数组定义了要执行的操作
+    //nsops:sops数组中的操作数量
+    struct sembuf {
+    unsigned short sem_num; // 信号量编号(从0开始)
+    short sem_op;           // 操作(-1:P操作;1:V操作)
+    short sem_flag;         // 操作标志(IPC_NOWAIT:如果操作会导致阻塞,则立即返回错误(即为非阻塞);SEM_UNDO:操作结束时,自动撤销对信号量的操作;0:不使用任何特殊标志)
+    };
+    3. int semctl(int sem_id, int sem_num, int command, ...);//
+    //semid:信号量集的标识符,由semget返回
+    //sem_num:指定被操作的信号量在信号量集中的编号
+    //command:指定要执行的命令
+    //第四个参数:有的命令要传递第四个参数,如:SETVAL、IPC_SET等
+    第4个参数的推荐格式:
+    union semun{
+      int val; //用于SETVAL命令
+      struct semid_ds* buf; //用于IPC_STAT和IPC_SET命令
+      unsigned short* array; //用于GETALL和SETALL命令
+      struct seminfo* _buf; //用于IPC_INFO命令
+    }
+    ```
+16. `ftok()`函数用于生成一个唯一的键值,该键值通常用于创建共享内存段(`shmget`)或信号量集(`semget`)或消息队列(`msgget`):
+    ```C++
+    key_t ftok(const char* pathname, int proj_id);//将pathname和proj_id组合起来进行哈希计算,从而产生一个唯一的键值
+    //pathname:一个指向路径名的字符串,它指定了一个文件的路径名.通常是一个已经存在的文件的路径
+    //proj_id:项目标识符,是一个用户定义的整数,通常用于区分不用的IPC对象
+    //成功返回一个非零的IPC键值,出错返回-1
+    ```
+17. 当二进制信号量的值为1时,表示资源可用,从而各个进程可以去抢资源,抢到了就会执行该进程的后序程序,而同时此刻的二进制信号量就被P操作置0;为0时,表示资源被占用,此时的进程只能被阻塞,直到等到刚刚抢占到操作系统资源的进程执行完毕,然后执行V操作,此时的二进制信号量就变为1了.使用二进制信号量进行进程间同步:
+   ```C++
+   #include <iostream>
+   #include <sys/ipc.h>
+   #include <sys/shm.h>
+   #include <sys/sem.h>
+   #include <unistd.h>
+   #include <wait.h>
+   #include <cstring>
+   #define SHM_SIZE 1024
+   #define SEM_KEY 1234
+   #define SHM_KEY 5678
+   union semun {
+      int val;                    // 用于 SETVAL
+      struct semid_ds *buf;       // 用于 IPC_STAT 和 IPC_SET
+      unsigned short *array;      // 用于 GETALL 和 SETALL
+   };
+   void P(int semid) {
+      struct sembuf sops = {0, -1, 0}; // 信号量编号=0,表示对信号量集的第一个信号量进行操作;P操作;不使用任何特殊标志
+      semop(semid, &sops, 1);
+   }
+   void V(int semid) {
+      struct sembuf sops = {0, 1, 0}; // 信号量编号=0,表示对信号量集的第一个信号量进行操作;V操作;不使用任何特殊标志
+      semop(semid, &sops, 1);
+   }
+   int main() {
+      // 创建共享内存段
+      int shmid = shmget(SHM_KEY, SHM_SIZE, IPC_CREAT | 0666);
+      if (shmid == -1) {
+         perror("shmget");
+         return 1;
+      }
+      // 创建二进制信号量
+      int semid = semget(SEM_KEY, 1, IPC_CREAT | 0666);
+      if (semid == -1) {
+         perror("semget");
+         return 1;
+      }
+      // 初始化信号量,设为1,即初始为"绿灯"状态
+      union semun sem_union;
+      sem_union.val = 1;
+      if (semctl(semid, 0, SETVAL, sem_union) == -1) {
+         perror("semctl");
+         return 1;
+      }
+      pid_t pid = fork();
+      if (pid == -1) {
+         perror("fork");
+         return 1;
+      }
+      if (pid == 0) {
+         // 子进程
+         char *shmaddr = static_cast<char*>(shmat(shmid, nullptr, 0));
+         if (shmaddr == reinterpret_cast<char*>(-1)) {
+               perror("shmat");
+               return 1;
+         }
+         std::cout << "Child waiting to read...\n";
+         P(semid); // 获取资源 <=>mtx.lock()
+         std::cout << "Child reads: " << shmaddr << std::endl;
+         V(semid); // 释放资源 <=>mtx.unlock()
+         shmdt(shmaddr); // 分离共享内存段
+      } else {
+         // 父进程
+         char *shmaddr = static_cast<char*>(shmat(shmid, nullptr, 0));
+         if (shmaddr == reinterpret_cast<char*>(-1)) {
+               perror("shmat");
+               return 1;
+         }
+         std::cout << "Parent waiting to write...\n";
+         P(semid); // 获取资源
+         const char *message = "Hello from parent";
+         strncpy(shmaddr, message, SHM_SIZE);
+         std::cout << "Parent writes: " << message << std::endl;
+         V(semid); // 释放资源
+         wait(nullptr); // 等待子进程完成
+         shmdt(shmaddr); // 分离共享内存段
+         shmctl(shmid, IPC_RMID, nullptr); // 删除共享内存段
+         semctl(semid, 0, IPC_RMID); // 删除信号量
+      }
+      return 0;
+   }
+   ```
+18. <span style="color:red;">在使用`semget  shmget  msgget`等系统调用时,参数`semflg  shmflg  msgflg`常被设置为`0666 | IPC_CREAT`,其中:`0666`:赋予了所有用户(拥有者、组成员和其它人)对该信号量集、共享内存、消息队列的读写权限;`IPC_CREAT`:表示如果指定的信号量集(共享内存、消息队列)不存在,则创建它;如果已经存在,那么`IPC_CREAT`仅仅是获取该对象的标识符,不会导致错误</span>
+19. 在进程间通信(IPC)中,共享内存是一种高效的机制,它允许多个进程访问同一块内存区域,从而实现数据共享和高速通信,共享内存可以通过System V或POSIX标准来实现.System V的共享内存的API都定义在`sys/shm.h`中:
+    ```C++
+    1. int shmget(key_t key, size_t size, int shmflg);//创建一段新的共享内存
+    //参数与semget类似
+    //如果shmget用于创建共享内存,则这段共享内存的所有字节都被初始化为0
+    2. void* shmat(int shm_id, const void* shm_addr, int shmflg);//共享内存被创建/获取之后,不能立即访问它,而是需要先将它关联到进程的地址空间
+    //shm_id
+    //shm_addr:指定共享内存段附加的地址,通常为nullptr,即让被关联的地址由操作系统选择
+    //shmflg:附加标志,控制附加行为,如:只读(SHM_RDONLY,进程不能修改共享内存)或读写(0),通常为0
+    //shmat成功时返回一个指向共享内存段的指针,失败返回(void*)-1
+    3. int shmdt(const void* shm_addr);//将共享内存从进程地址空间中分离
+    //shm_addr:指向共享内存段的指针
+    //成功返回0,失败返回-1
+    4. int shmctl(int shm_id, int command, sturct shmid_ds* buf);//用于指向各种控制操作,如删除共享内存段或获取共享内存段的状态
+    //shm_id
+    //command:控制命令,如`IPC_RMID`(删除共享内存段)、`IPC_STAT`(获取状态)、`IPC_SET`(设置属性)
+    //buf:用于存储或设置共享内存段状态的结构体指针,根据command而定.IPC_RMID时buf=nullptr
+    //成功返回0,失败返回-1
+    struct semid_ds{
+      struct ipc_perm shm_perm;//共享内存的操作权限
+      size_t shm_segsz;
+      _time_t shm_atime;
+      _time_t shm_dtime;
+      _time_t shm_ctime;
+      _pid_t shm_cpid;
+      _pid_t shm_lpid;
+      shmatt_t shm_nattach;
+    }
+    ```
+20. 消息队列是一种IPC机制,用于在不同进程之间传递数据:
+    ```C++
+    1. int msgget(key_t key, int msgflg);//创建一个新的消息队列
+    //参数与semget、shmget类似
+    2. int msgsnd(int msqid, const void* msgp, size_t msgse, int msgflg);//把一条消息添加到消息队列中
+    //msqid:消息队列标识符
+    //msg_ptr:指向一个准备发生的消息
+    //消息必须被定义为如下结构体形式:
+    struct msgbuf{
+      long mtype;//消息类型
+      char mtext[512];//消息数据
+    }
+    //msgsz:消息的大小,以字节为单位
+    //msgflg:通常仅支持IPC_NOWAIT,即以非阻塞的方式发送消息;默认是阻塞的(等于0)
+    3. int msgrcv(int msqidm, void* msgp, size_t msgsz, long msgtype, int msgflg);//从消息队列中获取消息
+    //mspid
+    //msg_ptr:用于接收信息的缓冲区指针,通常是一个结构体指针,结构体也是struct msgbuf
+    //msgsz:接收信息缓冲区大小
+    //msgtype:指定要接收的信息类型.if=0,读取消息队列中的第一个消息;if>0,读取消息队列中第一个类型为msgtype的消息;if<0,读取消息队列中第一个类型值比msgtype的绝对值小的消息
+    //msgflg:接收消息的选项,等于0表示阻塞模式,这是默认的
+    4. int msgctl(int msqid, int cmd, struct msqid_ds* buf);
+    //msqid
+    //cmd:控制命令,如:IPC_RMID表示删除消息队列
+    //buf:只是msqid_ds结构体的指针,用于存储或获取消息队列的状态
+    ```
+21. 进程间消息队列的例子:
+   ```C++
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <sys/types.h>
+   #include <sys/ipc.h>
+   #include <sys/msg.h>
+   #include <string.h>
+   #define MSG_SIZE 128
+   struct msgbuf {
+      long mtype;
+      char mtext[MSG_SIZE];
+   };
+   int main() {
+      key_t key = ftok("/tmp/msgqueue", 'A');//1.
+      if (key == -1) {
+         perror("ftok");
+         exit(EXIT_FAILURE);
+      }
+      int msqid = msgget(key, IPC_CREAT | 0666);//2.
+      if (msqid == -1) {
+         perror("msgget");
+         exit(EXIT_FAILURE);
+      }
+      struct msgbuf message;
+      message.mtype = 1;
+      strcpy(message.mtext, "Hello from sender!");
+      if (msgsnd(msqid, &message, sizeof(message.mtext), 0) == -1) {//3.
+         perror("msgsnd");
+         exit(EXIT_FAILURE);
+      }
+      printf("Message sent: %s\n", message.mtext);
+      struct msgbuf received_message;
+      if (msgrcv(msqid, &received_message, sizeof(received_message.mtext), 1, 0) == -1) {//4.
+         perror("msgrcv");
+         exit(EXIT_FAILURE);
+      }
+      printf("Message received: %s\n", received_message.mtext);
+      if (msgctl(msqid, IPC_RMID, NULL) == -1) {//5.
+         perror("msgctl");
+         exit(EXIT_FAILURE);
+      }
+      return 0;
+   }
+   ```
+

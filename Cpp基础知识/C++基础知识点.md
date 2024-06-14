@@ -1151,7 +1151,7 @@ void Swap(AnyType &a, AnyType &b);
    ```
 5. <mark>对于函数模板,调用时可以省略尖括号`<>`,编译器会根据传入的参数类型推断模板参数的类型;然而在类模板中,由于类型推断可能会更加复杂,因此在实例化类模板时,通常需要显式指定尖括号`<>`并提供模板参数类型:</mark>
    ```C++
-   1. 函数模板,调用时不需要尖括号
+   1. 函数模板,调用时不需要尖括号(与类模板不一样)
    template<typename T>
    T max(T a, T b) {
       return (a > b) ? a : b;
@@ -1272,6 +1272,87 @@ void Swap(AnyType &a, AnyType &b);
     MyClass t1 = new MyClass;//显示new创建并调用无参构造函数
     MyClass t2 = new MyClass(...);//显示new创建并调用有参构造函数
     ```
+12. `C++`中构造函数可以进行类型住那换,特别是单参数构造函数,允许从构造函数的参数类型到类类型的隐式转换:
+    ```C++
+    class Example {
+    public:
+        Example(int x) : value(x) {}
+        void display() const {
+            std::cout << "Value: " << value << std::endl;
+        }
+    private:
+        int value;
+    };
+
+    Example ex = 42;    // 隐式类型转换：int 到 Example
+    ex.display();       // 输出: Value: 42
+    Example ex3(42);    // 隐式实例化,显示构造
+    ex3.display();      // 输出: Value: 42
+    ```
+    为了防止这种隐式类型转换(因为这种转换使得代码不好理解),`explicit`关键字可以防止隐式类型转换,即:
+    ```C++
+    class Example {
+    public:
+        explicit Example(int x) : value(x) {}
+        void display() const {
+            std::cout << "Value: " << value << std::endl;
+        }
+    private:
+        int value;
+    };
+    ```
+# 类模板
+1. 
+```C++
+类模板,调用时需要尖括号
+template<typename T>
+class MyClass {
+public:
+  T value;
+  MyClass(T val) : value(val) {}
+};
+
+int main() {
+  MyClass<int> obj1(5); // 显式指定类型
+  MyClass<double> obj2(3.14); // 显式指定类型
+  // MyClass obj1(5); // 错误，需要显式指定类型
+  return 0;
+}
+```
+2. 
+```C++
+// 定义一个模板类 Box
+template <typename T>
+class Box {
+private:
+    T length; // 长度
+    T width;  // 宽度
+    T height; // 高度
+public:
+    // 构造函数
+    Box(T l, T w, T h) : length(l), width(w), height(h) {}
+    // 成员函数：计算体积
+    T getVolume() {
+        return length * width * height;
+    }
+    // 成员函数：显示尺寸
+    void displayDimensions() {
+        cout << "Length: " << length << ", Width: " << width << ", Height: " << height << endl;
+    }
+};
+int main() {
+    // 创建不同类型的Box对象
+    Box<int> intBox(3, 4, 5);
+    Box<double> doubleBox(3.5, 4.5, 5.5);
+    // 输出整数类型Box的体积和尺寸
+    cout << "Integer Box Volume: " << intBox.getVolume() << endl;
+    intBox.displayDimensions();
+    // 输出浮点数类型Box的体积和尺寸
+    cout << "Double Box Volume: " << doubleBox.getVolume() << endl;
+    doubleBox.displayDimensions();
+    return 0;
+}
+```
 # nullptr
 1. 在`C++`中,`nullptr`表示空指针常量,即空指针,可以用于任何指针类型的初始化、比较和赋值操作.`nullptr`取代了传统的`NULL`或`0`来表示空指针,具有更好的类型安全性和可读性.在链表中有时为了方便解题可以将空指针想做`head`的前一个节点,这样有时可以将`head`节点与其它节点使用相同的迭代公式(见`leetcode 206翻转链表`).总的来说,`nullptr`提供了一种更安全和更明确的方式来处理空指针,避免了与整数0的混淆
 # 虚函数
@@ -1601,6 +1682,77 @@ void Swap(AnyType &a, AnyType &b);
     * 对于`shared_ptr`,每当创建一个`shared_ptr`指向某个资源时,引用计数会增加;当`shared_ptr`被销毁时,引用计数会减少.只有当引用计数变为零时,动态内存才会被释放
     * 对于`unique_ptr`(`auto_ptr`一样),它独占所有权,因此在其被销毁时(作用域),它管理的动态内存会被释放
     * 对于`weak_ptr`,它不增加引用计数,只是用来观察`shared_ptr`管理的资源.当没有任何`shared_ptr`指向资源时,`weak_ptr`将失效,但并不影响资源的生命周期
+# std::chrono
+1. `std::chrono::duration`是一个模板类,用于表示时间的长度:
+    ```C++
+    std::chrono::nanoseconds: 以纳秒为单位的时间段 (1e-9 秒)
+    std::chrono::microseconds: 以微秒为单位的时间段 (1e-6 秒)
+    std::chrono::milliseconds: 以毫秒为单位的时间段 (1e-3 秒)
+    std::chrono::seconds: 以秒为单位的时间段
+    std::chrono::minutes: 以分钟为单位的时间段
+    std::chrono::hours: 以小时为单位的时间段
+    eg:
+    std::chrono::seconds s(5);//类的实例化结构,表示5秒
+    std::cout << s.count() << std::endl;
+    ```
+2. `std::chrono::time_point`代表一个具体的时间点(时刻),它是一个模板类
+   ```C++
+   1. 模板类定义:
+   template <class Clock, class Duration = typename Clock::duration>
+   class time_point;
+   2.
+   std::chrono::system_clock::time_point<=>std::chrono::time_point<std::chrono::system_clock>
+   3. 
+   std::chrono::system_clock::time_point s;//将创建一个表示 epoch（1970-01-01 00:00:00 UTC）的时间点
+   4. 在计算机中,epoch 是一个固定的时间点,用作时间计算的参考点.std::chrono::system_clock的epoch通常是Unix时间纪元(1970年1月1日 00:00:00 UTC)
+   std::chrono::system_clock::time_point second(std::chrono::seconds(5));//使用std::chrono::seconds(5)作为时间点
+   second.time_since_epoch();//返回一个duration对象,表示从time_point所关联的时钟的epoch(起始时间点)到当前 time_point的时间间隔
+   ```
+3. `std::chrono::duration`是`C++`的一个模板类,用于表示时间段:
+   ```C++
+   1. 模板类定义
+   template <class Rep, class Period = std::ratio<1>>//默认std::ratio<1> 表示秒单位
+   class duration;
+   //Rep:表示时间段的计数类型(如:int、long、double)
+   //Period:表示时间单位的比率,使用std::ratio定义
+   2. 构造函数
+   std::chrono::duration<int> ten_seconds(10);//构造一个10s的时间段
+   3. .count()//返回表示时间段的计数值(返回类型为Rep类型)
+   std::chrono::duration<int> ten_seconds(10);
+   std::cout << "Duration: " << ten_seconds.count() << " seconds\n";  // 输出: 10 seconds
+   4. C++ 标准库预定义了一些常用的 std::chrono::duration 类型，它们使用了常见的时间单位
+   std::chrono::nanoseconds：计数单位为纳秒
+   std::chrono::microseconds：计数单位为微秒
+   std::chrono::milliseconds：计数单位为毫秒
+   std::chrono::seconds：计数单位为秒
+   std::chrono::minutes：计数单位为分钟
+   std::chrono::hours：计数单位为小时
+   5. 使用std::chrono::duration自定义时间段类型
+   using Hours = std::chrono::duration<int, std::ratio<3600>>;  // 1 小时等于 3600 秒
+   ```
+4. 时间点和时间段可以进行加减操作.时间点+时间段=时间点
+5. 时钟类型:
+   ```C++
+   1. std::chrono::system_clock:系统时钟
+   2. std::chrono::steady_clock:稳定时钟
+   3. std::chrono::high_resolution_clock:高分辨率时钟,通常用于需要高精度的时间测量
+   ```
+6. 时间单位转换:`std::chrono::duration_cast`
+   ```C++
+   eg:
+   std::chrono::seconds s(1);  // 1 秒
+   std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(s);  // 转换为毫秒
+   ```
+7. 获取当前系统时间点:`auto now = std::chrono::system_clock::now();`
+8. 时间格式化:
+   ```C++
+   1. char* std::ctime(const std::time_t* time);//将时间表示为人类可读的字符串,但是它是线程不安全的,因为它返回值指向一个内部静态字符数组的指针
+   2. std::put_time(const std::tm* timeptr, const char* format);
+   //<iomanip>头文件中
+   //timeptr:指向std::tm结构体指针,该结构体保存了时间的详细信息
+   //format:C 风格字符串,指定输出时间的格式.如:"%Y-%m-%d %H:%M:%S"
+   //它是线程安全的
+   ```
 
 
 

@@ -5,3 +5,4 @@
    * 内存泄漏
    * 不配对的`new/delete`
    * 内存碎片
+2. `muduo`依赖于`boost`库

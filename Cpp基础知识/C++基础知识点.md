@@ -1246,8 +1246,34 @@ void Swap(AnyType &a, AnyType &b);
    ```
 6. 类的构造函数只能在创建对象时调用一次
 7. <mark>在`C++`中,`public private protected`这些修饰符是用来指定类内部成员的访问级别的,而不能用来修饰类名;`java`可以用来修饰类名</mark>
-8. <mark>对象=实例化后的类,对象指的是类的一个具体实例化后的实体.在`C++`中,实例化一个对象意味着在内存中为类的实例(对象)分配内存空间,并调用该类的构造函数来初始化该对象.实例化一个对象就是创建该类的一个具体实例</mark>
-9. <span style="color:red;">在`C++`中,对于结构体和类,创建对象指针时必须先创建对象,然后再声明指针并将其指向该对象(除了`new`动态创建对象指针):
+8. `protected`:
+    ```C++
+    1. protected修饰的构造函数和析构函数不能直接被该类给实例化,但是可以被派生类实例化
+    class NonCopyAble {
+    protected:
+    // 受保护的构造函数和析构函数允许派生类创建和销毁
+    NonCopyAble() = default;
+    ~NonCopyAble() = default;
+    private:
+    // 禁用拷贝构造函数和赋值运算符
+    NonCopyAble(const NonCopyAble&) = delete;
+    NonCopyAble& operator=(const NonCopyAble&) = delete;
+    };
+    class Derived : public NonCopyAble {
+    public:
+    Derived() {
+        std::cout << "Derived class instance created." << std::endl;
+    }
+    };
+    int main() {
+    // NonCopyAble base;  // 错误：无法实例化NonCopyAble，因为构造函数是protected的
+    Derived derived;      // 合法：可以实例化Derived类
+    return 0;
+    }
+    //注意:实例化Derived对象的时候NonCopyAble也会被实例化
+    ```
+9.  <mark>对象=实例化后的类,对象指的是类的一个具体实例化后的实体.在`C++`中,实例化一个对象意味着在内存中为类的实例(对象)分配内存空间,并调用该类的构造函数来初始化该对象.实例化一个对象就是创建该类的一个具体实例</mark>
+10. <span style="color:red;">在`C++`中,对于结构体和类,创建对象指针时必须先创建对象,然后再声明指针并将其指向该对象(除了`new`动态创建对象指针):
    ```C++
     1. 先创建对象,再定义指针:
         Point p1(3, 4); // 创建结构体对象并初始化
@@ -1256,8 +1282,8 @@ void Swap(AnyType &a, AnyType &b);
         Point* ptr = new Point(3, 4);
    ```
    `Point* p1(3, 4)`这样是错误的,这是因为`Point*`表示一个指向`Point`对象的指针,而不是一个用于实例化的对象</span>
-10. <mark>`C++`中的成员函数可以直接访问类的所有成员变量,无论这些成员变量是`private  public  portected`,成员函数都可以直接访问类的成员变量</mark>
-11. `c++`类的实例化有三种方式:
+11. <mark>`C++`中的成员函数可以直接访问类的所有成员变量,无论这些成员变量是`private  public  portected`,成员函数都可以直接访问类的成员变量</mark>
+12. `c++`类的实例化有三种方式:
     ```C++
     Class MyClass{
         ...        
@@ -1272,7 +1298,7 @@ void Swap(AnyType &a, AnyType &b);
     MyClass t1 = new MyClass;//显示new创建并调用无参构造函数
     MyClass t2 = new MyClass(...);//显示new创建并调用有参构造函数
     ```
-12. `C++`中构造函数可以进行类型住那换,特别是单参数构造函数,允许从构造函数的参数类型到类类型的隐式转换:
+13. `C++`中构造函数可以进行类型住那换,特别是单参数构造函数,允许从构造函数的参数类型到类类型的隐式转换:
     ```C++
     class Example {
     public:
@@ -1301,6 +1327,7 @@ void Swap(AnyType &a, AnyType &b);
         int value;
     };
     ```
+14. <mark>在编程中,类中的成员变量一般会在后面加一个`_`,如:`loop_   timerfd_`</mark>
 # 类模板
 1. 
 ```C++
@@ -1753,6 +1780,8 @@ int main() {
    //format:C 风格字符串,指定输出时间的格式.如:"%Y-%m-%d %H:%M:%S"
    //它是线程安全的
    ```
+# 继承
+1. 在`C++`中,创建派生类对象时,首先会调用基类的构造函数来初始化基类部分,然后才调用派生类的构造函数
 
 
 

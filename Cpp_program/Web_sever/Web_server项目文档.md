@@ -88,6 +88,43 @@
     int tm_isdst; // 夏令时标识，负数表示无效
    };
    ```
+7. `C++`中:
+   * 拷贝赋值运算符是在两个同类型对象之间进行的赋值操作,如`a=b`,其中`a`和`b`都是同一个类的实例
+   * `timer.h`中成员级别的赋值不是拷贝赋值
+8. `::close(timerfd_)  ::read`:为了显式地指明我们要调用操作系统提供的`close()  read()`函数,而非当前作用域内的其他可能存在的同名函数,我们使用作用域解析运算符`::`来表示我们要调用全局命名空间中的`close()  read()`函数
+# std::pair
+1. `std::pair`作用是将两个数据组合成一个数据,这两个数据可以是同一类型或不同类型,如:
+   ```C++
+   eg:
+   std::pair<int, std::function<void()>> task;
+   ```
+# std::set
+1. `.lower_bound()`:查找集合中第一个不小于指定值的元素的位置
+#  std::function<void()>
+1. 这是一个通用的<mark>函数包装器</mark>,用于存储任意可调用对象(函数、函数指针、Lambda表达式等),并提供一种统一的方式来调用这些可调用对象
+2. <span style="color:red;">严格来说`std::function<void()>`:表示不接受任何参数且无返回值的可调用对象,但是它仍然可以用作包装带有参数的函数的包装器:</span>
+   ```C++
+   1. 使用Lambda表达式忽略参数:
+   void foo(int x){
+      std::cout << x << std::endl;
+   }
+   std::function<void()> func = [](){
+      foo(42);
+   }
+   func();
+   2. 使用std::bind部分应用参数:
+   void foo(int x){
+      std::cout << x << std::endl;
+   }
+   std::function<void()> func = std::bind(foo, 42);
+   func();
+   3. 使用函数指针
+   void foo() {
+    std::cout << "Hello, World!" << std::endl;
+   }
+   std::function<void()> funcPtr = foo;
+   funcPtr(); // 调用 foo 函数
+   ```
 
 
 

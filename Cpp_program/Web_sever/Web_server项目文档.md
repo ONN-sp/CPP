@@ -18,6 +18,26 @@
     //argv[3]:指向字符串 "arg3"
     ```
     `argc argv`是由操作系统在调用程序时自动生成的参数.当在命令行中运行一个程序时,操作系统会自动将命令行参数传递给该程序
+4. `C++`的接口设计中,`= 0`用于声明纯虚函数
+5. `static_cast<...>`:强制类型转换
+6. `::eventfd`:
+   ```C++
+   int eventfd(unsigned int initval, int flags);//创建一个指定控制标志的eventfd对象,并返回一个文件描述符
+   //initval:初始计数器值
+   //flags:控制标志,如EFD_NONBLOCK：非阻塞模式;EFD_CLOEXEC：在 exec 系统调用时自动关闭这个文件描述符
+   ```
+7. 回调函数的调用是上层来调的(如:`Tcpserver`等)
+# Muduo库的学习
+1. `C++`中可能出现的内存问题:
+   * 缓冲区溢出
+   * 空指针/野指针
+   * 重复释放
+   * 内存泄漏
+   * 不配对的`new/delete`
+   * 内存碎片
+2. `muduo`依赖于`boost`库
+3. <mark>`Muduo`的设计理念:每个`EventLoop`运行在一个独立的线程中,每个线程负责管理一组I/O事件,这就是`one (event) loop per thread`</mark>
+4. 主线程有一个`EventLoop`,负责接受连接(`accept`在主线程);每个工作线程运行一个独立的`EventLoop`,负责处理已经建立连接(主线程中建立了)上的I/O事件
 # 定时器
 1. 计算机中的时钟不是理想的计时器,它可能会漂移或跳变
 2. `Linux`的获取当前时间的函数:
@@ -125,6 +145,81 @@
    std::function<void()> funcPtr = foo;
    funcPtr(); // 调用 foo 函数
    ```
+# `Poller  Channel  EventLoop`
+1. `Poller  Channel  EventLoop`是`Muduo`网络库的核心组件,它们共同协作以实现高效的事件驱动编程
+   * `Poller`:这是一个抽象基类,用于封装底层的I/O复用机制,如`epoll`.它负责监听多个文件描述符,并在它们有事件发生时通知`EventLoop`
+   * `Channel`:它封装了一个文件描述符和该文件描述符的所有感兴趣的事件(读、写、错误等)及其回调函数.它不管理文件描述符的生命周期,仅负责将其事件分发给相应的回调函数
+   * `EventLoop`:它是事件驱动系统的核心循环,负责在事件发生时调度相应的`Channel`处理器.它维护了一个`Poller`,并允许一个不断循环的事件处理机制
+2. 三者调用关系:
+   * `EventLoop` 持有一个 `Poller` 实例,并管理着一组 `Channel`
+   * `Poller` 负责实际的 I/O 多路复用操作,它将发生的事件通知 `EventLoop`
+   * `Channel` 与具体的文件描述符关联,负责将文件描述符上的事件分发给对应的处理函数
+   * `EventLoop` 通过调用 `Poller` 的 `poll` 方法来等待事件的发生,当事件发生时,它会遍历 `Channel` 列表,并调用每个 `Channel` 的回调函数处理事件
+3. ![](EventLopp_Poller_Channel.png)
+4. 类比`tiny_httpserver`来理解这三者的关系:(以`tiny_httpserver`主线程为例)`EventLoop`就是`tiny_httpserver`中主线程的事件循环(`while(1)`);`Poller`负责底层的事件多路复用,通过调用系统调用如`epoll_wait`来监听文件描述符上的事件;`Channel`封装了文件描述符及其事件处理函数,负责具体的事件处理逻辑(`Channel`就是主线程调用的就绪事件的对应的执行函数(如:`acceptConn`))
+5. 一个线程<=>一个`EventLoop`,一个`EventLoop`可能涉及多个文件描述符
+# Channel
+1. 活跃的`Channel`<=>这个`Channel`绑定的文件描述符有就绪事件
+2. 一个`Channel`<=>一个文件描述符
+3. 每个`Channel`对象自始至终只负责一个文件描述符的I/O事件的分发,但它不拥有这个文件描述符,也不会在析构时关闭这个文件描述符.每个`Channel`对象自始至终只属于一个`EventLoop`
+4. 假设`epoll`中监听到有4个文件描述符有事件发生,那么我们就把这4个文件描述符所对应的`Channel`称为活跃的
+5. 底层向上的调用关系:`Channel::Update()`->`EventLoop::UpdateChannel()`->`Poller::UpdateChannel()`->`epoller::UpdateChannel()`
+6. 当`Channel`被标记为`kDeleted`,通常意味着已经执行了`epoll_ctl`的`EPOLL_CTL_DEL`操作.`kDeleted`意味着该`Channel`已经从`epoll`树上删除了
+7. `Channel`的三个状态:
+   * `kNew`:`Channel`刚创建,尚未加入到`epoll`树上.这通常是默认状态,表示`Channel`尚未参与到任何事件监控中
+   * `kAdded`:`Channel`已经被添加到`epoll`树上,并正在监控其感兴趣的事件
+   * `kDeleted`:`Channel`曾经在`epoll`树上,但当前已被标记为删除.`Channel`已经从`epoll`树中删除了
+# Poller
+1. 这是一个基类,因为在muduo中同时支持`poll()`和`epoll()`.本项目只用了`epoll()`,所以只有`epoller`继承了`Poller`,继承后需要重写纯虚函数
+2. `Poller`是I/O多路复用的封装,它是`EventLoop`的组成,与`EventLoop`的生命期相同,为`EventLoop`提供`poll()`方法.`poll()`方法是`Poller`的核心功能,它调用`epoll_wait()`获得当前就绪事件,然后注册一个`Channel`与该就绪事件的`fd`绑定(将`Channel`对象放在`epoll_event`中的用户数据区,这样可以实现文件描述符和`Channel`的一一对应.当`epoll`返回事件时,我们可以通过 `epoll_event`的`data.ptr`字段快速访问到对应的`Channel`对象,而不需要额外的查找操作),然后将该`Channel`填充到`active_channels`
+3. 在`UpdateChannel()`中,为什么状态为`kDeleted`的`Channel`要被再次添加?
+   ```s
+   1. 如果 Channel 之前被标记为删除 (kDeleted)，但现在有新的事件需要处理，这说明它需要重新加入到 epoll 中
+   2. 使用 EPOLL_CTL_ADD 再次添加 Channel，可以方便地将其重新激活，而不必频繁地删除和重新添加
+   ```
+4. `Poller.h`中只需要`Channel`类的指针或引用,不需要其完整定义,因此不需要包含`Channel.h`头文件
+# EventLoop
+1. `EventLoop`是I/O线程的事件循环,它能确保所有注册的事件都在`EventLoop`对象所在的线程中执行
+2. `EventLoop::loop()`它调用`Poller::poll()`获得当前活动事件(就绪事件)的`Channel`列表,然后依次调用每个`Channel`的`handleEvent()`函数
+3. `EventLoop`是`Channel`和`Poller`的桥梁
+4. `EventLoop`<=>`Reactor`
+5. 主`EventLoop(Reactor)`负责接收连接请求的到来,然后对应`accept`返回的文件描述符分发给子`EventLoop(Reactor)`,子`EventLoop(Reactor)`中对相应的事件进行回调
+6. 假设一种情形:子`EventLoop`被阻塞了(因为`epoll_wait()`没有就绪事件发生),但是此时主`EventLoop`需要向子`EventLoop`添加一个需要理解执行的任务,所以此时必须唤醒这个子`EventLoop`
+7. 调用`wakeup()`会获得一个文件描述符(`eventfd`),文件描述符就伴随一个`Channel`.既然子`EventLoop`被阻塞了,那么需要一个就绪事件让它重新唤醒,<mark>本项目采用的是利用主动`wirte`来实现`wakeup`的,此时会伴随一个读事件回调</mark>
+8. <mark>`EventLoop`中的`wakeup()`非常经典</mark>
+9. <span style="color:red;">`wakeup`:如果不唤醒在`doPendingFunctors()`执行完n个回调后,如果又来了m个回调,但是现在会阻塞在`epoller_->Poll(KPollTimeMs, active_channels_);`中(它里面有`epoll_wait`),所以必须`wakeup()`.总之,`wakeup()`的目的就是为了使新加进来的回调能被立即执行:</span>
+    ```C++
+    void EventLoop::Loop() {
+    assert(IsInThreadLoop()); // 确保当前线程是事件循环所在的线程
+    running_ = true; // 标志事件循环开始运行
+    quit_ = false;// 是否退出loop
+    while (!quit_) {
+        active_channels_.clear(); // 清空活跃 Channel 列表
+        epoller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
+        for (const auto& channel : active_channels_)
+            channel->HandleEvent(); //Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
+        doPendingFunctors(); // 处理待回调函数列表中的任务
+    }
+    running_ = false; // 事件循环结束
+    }
+    ```
+10. `pendingFunctors_`是每个`EventLoop`对象独立存储的,但在多线程服务器中,其它线程(上层)可能需要向当前这个`EventLoop`添加回调函数(如:上层`EventLoop`会写入定时器回调函数),因此`pendingFunctors_`需要线程安全
+11. 为什么`if (!IsInThreadLoop() || calling_functors_)`后才`wakeup()`?
+    * 首先,其它线程向所属当前线程的`EventLoop`添加任务,那么此时一定要`wakeup`(因为当前`EventLoop`可能阻塞住了);其次,如果新加进来的任务不是已经被执行了的,即此时加进来的是下一轮要去执行的,那么需要`wakeup`(为了使新加进来的任务在下一轮能被立即执行),即`calling_functors_`(当前`pendingFunctors_`执行完毕时会给`calling_functors_`置`false`)
+12. `doPendingFunctors`中的经典操作:
+    ```C++
+    {
+        MutexLockGuard lock(mutex_); // 加锁保护待执行任务列表
+        functors.swap(pendingFunctors_); // 将待执行任务列表交换到局部变量中  这种交换方式减少了锁的临界区范围(这种方式把pendingFunctors_放在了当前线程的栈空间中,此时这个Functors局部变量就线程安全了),提升了效率,同时避免了死锁(因为Functor可能再调用queueInLoop)
+    }
+    ```
+
+
+
+# CurrentThread
+1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的
+2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
+3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
 
 
 

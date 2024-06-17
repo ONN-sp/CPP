@@ -109,7 +109,7 @@ class Timestamp {
     static Timestamp Now(){//返回当前时间
       return Timestamp(Clock::now());
     }
-
+ 
     static Timestamp AddTime(const Timestamp& timestamp, double add_seconds){//返回增加指定秒数后的时间
       auto duration = Microseconds(static_cast<int64_t>(add_seconds * kMicrosecond2Second));//将指定的秒数转换为微秒数
       return Timestamp(timestamp.micro_seconds_ + duration);//<chrono>定义了std::chrono::time_point时间点类型和std::chrono::duration持续时间的直接相加操作

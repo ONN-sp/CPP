@@ -1328,6 +1328,21 @@ void Swap(AnyType &a, AnyType &b);
     };
     ```
 14. <mark>在编程中,类中的成员变量一般会在后面加一个`_`,如:`loop_   timerfd_`</mark>
+15. 类的前向声明:这种情况通常发生在类之间存在相互引用的情况下,`class className;`
+    ```C++
+    // 前向声明  告诉编译器B类存在,但前向声明不提供关于该类的具体信息
+    class B;
+    class A {
+    private:
+        B* ptrB;  // 使用 B 类的指针
+    };
+    // 类 B 的定义
+    class B {
+        // B 类的成员和方法
+    };
+    //类A在定义中使用了一个指向类B的指针,因此为了让编译器B什么,我们需要提前声明
+    ```
+    前向声明和类的完整定义最终指向的是同一个类
 # 类模板
 1. 
 ```C++
@@ -1780,8 +1795,20 @@ int main() {
    //format:C 风格字符串,指定输出时间的格式.如:"%Y-%m-%d %H:%M:%S"
    //它是线程安全的
    ```
+9. `std::chrono::system_clock::to_time_t()`:用于将`std::chrono::system_clock::time_point`类型的时间点转换为`std::time_t`类型的值
 # 继承
 1. 在`C++`中,创建派生类对象时,首先会调用基类的构造函数来初始化基类部分,然后才调用派生类的构造函数
+2. `C++`中类默认是私有继承,结构体默认是公有继承
+3. 函数声明表明`newDefaultPoller`返回类型是`Poller*`,这意味着<mark>它可以返回指向`Poller`或其任何子类对象的指针</mark>
+   ```C++
+   Poller* Poller::newDefaultPoller(EventLoop* loop) {//Poller是Epoller的父类
+    if (::getenv("MUDUO_USE_POLL"))
+        return nullptr; // 本项目没有 poll poller
+    else
+        return new Epoller(loop); // 返回 Epoller 类型的指针
+    }
+    ```
+
 
 
 

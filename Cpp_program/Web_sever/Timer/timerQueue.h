@@ -1,3 +1,6 @@
+#ifndef TIMERQUEUE_H
+#define TIMERQUEUE_H
+
 #include <unistd.h>
 #include <sys/timerfd.h>
 #include <set>
@@ -48,3 +51,4 @@ namespace tiny_muduo{
             ActiveTimers active_timers_; // 活动的定时器集合,即定时完成的定时器(过期定时器),然后可以执行回调函数了(即"活了")
     };
 }
+#endif

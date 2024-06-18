@@ -1,8 +1,9 @@
-#include "timerQueue.h"
+#include "TimerQueue.h"
 #include <sys/timerfd.h>
-#include "channel.h"
+#include "Channel.h"
 #include <cassert>
 #include <cstring>
+#include "TimerId.h"
 
 using namespace tiny_muduo;
 
@@ -23,9 +24,10 @@ TimerQueue::~TimerQueue() {
   }
 }
 
-void TimerQueue::AddTimer(Timestamp timestamp, BasicFunc&& cb, double interval) {
-  Timer* timer = new Timer(timestamp, std::move(cb), interval);
+timerId TimerQueue::AddTimer(Timestamp timestamp, BasicFunc&& cb, double interval) {
+  Timer* timer = new Timer(timestamp, std::move(cb), interval);//此时需要手动delete(delete timerpair.second;)   TODO:也许可以用智能指针std::unique_ptr<Timer>
   loop_->RunOneFunc([this, timer](){this->AddTimerInLoop(timer);});// 在事件循环中异步执行AddTimerInLoop函数，将定时器加入到定时器队列中
+  return TimerId(timer, timer->sequence());//返回新加入的定时器的唯一标识符timerId
 }
 
 void TimerQueue::ResetTimer(Timer* timer) {

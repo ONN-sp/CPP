@@ -1,12 +1,10 @@
-/*Channel处于底层   具体的回调函数在上层
-Channel和文件描述符绑定在一起
-*/
+//Channel处于底层   具体的回调函数在上层  Channel和文件描述符绑定在一起
 #ifndef CHANNEL_H
 #define CHANNEL_H
 
-#include "Base\noncopyable.h"
+#include "NonCopyAble.h"
 #include <functional>
-#include "Base\callback.h"
+#include "callback.h"
 
 //Channel理解为通道,封装了sockfd和其感兴趣的事件  如EPOLLIN(读)、EPOLLOUT(写)事件  还绑定了poller返回的具体事件
 namespace tiny_muduo{

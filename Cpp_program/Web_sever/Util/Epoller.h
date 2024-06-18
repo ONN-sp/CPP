@@ -6,7 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
-#include "noncopyable.h"
+#include "NonCopyAble.h"
 
 namespace tiny_muduo{
     class Channel;//前向声明  告诉编译器Channel存在,但前向声明不提供关于该类的具体信息

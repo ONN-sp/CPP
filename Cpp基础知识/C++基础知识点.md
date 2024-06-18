@@ -1808,6 +1808,8 @@ int main() {
         return new Epoller(loop); // 返回 Epoller 类型的指针
     }
     ```
+# 友元(friend)
+1. 友元类允许另一个类访问它的私有(`private`)和保护(`protected`)成员
 
 
 

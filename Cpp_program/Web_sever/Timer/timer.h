@@ -3,8 +3,9 @@
 
 #include <functional>
 #include <utility>
-#include "base/timerstamp.h"
-#include "base/noncopyable.h"
+#include "Timerstamp.h"
+#include "NonCopyAble.h"
+#include "Atomic.h"
 
 namespace tiny_muduo{
     class Timer : public NonCopyAble{
@@ -21,11 +22,15 @@ namespace tiny_muduo{
         Timestamp expiration()const;
         // 判断定时器是否重复运行
         bool repeat()const;
+        //获取定时器序号,用于构造定时器唯一标识符(timerId)
+        int64_t sequence() const;
     private:
         Timestamp expiration_; // 定时器到期时间
         BasicFunc callback_;   // 定时器回调函数
         double interval_;      // 定时器重复间隔时间
         bool repeat_;          // 表示定时器是否重复
+        const int64_t sequence_;//定时器序号
+        static AtomicInt64 s_numCreated_;
     };
 }
 #endif

@@ -1,4 +1,4 @@
-#include "channel.h"
+#include "Channel.h"
 #include <sys/poll.h>
 #include <sysy/epoll.h>
 

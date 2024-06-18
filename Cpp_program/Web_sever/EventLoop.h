@@ -2,13 +2,13 @@
 #define EVENTLOOP_H
 
 #include <vector>
-#include "base\noncopyable.h"
+#include "NonCopyAble.h"
 #include <functional>
 #include <memory>
-#include "timerstamp.h"
-#include "timerQueue.h"
-#include "mutex.h"
-#include "channel.h"
+#include "Timerstamp.h"
+#include "TimerQueue.h"
+#include "MutexLock.h"
+#include "Channel.h"
 #include "Epoller.h"
 
 namespace tiny_muduo{

@@ -1,7 +1,7 @@
 #include "EventLoop.h"
 #include "CurrentThread.h"
 #include <cassert>
-#include "mutex.h"
+#include "MutexLock.h"
 
 using namespace tiny_muduo;
 
@@ -76,7 +76,7 @@ void EventLoop::HandleRead() {
 void EventLoop::QueueOneFunc(BasicFunc func) {
     {
         MutexLockGuard lock(mutex_); // 加锁保护待执行任务列表
-        pendingFunctors_.emplace_back(std::move(func)); // 将任务添加到待执行任务列表末尾
+        pendingFunctors_.emplace_back(std::move(func)); // 将回调任务添加到待执行任务列表末尾
     }
 
     // 如果不在事件循环线程中,或者正在执行任务函数,需要唤醒事件循环

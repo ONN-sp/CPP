@@ -6,7 +6,7 @@
 #include <map>
 #include <memory>
 #include <unistd.h>
-#include "channel.h"
+#include "Channel.h"
 #include <cerrno>
 // #include "logging.h"
 

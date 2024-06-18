@@ -10,14 +10,15 @@
 #include <functional>
 #include <cstdint>   // for uint64_t
 
-#include "timer.h"     
-#include "base/timerstamp.h" 
-#include "base/noncopyable.h" 
-#include "Logging/logging.h"  
+#include "Timer.h"     
+#include "Timerstamp.h" 
+#include "NonCopyAble.h" 
+#include "logging.h"  
 
 namespace tiny_muduo{
     class EventLoop;
     class Channel;
+    class timerId;
     //TimerQueue类管理多个定时器,并在定时器到期时触发回调
     class TimerQueue : public NonCopyAble{
         public:
@@ -36,10 +37,10 @@ namespace tiny_muduo{
             void AddTimerInLoop(Timer*);         
             //重置定时器的fd
             void ResetTimer(Timer*);
-            void AddTimer(Timestamp, BasicFunc&&, double);
+            timerId AddTimer(Timestamp, BasicFunc&&, double);
         private:
             // 定义一个pair类型，用于存储定时器的过期时间和指向定时器的指针
-            using TimerPair = std::pair<Timestamp, Timer*>;
+            using TimerPair = std::pair<Timestamp, Timer*>;//为了处理两个到期时间相同的情况,这里使用std::pair<Timestamp, Timer*>作为std::set的key,这样就可以区分到期时间形相同的定时器
             // 定义一个set类型，用于按过期时间排序存储定时器(先insert的一定先过期)
             using TimersSet = std::set<TimerPair>;  
             // 定义一个vector类型，用于存储活动的定时器

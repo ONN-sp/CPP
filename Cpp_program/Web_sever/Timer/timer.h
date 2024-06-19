@@ -3,9 +3,9 @@
 
 #include <functional>
 #include <utility>
-#include "Timerstamp.h"
-#include "NonCopyAble.h"
-#include "Atomic.h"
+#include "../Base/Timestamp.h"
+#include "../Base/NonCopyAble.h"
+#include "../Base/Atomic.h"
 
 namespace tiny_muduo{
     class Timer : public NonCopyAble{
@@ -17,11 +17,11 @@ namespace tiny_muduo{
         // 重启定时器,将过期时间设置为当前时间+间隔时间
         void Restart(Timestamp);
         // 运行定时器的回调函数
-        void Run()const;
+        void Run() const ;
         // 返回定时器的到期时间
-        Timestamp expiration()const;
+        Timestamp expiration() const ;
         // 判断定时器是否重复运行
-        bool repeat()const;
+        bool repeat() const ;
         //获取定时器序号,用于构造定时器唯一标识符(timerId)
         int64_t sequence() const;
     private:

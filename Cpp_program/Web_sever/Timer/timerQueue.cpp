@@ -1,9 +1,7 @@
 #include "TimerQueue.h"
-#include <sys/timerfd.h>
-#include "Channel.h"
+#include "../Util/Channel.h"
 #include <cassert>
 #include <cstring>
-#include "TimerId.h"
 
 using namespace tiny_muduo;
 
@@ -17,16 +15,16 @@ TimerQueue::TimerQueue(EventLoop* loop)
 
 TimerQueue::~TimerQueue() {
   channel_->DisableAll();// 禁用所有channel事件
-  loop_->Remove(channel_.get());// 从事件循环中移除channel
+  loop_->RemoveChannel(channel_.get());// 从事件循环中移除channel
   ::close(timerfd_);// 使用作用域解析运算符表示调用的是全局命名空间中的close,而非当前作用域内的其它可能存在的同名函数
   for (const auto& timerpair:timers_){//释放定时器资源
-    delete timerpair.second;
+    delete timerpair.second;//没用智能指针,所以必须手动释放
   }
 }
 
-timerId TimerQueue::AddTimer(Timestamp timestamp, BasicFunc&& cb, double interval) {
+TimerId TimerQueue::AddTimer(Timestamp timestamp, BasicFunc&& cb, double interval) {
   Timer* timer = new Timer(timestamp, std::move(cb), interval);//此时需要手动delete(delete timerpair.second;)   TODO:也许可以用智能指针std::unique_ptr<Timer>
-  loop_->RunOneFunc([this, timer](){this->AddTimerInLoop(timer);});// 在事件循环中异步执行AddTimerInLoop函数，将定时器加入到定时器队列中
+  loop_->RunOneFunc([this, timer]{this->AddTimerInLoop(timer);});// 在事件循环中异步执行AddTimerInLoop函数，将定时器加入到定时器队列中
   return TimerId(timer, timer->sequence());//返回新加入的定时器的唯一标识符timerId
 }
 
@@ -85,7 +83,7 @@ void TimerQueue::HandleRead(){
     active_timers_.clear(); // 清空当前活动的定时器集合,以便装入新的到期定时器(到期定时器<=>可以活动的定时器)
     //找到所有到期的定时器
     auto end = timers_.lower_bound(TimerPair(now, nullptr));// 查找timers_中第一个不小于当前时间的定时器  "<"运算符在timestamp中重载了的
-    active_timers_.insert(active_timers_.end(), timers_.begin(), end);// 将所有到期的定时器(从集合开始到end迭代器之间的定时器)插入到active_timers_中
+    active_timers_.insert(active_timers_.end(), timers_.begin(), end);// 在active_timers_.end()定时器之前插入timers_.begin()到end的所有定时器元素(timers_中是有序的)   将所有到期的定时器(从集合开始到end迭代器之间的定时器)插入到active_timers_中
     timers_.erase(timers_begin(), end); // 从timers_集合中移除这些到期的定时器,避免重复处理
     //运行所有到期的定时器的回调函数  定时完成<=>到期,即调用回调函数
     for(const auto&timerpair:active_timers_)

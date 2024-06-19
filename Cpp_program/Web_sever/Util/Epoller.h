@@ -6,17 +6,17 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
-#include "NonCopyAble.h"
+#include "../Base/NonCopyAble.h"
 
 namespace tiny_muduo{
     class Channel;//前向声明  告诉编译器Channel存在,但前向声明不提供关于该类的具体信息
-    class Epoller : public Poller {
+    class Epoller : public Poller {//公有继承自Poller
     public:
         using Channels = std::vector<Channel*>;//Channel容器
         Epoller(EventLoop* loop);
         ~Epoller() override;
         //重写纯虚函数
-        Timestamp Poll(Channels&) override;//实现基类Poller中纯虚函数的方法
+        Timestamp Poll(int, Channels&) override;//实现基类Poller中纯虚函数的方法
         void UpdateChannel(Channel*) override;//实现基类Poller中纯虚函数的方法
         void RemoveChannel(Channel*) override;//从epoll中移除指定的Channel
     private:

@@ -106,6 +106,10 @@ class Timestamp {
       return std::chrono::duration_cast<Microseconds>(micro_seconds_.time_since_epoch()).count();
     }
 
+    int64_t seconds()const{//返回当前秒数
+      return std::chrono::duration_cast<std::chrono::seconds>(micro_seconds_.time_since_epoch()).count();
+    }
+
     static Timestamp Now(){//返回当前时间
       return Timestamp(Clock::now());
     }

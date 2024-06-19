@@ -2,14 +2,14 @@
 #ifndef CHANNEL_H
 #define CHANNEL_H
 
-#include "NonCopyAble.h"
+#include "../Base/NonCopyAble.h"
 #include <functional>
-#include "callback.h"
+#include "../Base/callback.h"
 
 //Channel理解为通道,封装了sockfd和其感兴趣的事件  如EPOLLIN(读)、EPOLLOUT(写)事件  还绑定了poller返回的具体事件
 namespace tiny_muduo{
     // 使用enum class来定义ChannelState 
-    enum class ChannelState{
+    enum class ChannelState{//enum class与enum不同
         kNew, //新的Channel     Channel 刚创建,尚未加入到 epoll 实例中
         kAdded,//Channel已添加  Channel 已经被添加到 epoll 实例中,并正在监控其感兴趣的事件
         kDeleted//Channel已删除  Channel 已经从 epoll 实例的监控列表(即epoll树)中删除了
@@ -75,7 +75,7 @@ namespace tiny_muduo{
         ReadCallback read_callback_; // 读事件的回调函数
         WriteCallback write_callback_; // 写事件的回调函数
         ErrorCallback error_callback_; // 错误事件的回调函数
-    }
+    };
 }
 
 #endif

@@ -1,16 +1,16 @@
-#include "Timerstamp.h"
+#include "../Base/Timerstamp.h"
 #include <vector>
 #include <iostream>
 #include <array>
 
 void passByConstReference(const Timestamp& x)
 {
-  std::cout << x.ToFormattedString() << std::endl;
+  std::cout << x.microseconds() << std::endl;//返回当前微秒数
 }
 
 void passByValue(Timestamp x)
 {
-  std::cout << x.ToFormattedString() << std::endl;
+  std::cout << x.seconds() << std::endl;//返回当前秒数
 }
 
 void benchmark()
@@ -44,7 +44,7 @@ void benchmark()
 int main()
 {
   Timestamp now(Timestamp::Now());
-  std::cout << now.ToFormattedString() << std::endl;
+  std::cout << now.ToFormattedString() << std::endl;//按%Y%m%d %H:%M:%S格式输出当前时间
   passByValue(now);
   passByConstReference(now);
   benchmark();

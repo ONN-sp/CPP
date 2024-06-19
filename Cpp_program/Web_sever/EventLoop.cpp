@@ -28,7 +28,7 @@ EventLoop::EventLoop()
           calling_functors_(false)//初始化当前loop没有需要执行的回调函数
           {
             //设置唤醒Channel的读回调函数为HandleRead
-            wakeup_channel_->SetReadCallback([this](){this->HandleRead();});//wakeup是用wirte实现唤醒的,所以是读回调函数
+            wakeup_channel_->SetReadCallback([this]{this->HandleRead();});//wakeup是用wirte实现唤醒的,所以是读回调函数
             //启用唤醒Channel的读事件监听
             wakeup_channel_->EnableReading();
           }

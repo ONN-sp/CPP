@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include "Channel.h"
 #include <cerrno>
-// #include "logging.h"
+#include "logging.h"
 
 using namespace tiny_muduo;
 

@@ -2,12 +2,12 @@
 #define EVENTLOOP_H
 
 #include <vector>
-#include "NonCopyAble.h"
+#include "./Base/NonCopyAble.h"
 #include <functional>
 #include <memory>
-#include "Timerstamp.h"
-#include "TimerQueue.h"
-#include "MutexLock.h"
+#include "../Base/Timestamp.h"
+#include "../Timer/TimerQueue.h"
+#include "../Base/MutexLock.h"
 #include "Channel.h"
 #include "Epoller.h"
 
@@ -52,7 +52,7 @@ class EventLoop : public NonCopyAble{
         Channels active_channels_; // 活跃的 Channel 列表
         ToDoList pendingFunctors_; // 存储loop需要执行的所有回调操作(上层给定需要执行回调函数向量)  这个向量
         MutexLock mutex_; // 互斥锁，保护共享资源
-        const int KPollTimeMs = 10000;// Poll方法调用的超时时间
+        const int KPollTimeMs = 10000;// Poll方法调用的超时时间(实际上是设置的epoll_wait)
 };
 }
 #endif

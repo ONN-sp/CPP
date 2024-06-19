@@ -803,3 +803,8 @@
    //节点20的最大贡献值=20+15=35,而其最大路径和=15+7+20=42
    ```
 3. <mark>利用最大贡献值是解本题的关键</mark>
+
+
+
+# 分割回文串
+1. `s.substr(int pos, int len)`:返回一个以`pos`开始的`len`个字符的拷贝的子串.若`pos`的值超过了`string s`的大小,则`substr`函数会抛出一个`out_of_range`异常;若`pos+n`的值超过了`string s`的大小,则`substr`会调整`n`的值,只拷贝到`string s`的末尾

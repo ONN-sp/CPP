@@ -1,14 +1,15 @@
 #include "Epoller.h"
 #include <cassert>
 #include <cstring>
+#include <iostream>
 #include <sys/epoll.h>
 #include <vector>
 #include <map>
 #include <memory>
 #include <unistd.h>
-#include "Channel.h"
+#include "../Util/Channel.h"
 #include <cerrno>
-#include "logging.h"
+#include "../Logging/logging.h"
 
 using namespace tiny_muduo;
 
@@ -41,6 +42,7 @@ Timestamp Epoller::Poll(int timeoutMs, Channels& active_channels) {
         std::cout << "Epoller::poll" << std::endl;//TODO:modify?
     }
   }
+  return now;
 }
 
 int Epoller::EpollWait(int timeout) {
@@ -67,7 +69,7 @@ void Epoller::RemoveChannel(Channel* channel) {
   assert(state == ChannelState::kDeleted || state == ChannelState::kAdded);
   // 如果 Channel 处于已添加状态，则将其从 epoll 实例中删除
   if (state == ChannelState::kAdded) {// 从epoll树上中删除,只能是kAdded状态
-    UpdateChannel(EPOLL_CTL_DEL, channel);
+    Update(EPOLL_CTL_DEL, channel);
   }
   // 将 Channel 的状态设置为新建状态，并从 channels_ 容器中移除
   channel->SetChannelState(ChannelState::kNew);

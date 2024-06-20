@@ -1,7 +1,9 @@
-#include "../Base/Timerstamp.h"
+#include "../Base/Timestamp.h"
 #include <vector>
 #include <iostream>
 #include <array>
+
+using namespace tiny_muduo;
 
 void passByConstReference(const Timestamp& x)
 {

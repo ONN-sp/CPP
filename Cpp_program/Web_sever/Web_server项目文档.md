@@ -92,7 +92,7 @@
    * `time()`精度低,`ftime()`已被废弃,`clock_gettime()`精度高但开销更大
    * `sleep() alarm() usleep()`在实现时有可能用了`SLGALRM`信号,在多线程编程中处理信号相当棘手
    * `nanosleep() clock_nanosleep()`是线程安全的,但在非阻塞网络编程中,绝对不能用让线程挂起的方式来等待一段时间,这样一来程序会失去响应
-   * `timerfd_create()/timerfd_gettime()/timerfd_settime()`把时间变成了一个文件描述符,该"文件"在定时器超时的那一刻变得可读,这样就能方便的融入`select() poll() epoll()`.此定时方法本身不会挂起程序,它是否阻塞取决于`recv()`,因为它可读时就代表定时完成,这有点像时间回调函数
+   * `timerfd_create()/timerfd_gettime()/timerfd_settime()`把时间变成了一个文件描述符,该"文件"在定时器超时的那一刻变得可读(即定时完成时就会触发一个可读事件),这样就能方便的融入`select() poll() epoll()`.此定时方法本身不会挂起程序,它是否阻塞取决于`recv()`,因为它可读时就代表定时完成,这有点像时间回调函数
 5. UTC(协调世界时)是全球标准的时间尺度,用来同步世界各地的时钟.UTC时间是没有时区的时间标尺,全球的时区偏移量都是基于UTC时间的,如:北京时间为UTC+8,美国东部时间为UTC-5
 6. `std::tm`结构体:
    ```C++
@@ -115,6 +115,7 @@
 9. `TimerId`是定时器的唯一标识符,用于区分不同的定时器.在`Muduo`中,每个定时器都有一个唯一的`TimerId`,它由定时器的指针和定时器的序号两部分组成.定时器的指针用于定位定时器在`TimerQueue`中的位置,而定时器的序号则用于在多个定时器具有相同到期时间时进行排序
 10. `std::pair<Timestamp, Timer*>`:为了处理两个到期时间相同的情况,这里使用`std::pair<Timestamp, Timer*>`作为`std::set`的`key`,这样就可以区分到期时间形相同的定时器
 11. `TimerQueue`的成员函数只在其所属的I/O线程调用,因此不用加锁.如:借助`EventLoop::RunOneFunc`可以使`TimeQueue::addTimer`变成线程安全的,即无需用锁.办法是`loop_->RunOneFunc([this, timer](){this->AddTimerInLoop(timer);})`,即把定时器实际的工作转移到所属的I/O线程中去了
+12. 在实际编程任务中,一定不能用`sleep()`或类似的方法来让程序原地停留等待,这会让程序失去响应.对于定时任务,我们应该把它变成一个特定的事件(`timerfd_create()/timerfd_gettime()/timerfd_settime()`将其变成了一个可读事件),到定时时间就会触发一个相应定时完成后需要完成的处理函数(即回调)
 # std::pair
 1. `std::pair`作用是将两个数据组合成一个数据,这两个数据可以是同一类型或不同类型,如:
    ```C++
@@ -176,7 +177,23 @@
 4. 类比`tiny_httpserver`来理解这三者的关系:(以`tiny_httpserver`主线程为例)`EventLoop`就是`tiny_httpserver`中主线程的事件循环(`while(1)`);`Poller`负责底层的事件多路复用,通过调用系统调用如`epoll_wait`来监听文件描述符上的事件;`Channel`封装了文件描述符及其事件处理函数,负责具体的事件处理逻辑(`Channel`就是主线程调用的就绪事件的对应的执行函数(如:`acceptConn`))
 5. 一个线程<=>一个`EventLoop`,一个`EventLoop`可能涉及多个文件描述符
 # enum与enum class的区别
-1. 
+1. 这是两种不同的枚举类型声明方式:
+   * `enum class`引入了作用域,枚举值被限制在枚举类型的作用域内,不会自动转换为整数.因此,枚举值必须显式地指定为枚举类型的成员:
+      ```C++
+      enum class ChannelState { Open, Closed };
+      ChannelState state = ChannelState::Open;
+      // 使用枚举值时必须指定作用域
+      if (state == ChannelState::Open) { /* ... */ }
+      ```
+   * `enum`没有引入新的作用域,枚举值可以直接被用作整数.在枚举类型的作用域外部,枚举值可以隐式地转换为整数:
+      ```C++
+       enum ChannelState { Open, Closed };
+      ChannelState state = Open;  // 不需要指定作用域(即不需要ChannelState::)
+      // 在作用域外部，枚举值可以隐式转换为整数
+      if (state == Open) { /* ... */ }
+      ```
+   * 使用`enum class`可以提供更好的封装和名称空间隔离,避免命名冲突,并且需要显式地进行枚举值的类型转换
+   * 使用传统的`enum`保留了与`C`语言风格枚举相同的行为,不具备封装性和名称空间隔离,并且允许隐式转换为整数
 # Channel
 1. 活跃的`Channel`<=>这个`Channel`绑定的文件描述符有就绪事件
 2. 一个`Channel`<=>一个文件描述符
@@ -237,6 +254,112 @@
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
 3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
+
+
+
+# Cmake的学习
+1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
+   ```txt
+   cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0
+
+   project(Timestamp_test CXX)# 定义了项目的名称为 WebServer，并且项目的主要编程语言是 C++
+
+   include_directories(# 指定了编译器在查找头文件时应搜索的目录
+   ../Base # 上一级文件夹下的Base目录  因为Base文件夹在CMakeLists.txt的上一级目录下,所以表示称../Base
+   )
+
+   aux_source_directory(Tests SRC_LIST1)# 查找当前目录下的所有源文件，并将名称保存到变量 SRC_LIST1
+   add_executable(Timestamp_test Timestamp_test.cpp ${SRC_LIST1})# 指定生成目标
+   ```
+2. 利用`CMakeLists.txt`生成当前目录的静态库:
+   ```txt
+   cmake_minimum_required(VERSION 3.0)
+
+   # 设置项目名称
+   project(PollerLib)
+
+   # 添加Base文件夹中的头文件到搜索路径中
+   include_directories(../Base)
+
+   # 添加当前目录到搜索路径中
+   include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+
+   # 定义源文件列表
+   # 这里列出了所有要包含到静态库中的 .cpp 文件
+   set(POLLER_SOURCES
+      DefaultPoller.cpp
+      Epoller.cpp
+      Poller.cpp
+   )
+
+   # 添加静态库目标 webserver_poller
+   add_library(webserver_poller ${POLLER_SOURCES})
+
+   # 标准库不需要链接
+
+   # 安装目标文件（静态库）
+   # 将构建的静态库安装到 /usr/local/include/lib 目录
+   install(TARGETS webserver_poller DESTINATION lib)
+
+   # 安装头文件
+   # 获取当前目录下所有以 .h 结尾的头文件并安装到 /usr/local/include/poller 目录
+   file(GLOB HEADERS "*.h")
+   install(FILES ${HEADERS} DESTINATION include/Poller)
+   ```
+   构建了`webserver_poller`静态库,在其它`CMakeLists.txt`中要链接这个库的时候,直接`target_link_libraries(webserver_util webserver_poller)`:将指定目标`webserver_util`链接到库`webserver_poller`,需要注意的是,这个指定目标可以是可执行文件、静态库或动态库,即这个函数作用是可执行文件、静态库或动态库与其它库进行链接
+3. `cmake ..`:这一步会根据`CMakeLists.txt`文件生成构建文件
+4. `make`:这一步会实际编译源代码(如果`CMakeLists.txt`中有构建静态库,则这一步也会构建静态库)
+5. `make install`:如果`CMakeLists.txt`中有安装静态库和头文件的步骤,则这一步会将生成的静态库和头文件安装到指定的目标目录(`/usr/local/include/lib`和`/usr/local/include/poller`目录
+# Shell脚本
+1. 可以将`cmake`的构建过程用`Shell`脚本给出,如:
+   ```bash
+   # #!/bin/sh 制定了脚本解释器为/bin/sh,即使用Shell解释器来执行脚本内容  /bin/bash  就是用Bash解释器来执行脚本内容
+   #!/bin/sh   
+
+   # 这行命令启用了脚本的调试模式,它会使Shell在执行每一条命令之前,先打印出该命令及其参数,这样可以在执行过程中看到具体执行的命令,有助于调试
+   set -x      
+
+   if [ ! -d "./build" ]; then  # 检查当前目录下是否存在 ./build,不存在就创建  build用于存放cmake产生的中间文件
+   mkdir ./build 
+   fi
+   if [ ! -d "./logfiles" ]; then  # 检查当前目录下是否存在 ./logfiles,不存在就创建  logfiles存储的是输出的日志  logfile.cpp中给定了默认的日志输出路径,就是logfiles文件夹
+   mkdir ./logfiles 
+   fi
+   cd ./build
+   cmake .. 
+   make
+   make install
+   ```
+2. <span style="color:red;"> 在`Windows`上编写完脚本,拷贝到`linux`上执行时,发现会报错:
+   ```
+   $'\r': command not found
+   invalid option: set: usage: set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]
+   build.sh: line 10: syntax error: unexpected end of file
+   ```
+   其实代码看上去一点错没有,但是会报错.这些问题通常与脚本的文本格式有关,特别是换行符的问题,可能是由于不同操作系统之间的转换造成的,为了解决这个脚本的换行符的格式,即将文件中的`\r\n`转换为`\n`,从而消除换行符问题:
+   ```bash
+   sed -i 's/\r$//' build.sh
+   ```
+3. <mark>在本项目中,我们对每个(`Base  Poller  Util  Timer  Http  Logging`)文件夹都写了自动化`build.sh`脚本,而`build.sh`脚本相当于对`CMakeLists`执行`cmake`命令,即:`cmake ..  make  make install`.除了测试程序(`tests`目录),其它文件夹(`Base  Poller  Util  Timer  Http  Logging`)执行脚本后会在`/usr/local/include/lib`中生成对应的静态库(不会生成可执行文件),然后在测试文件夹下的`CMakeLists.txt`直接调用静态库就行,而不用一个一个的包括源文件.测试程序(`tests`目录)中的`CMakeLists.txt`执行后是直接在目录中生成可执行文件</mark>
+4. 本项目中测试程序中直接调用静态库,如`Timestamp_test.cpp`测试程序:
+   ```txt
+   cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0
+
+   project(Test CXX)
+
+   add_executable(Timestamp_test Timestamp_test.cpp)# 指定生成目标
+   target_link_libraries(Timestamp_test webserver_base)
+   ```
+5. `build.sh`脚本文件<=>手动在`CMakeLists.txt`的文件夹下执行以下命令:
+   ```bash
+   mkdir build
+   cd build
+   cmake ..
+   make
+   make install
+   ```
+6. `build.sh`的执行:`sudo bash build.sh`
+
 
 
 

@@ -23,14 +23,14 @@ class Timestamp {
     }
     std::string ToFormattedDefaultLogString() const;
     std::string ToFormattedString() const;
+    static Timestamp Now();
+    static Timestamp AddTime(const Timestamp&, double);
     int64_t microseconds() const ;
     int64_t seconds() const ;
-    static Timestamp Now() ;
-    Timestamp AddTime(const Timestamp& timestamp, double add_seconds);
     std::string FormatTime(const char* format) const;//将micro_seconds_表示的时间点格式化为指定格式的字符串,并返回该字符串
   private:
     TimePoint micro_seconds_;//时间的微妙表示
-    const int kMicrosecond2Second = 1000*1000;//us->s  
+    static const int kMicrosecond2Second = 1000*1000;//us->s  
 };
 }
 #endif

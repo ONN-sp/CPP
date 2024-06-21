@@ -2,9 +2,10 @@
 #ifndef CHANNEL_H
 #define CHANNEL_H
 
-#include "../Base/NonCopyAble.h"
+#include "../../Base/NonCopyAble.h"
+#include "EventLoop.h"
 #include <functional>
-#include "../Base/callback.h"
+#include "../../Base/callback.h"
 
 //Channel理解为通道,封装了sockfd和其感兴趣的事件  如EPOLLIN(读)、EPOLLOUT(写)事件  还绑定了poller返回的具体事件
 namespace tiny_muduo{
@@ -16,7 +17,7 @@ namespace tiny_muduo{
     };
     class Channel : public NonCopyAble{
         public:
-        Channel(EventLoop* loop, int fd);
+        Channel(EventLoop*, const int&);
         ~Channel();
         //根据recv_events_的值分别调用不同的处理事件
         void HandleEvent();

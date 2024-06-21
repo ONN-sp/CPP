@@ -274,42 +274,53 @@
 2. 利用`CMakeLists.txt`生成当前目录的静态库:
    ```txt
    cmake_minimum_required(VERSION 3.0)
-
    # 设置项目名称
-   project(PollerLib)
-
-   # 添加Base文件夹中的头文件到搜索路径中
-   include_directories(../Base)
-
+   project(NetLib)
+   # 设置默认的构建类型为 Release，如果用户未指定
+   # Release:在 Release 模式下，编译器会对代码进行各种优化，以提高运行时性能。这些优化包括函数内联、循环展开、删除未使用的代码等
+   # 在 Debug 模式下，编译器会生成完整的调试信息，使得可以在调试器中查看源代码、变量值、堆栈信息等
+   if(NOT CMAKE_BUILD_TYPE)
+      set(CMAKE_BUILD_TYPE "Release")
+   endif()
    # 添加当前目录到搜索路径中
    include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-
    # 定义源文件列表
    # 这里列出了所有要包含到静态库中的 .cpp 文件
-   set(POLLER_SOURCES
-      DefaultPoller.cpp
-      Epoller.cpp
-      Poller.cpp
+   set(NET_SOURCES
+      ./Poller/DefaultPoller.cpp
+      ./Poller/Epoller.cpp
+      ./Poller/Poller.cpp
+      ./Timer/Timer.cpp
+      ./Timer/TimerQueue.cpp
+      ./Util/Channel.cpp
+      ./Util/CurrentThread.cpp
+      ./Util/EventLoop.cpp
    )
-
    # 添加静态库目标 webserver_poller
-   add_library(webserver_poller ${POLLER_SOURCES})
-
+   add_library(webserver_net ${NET_SOURCES})
+   target_link_libraries(webserver_net webserver_base)#链接到webserver_base库
    # 标准库不需要链接
-
    # 安装目标文件（静态库）
    # 将构建的静态库安装到 /usr/local/include/lib 目录
-   install(TARGETS webserver_poller DESTINATION lib)
-
+   install(TARGETS webserver_net DESTINATION lib)
    # 安装头文件
-   # 获取当前目录下所有以 .h 结尾的头文件并安装到 /usr/local/include/poller 目录
+   # 获取当前目录下所有以 .h 结尾的头文件并安装到 /usr/local/include/webserver 目录
    file(GLOB HEADERS "*.h")
-   install(FILES ${HEADERS} DESTINATION include/Poller)
+   install(FILES ${HEADERS} DESTINATION include/webserver/Net)
    ```
    构建了`webserver_poller`静态库,在其它`CMakeLists.txt`中要链接这个库的时候,直接`target_link_libraries(webserver_util webserver_poller)`:将指定目标`webserver_util`链接到库`webserver_poller`,需要注意的是,这个指定目标可以是可执行文件、静态库或动态库,即这个函数作用是可执行文件、静态库或动态库与其它库进行链接
 3. `cmake ..`:这一步会根据`CMakeLists.txt`文件生成构建文件
 4. `make`:这一步会实际编译源代码(如果`CMakeLists.txt`中有构建静态库,则这一步也会构建静态库)
-5. `make install`:如果`CMakeLists.txt`中有安装静态库和头文件的步骤,则这一步会将生成的静态库和头文件安装到指定的目标目录(`/usr/local/include/lib`和`/usr/local/include/poller`目录
+5. `make install`:如果`CMakeLists.txt`中有安装静态库和头文件的步骤,则这一步会将生成的静态库和头文件安装到指定的目标目录(`/usr/local/lib`和`/usr/local/include/webserver`目录
+6. 通过链接静态库进行编译:
+   ```txt
+   cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0
+   project(Test CXX)
+   add_executable(Timestamp_test Timestamp_test.cpp)# 指定生成目标
+   target_link_libraries(Timestamp_test webserver_base)
+   ```
+   `target_link_libraries`不需要显示指定库的位置,因为`CMake`会自动查找并链接目标所需的库,它默认会搜索几个标准的库搜索路径,如:`/usr/lib    /usr/local/lib`等
+7. <mark>为了合理实现可以相互调用静态库的方法写`CMakeLists.txt`,(前提假设:下层不能调用上层,上层可以调用下层,相同层之间可能会相互调用)我们必须相同层次的目录不能单独生成静态库,即想象成网络通信时,就是相同层不要单独构建一个库,需要把相同层的源文件构建在同一个库中.如果把相同层构建为两个不同的库,这可能是完成不了的,比如:`Timer`目录文件会调用`Util`中的文件,而`Util`文件也会调用`Timer`文件,所以此时就不知道怎么构建库了,因此对于相同层我们应该构建在一个库中.本项目,我们假定了三层,一层为底层`webserver_base`(包括`./Base/Logging`和`Base`)库,第二层为网络层`webserver_net`库(包括`Poller Timer Util`),第三层为应用层`webserver_http`(`Http`)</mark>
 # Shell脚本
 1. 可以将`cmake`的构建过程用`Shell`脚本给出,如:
    ```bash

@@ -27,7 +27,7 @@ int64_t Timestamp::seconds()const{//返回当前秒数
 }
 
 Timestamp Timestamp::Now(){//返回当前时间
-    return Timestamp(Clock::now());
+  return Timestamp(Clock::now());
 }
 
 Timestamp Timestamp::AddTime(const Timestamp& timestamp, double add_seconds){//返回增加指定秒数后的时间

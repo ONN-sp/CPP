@@ -1,7 +1,10 @@
 #include "EventLoop.h"
 #include "CurrentThread.h"
 #include <cassert>
-#include "MutexLock.h"
+#include <signal.h>
+#include <sys/eventfd.h>
+#include <iostream>
+#include "../Poller/Epoller.h"
 
 using namespace tiny_muduo;
 
@@ -21,7 +24,7 @@ EventLoop::EventLoop()
         : running_(false),
           quit_(false),
           tid_(CurrentThread::tid()),//获取当前线程ID
-          epoller_(std::make_unique<Epoller>()),//创建Epoller对象,用于I/O复用
+          epoller_(std::make_unique<Epoller>(this)),//创建Epoller对象,用于I/O复用
           wakeup_fd_(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),//创建 eventfd,用于线程间的唤醒
           wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)),//创建wakeup_fd_对应的Channel对象   
           timer_queue_(std::make_unique<TimerQueue>(this)),// 创建TimerQueue,用于管理定时器
@@ -44,7 +47,7 @@ bool EventLoop::IsInThreadLoop(){//判断当前EventLoop对象是否在自己的
     return CurrentThread::tid() == tid_; 
 }
 
-void EventLoop::Loop() {
+void EventLoop::loop() {
     assert(IsInThreadLoop()); // 确保当前线程是事件循环所在的线程
     running_ = true; // 标志事件循环开始运行
     quit_ = false;// 是否退出loop
@@ -106,7 +109,7 @@ void EventLoop::doPendingFunctors() {
 
 void EventLoop::wakeup(){
     uint64_t one = 1;
-    ssize_t n = ::wirte(wakeup_fd_, &one, sizeof(one));//唤醒是用wirte实现的,这样就不会让epoll_wait阻塞了
+    ssize_t n = ::write(wakeup_fd_, &one, sizeof(one));//唤醒是用wirte实现的,这样就不会让epoll_wait阻塞了
     if(n!= sizeof(one))
         std::cout << "wakeup error" << std::endl;//TODO:modify?
 }
@@ -119,6 +122,6 @@ void EventLoop::RemoveChannel(Channel* channel){
     epoller_->RemoveChannel(channel);
 }
 
-void EventLoop::hasChannel(Channel* channel){
-    epoller_->hasChannel(channel);
+bool EventLoop::hasChannel(Channel* channel){
+    return epoller_->hasChannel(channel);
 }

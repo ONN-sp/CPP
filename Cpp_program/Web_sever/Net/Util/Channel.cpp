@@ -1,6 +1,7 @@
 #include "Channel.h"
 #include <sys/poll.h>
 #include <sys/epoll.h>
+#include <iostream>
 
 using namespace tiny_muduo;
 
@@ -10,7 +11,7 @@ Channel::Channel(EventLoop* loop, const int& fd)
       events_(0),
       recv_events_(0),
       tied_(false),
-      state_(kNew) {}
+      state_(ChannelState::kNew) {}
       
 Channel::~Channel() {}
 

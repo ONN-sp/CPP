@@ -1,7 +1,9 @@
 #include "TimerQueue.h"
 #include "../Util/Channel.h"
+#include "../Util/EventLoop.h"
 #include <cassert>
 #include <cstring>
+#include <iostream>
 
 using namespace tiny_muduo;
 
@@ -47,7 +49,7 @@ void TimerQueue::ResetTimer(Timer* timer) {
 //重置所有需要重复的定时器,并将它们重新插入到定时器集合中
 void TimerQueue::ResetTimers(){
     for(auto& timerpair:active_timers_){
-        if(timer->repeat()){
+        if((timerpair.second)->repeat()){
             (timerpair.second)->Restart(Timestamp::Now());
             Insert(timerpair.second);
         }
@@ -55,8 +57,8 @@ void TimerQueue::ResetTimers(){
             delete timerpair.second;
     }
     //如果还有其它定时器,重置最近的一个定时器
-    iof(!timers_.empty()){
-        ResetTimer(timers_begin()->second);
+    if(!timers_.empty()){
+        ResetTimer(timers_.begin()->second);
     }
 }
 
@@ -75,6 +77,7 @@ void TimerQueue::AddTimerInLoop(Timer* timer){
     if (reset_instantly) {
         ResetTimer(timer);
 }
+}
 
  //处理定时器事件
 void TimerQueue::HandleRead(){
@@ -84,7 +87,7 @@ void TimerQueue::HandleRead(){
     //找到所有到期的定时器
     auto end = timers_.lower_bound(TimerPair(now, nullptr));// 查找timers_中第一个不小于当前时间的定时器  "<"运算符在timestamp中重载了的
     active_timers_.insert(active_timers_.end(), timers_.begin(), end);// 在active_timers_.end()定时器之前插入timers_.begin()到end的所有定时器元素(timers_中是有序的)   将所有到期的定时器(从集合开始到end迭代器之间的定时器)插入到active_timers_中
-    timers_.erase(timers_begin(), end); // 从timers_集合中移除这些到期的定时器,避免重复处理
+    timers_.erase(timers_.begin(), end); // 从timers_集合中移除这些到期的定时器,避免重复处理
     //运行所有到期的定时器的回调函数  定时完成<=>到期,即调用回调函数
     for(const auto&timerpair:active_timers_)
         timerpair.second->Run();

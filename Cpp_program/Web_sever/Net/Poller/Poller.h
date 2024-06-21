@@ -3,15 +3,16 @@
 #define POLL_H
 #include <vector>
 #include <unordered_map>
-#include "../Base/Timestamp.h"
-#include "../Base/NonCopyAble.h"
+#include "../../Base/Timestamp.h"
+#include "../../Base/NonCopyAble.h"
+#include <memory>
 
 namespace tiny_muduo {
     class Channel;//前向声明
     class EventLoop;
     class Poller : public NonCopyAble {
     public:
-        using Channels = std::vector<Channel*>;//Channel容器
+        using Channels = std::vector<std::shared_ptr<Channel>>;
         Poller(EventLoop*);
         virtual ~Poller() = default;
         //给所有I/O复用(因为可能用select poll epoll)保留统一的接口

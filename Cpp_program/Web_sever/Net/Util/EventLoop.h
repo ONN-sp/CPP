@@ -2,14 +2,13 @@
 #define EVENTLOOP_H
 
 #include <vector>
-#include "./Base/NonCopyAble.h"
+#include "../../Base/NonCopyAble.h"
 #include <functional>
 #include <memory>
-#include "../Base/Timestamp.h"
+#include "../../Base/Timestamp.h"
 #include "../Timer/TimerQueue.h"
-#include "../Base/MutexLock.h"
+#include "../../Base/MutexLock.h"
 #include "Channel.h"
-#include "../Poller/Epoller.h"
 
 namespace tiny_muduo{
 class Epoller;
@@ -39,7 +38,7 @@ class EventLoop : public NonCopyAble{
         void RunOneFunc(BasicFunc);//执行一个任务
         void quit();//退出事件循环
     private:
-        void handleRead();//给eventfd返回的文件描述符wakeup_fd_绑定的事件进行回调
+        void HandleRead();//给eventfd返回的文件描述符wakeup_fd_绑定的事件进行回调
         void doPendingFunctors(); //执行上层回调
         bool running_; // 标志事件循环是否在运行
         bool quit_;// 标志事件循环是否退出 

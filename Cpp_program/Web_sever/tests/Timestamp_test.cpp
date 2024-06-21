@@ -45,7 +45,7 @@ void benchmark()
 
 int main()
 {
-  Timestamp now(Timestamp::Now());
+  Timestamp now(Timestamp::Now());//直接通过类名调用,而不用实例调用
   std::cout << now.ToFormattedString() << std::endl;//按%Y%m%d %H:%M:%S格式输出当前时间
   passByValue(now);
   passByConstReference(now);

@@ -3,9 +3,9 @@
 
 #include <functional>
 #include <utility>
-#include "../Base/Timestamp.h"
-#include "../Base/NonCopyAble.h"
-#include "../Base/Atomic.h"
+#include "../../Base/Timestamp.h"
+#include "../../Base/NonCopyAble.h"
+#include "../../Base/Atomic.h"
 
 namespace tiny_muduo{
     class Timer : public NonCopyAble{

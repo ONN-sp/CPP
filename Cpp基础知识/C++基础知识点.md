@@ -1310,7 +1310,7 @@ void Swap(AnyType &a, AnyType &b);
         int value;
     };
 
-    Example ex = 42;    // 隐式类型转换：int 到 Example
+    Example ex = 42;//Example ex = 42<=>隐式调用Example(2)    // 隐式类型转换：int 到 Example   转换成一个value=42的Example对象ex,这和Example ex3(42)的效果一样
     ex.display();       // 输出: Value: 42
     Example ex3(42);    // 隐式实例化,显示构造
     ex3.display();      // 输出: Value: 42
@@ -1327,6 +1327,7 @@ void Swap(AnyType &a, AnyType &b);
         int value;
     };
     ```
+    <mark>`explicit`关键字仅用于构造函数的声明中,表明该构造函数是显示的,不能用于隐式转换.这通常在头文件中指出.在实现文件中(通常为头文件对应的`.cpp`)定义这个构造函数不需要再次使用`explicit`关键字</mark>
 14. <mark>在编程中,类中的成员变量一般会在后面加一个`_`,如:`loop_   timerfd_`</mark>
 15. 类的前向声明:这种情况通常发生在类之间存在相互引用的情况下,`class className;`
     ```C++
@@ -1810,6 +1811,66 @@ int main() {
     ```
 # 友元(friend)
 1. 友元类允许另一个类访问它的私有(`private`)和保护(`protected`)成员
+
+
+# static
+1. <mark>`static`关键字只在类的声明(通常是头文件)中使用,用于指示某个成员是静态的(属于类,而不是实例).在实现文件中,编译器根据头文件中的声明,已经知道哪个成员是静态的,因此不需要再次声明:</mark>
+   ```C++
+   // MyClass.h
+    class MyClass {
+    public:
+        explicit MyClass(int x);  // 显式构造函数声明
+        static void staticFunction();  // 静态成员函数声明
+    };
+    // MyClass.cpp
+    #include "MyClass.h"
+    MyClass::MyClass(int x) {
+        // 显式构造函数定义
+    }
+    void MyClass::staticFunction(){
+        // 静态成员函数定义
+    }
+    ```
+2. <mark>在`C++`中静态成员函数与非静态成员函数有不同的调用方式.静态成员函数属于类本身,而不是类的任何特定实例,因此可以通过类名直接调用,而不需要类的实例:</mark>
+   ```C++
+   class MyClass {
+    public:
+        static void staticFunction() {
+            // 静态成员函数的实现
+            }
+        };
+    // 调用静态成员函数
+    MyClass::staticFunction();//MyClass::staticFunction() 直接通过类名 MyClass 来调用静态成员函数 staticFunction
+    ```
+3. <mark>类中的非静态成员变量、非静态成员函数是属于类的实例(对象)的,因此不能在类的静态成员函数的定义中直接访问非静态变量的</mark>:
+   ```C++
+   //a.h
+   class Myclass{
+    public:
+        static void func();
+    private:
+        int value = 20;
+   };
+
+   //a.cpp
+   void Myclass::func(){
+    std::cout << value << std::endl;//错误：无法访问非静态成员变量 value    
+    //只有将value设为static,才能在这Myclass::func中直接用value进行访问(可以不写成Myclass::value,因为这个函数定义前面已经给了域解析符)   std::cout << Myclass::value << std::endl;  也没错
+   }
+    ```
+# 内联函数
+1. 内联函数是一种特殊的函数,其特点是在每个调用点上直接展开函数体,而不是像普通函数一样进行函数调用.这样做的好处是可以减少函数调用的开销,特别是对于函数体较小、频繁调用的情况,可以提升程序的执行效率
+2. 内联函数通常在函数定义处声明为`inline`:
+   ```C++
+   inline int add(int a, int b) {
+    return a + b;
+   }
+   ```
+3. <span style="color:red;">在`C++`中,内联函数在类的外部还是不能通过类名和作用域解析运算符`::`来进行调用</span>
+4. <mark>想要在其它类中直接利用该类名+域解析符调用该类的成员函数,必须将该成员函数设为`static`</mark>
+
+
+
 
 
 

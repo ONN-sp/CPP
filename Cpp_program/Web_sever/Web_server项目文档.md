@@ -38,6 +38,7 @@
 2. `muduo`依赖于`boost`库
 3. <mark>`Muduo`的设计理念:每个`EventLoop`运行在一个独立的线程中,每个线程负责管理一组I/O事件,这就是`one (event) loop per thread`</mark>
 4. 主线程有一个`EventLoop`,负责接受连接(`accept`在主线程);每个工作线程运行一个独立的`EventLoop`,负责处理已经建立连接(主线程中建立了)上的I/O事件
+5. `muduo`日志库是`C++ stream`风格,这样用起来更自然,不必费心保持格式字符串和参数类型的一致性,可以随用随写,而且是类型安全的(?)
 # 定时器
 1. 计算机中的时钟不是理想的计时器,它可能会漂移或跳变
 2. `Linux`的获取当前时间的函数:
@@ -254,9 +255,11 @@
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
 3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
-
-
-
+# Logging
+1. `logstream.cpp logstream.h`:类比于`ostream.h`类,它们主要是重载了`<<`(本项目的日志库采用与`muduo`一样的`C++ stream`),此时`logstream`类就相当于`std::cout`,能用`<<`符号接收输入,`cout`是输出到终端,而`logstream`类是把输出保存到自己内部的缓冲区,可以让外部程序把缓冲区的内容重定向输出到不同目标,如:文件(对于日志输出,就是输出到本地文件中)、终端、`socket`
+2. <mark>`logstream`类使用了自定义的`FixedBuffer`类,通过预先分配的固定大小的缓冲区来存储日志数据(注意:`logstream.cpp logstream.h`并没有给出日志输出到哪个本地文件啥的,只是到一个预先分配的缓冲区里了),这样可以减少频繁的动态内存分配,提高性能</mark>
+3. `logStream`类里面有一个`Buffer`(`Buffer = FixedBuffer<kSmallSize>`)成员(就是`FixedBuffer`类的,不是`tiny_muduo::Buffer`类).该类主要负责将要记录的日志内容放到这个`Buffer`里面.包括字符串,整型、`double`类型(整型和`double`要先将之转换成字符型(`FormatInteger`和`snprintf(buf, sizeof(buf), "%g", num)`),再放到`buffer`里面).该类对这些类型都重载了`<<`操作符.这个`logStream`类不做具体的IO操作(`::recv ::send`)
+4. <mark>`Buffer = FixedBuffer<kSmallSize>`定义的`Buffer`相当高效,因为它是利用`memcpy()`复制数据的,而`gcc g++`编译器会直接将`memcpy()`展开为内联代码,提高了执行效率</mark>
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -351,7 +354,7 @@
    ```bash
    sed -i 's/\r$//' build.sh
    ```
-3. <mark>在本项目中,我们对每个(`Base  Poller  Util  Timer  Http  Logging`)文件夹都写了自动化`build.sh`脚本,而`build.sh`脚本相当于对`CMakeLists`执行`cmake`命令,即:`cmake ..  make  make install`.除了测试程序(`tests`目录),其它文件夹(`Base  Poller  Util  Timer  Http  Logging`)执行脚本后会在`/usr/local/include/lib`中生成对应的静态库(不会生成可执行文件),然后在测试文件夹下的`CMakeLists.txt`直接调用静态库就行,而不用一个一个的包括源文件.测试程序(`tests`目录)中的`CMakeLists.txt`执行后是直接在目录中生成可执行文件</mark>
+3. <mark>在本项目中,我们对`Net`目录和`Base`目录都写了自动化`build.sh`脚本,而`build.sh`脚本相当于对`CMakeLists`执行`cmake`命令,即:`cmake ..  make  make install`.除了测试程序(`tests`目录),其它文件夹(`Base  Net`)执行脚本后会在`/usr/local/lib`中生成对应的静态库(不会生成可执行文件),然后在测试文件夹下的`CMakeLists.txt`直接调用静态库就行,而不用一个一个的包括源文件.测试程序(`tests`目录)中的`CMakeLists.txt`执行后是直接在目录中生成可执行文件</mark>
 4. 本项目中测试程序中直接调用静态库,如`Timestamp_test.cpp`测试程序:
    ```txt
    cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0

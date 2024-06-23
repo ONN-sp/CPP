@@ -1831,7 +1831,7 @@ int main() {
         // 静态成员函数定义
     }
     ```
-2. <mark>在`C++`中静态成员函数与非静态成员函数有不同的调用方式.静态成员函数属于类本身,而不是类的任何特定实例,因此可以通过类名直接调用,而不需要类的实例:</mark>
+2. <mark>在`C++`中静态成员函数与非静态成员函数有不同的调用方式.静态成员函数属于类本身,而不是类的任何特定实例,因此可以通过类名直接调用,而不需要类的实例(静态成员也一样,可以直接用类名+域解析符调用):</mark>
    ```C++
    class MyClass {
     public:
@@ -1857,6 +1857,35 @@ int main() {
     std::cout << value << std::endl;//错误：无法访问非静态成员变量 value    
     //只有将value设为static,才能在这Myclass::func中直接用value进行访问(可以不写成Myclass::value,因为这个函数定义前面已经给了域解析符)   std::cout << Myclass::value << std::endl;  也没错
    }
+    ```
+4. 在类中,`static`数据成员是属于类的,而不是类的实例的;因此`static`数据成员不允许在类的声明或定义过程中被初始化(注意初始化和赋值不同),只能在类的外部被初始化:
+   ```C++
+    1.
+    //C++11 仅限于 const 整型或枚举类型的静态成员能在类中初始化
+    class MyClass {
+    public:
+        static int a = 20; // 错误：非 `const` 静态数据成员不能在类内初始化
+        static const int b = 30; // 允许在类内初始化 `const` 整型或枚举类型的静态成员
+    };
+    // 必须在类的外部初始化静态数据成员
+    int MyClass::a = 20; // 正确：在类外部初始化非 `const` 静态数据成员
+    const int MyClass::b; // 正确：类外部也需要定义 `const` 静态成员，但不需要再次赋值
+    2. 
+    //C++17 引入了内联变量（inline variable）,它的静态成员也可以在类中直接初始化
+    class MyClass {
+    public:
+        inline static int a = 20; // 允许：C++17 引入的内联静态成员初始化
+        inline static double b = 3.14; // 允许：内联静态成员初始化
+    };
+    3.
+    class Example {
+    public:
+        Example() {
+            staticValue = 20; //这是修改静态变量,不是初始化,所以是允许的
+        }
+        static int staticValue; 
+    };
+    int Example::staticValue; //外部初始化  不给值,就是初始化为0
     ```
 # 内联函数
 1. 内联函数是一种特殊的函数,其特点是在每个调用点上直接展开函数体,而不是像普通函数一样进行函数调用.这样做的好处是可以减少函数调用的开销,特别是对于函数体较小、频繁调用的情况,可以提升程序的执行效率

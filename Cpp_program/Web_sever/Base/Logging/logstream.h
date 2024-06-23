@@ -32,8 +32,8 @@ namespace tiny_muduo{
             static void CookieStart();// 静态函数，缓冲区开始使用时的回调函数，可以自定义 比如记录日志
             static void CookieEnd();// 静态函数，缓冲区结束使用时的回调函数，可以自定义 比如清理资源
             void Append(const char* input_data, int length){//将数据加到缓冲区  length表示待加数据的长度
-                if(writeablebytes(0 < length)){
-                    length = writaeblebytes();//如果数据超过可写字节数,则截断
+                if(writeablebytes() < length){
+                    length = writeablebytes();//如果数据超过可写字节数,则截断
                 }
                 memcpy(cur_, input_data, length);//将数据复制到当前指针位置
                 cur_ += length;//更新当前指针位置
@@ -51,7 +51,7 @@ namespace tiny_muduo{
             const char* data() const {return buf_;}//获取缓冲区数据指针
             int len() const {return static_cast<int>(cur_ - buf_);}//获取缓冲区长度
             int writeablebytes() const {return static_cast<int>(end() - cur_);}//获取可写字节数
-            const char* current() const {return cur_;}//获取当前指针位置
+            char* current() const {return cur_;}//获取当前指针位置
             const char* end() const {return buf_+sizeof(buf_);}//获取缓冲区结束位置指针
         private:
             void (*cookie_)();//cookie函数指针
@@ -80,7 +80,7 @@ namespace tiny_muduo{
                     int remainder = static_cast<int>(num%10);//获取个位值
                     *(now++) = zero[remainder];//根据数字转换表digits+9找到对应的字符
                     num /= 10;//去掉最后一位
-                }while(num!=0)
+                }while(num!=0);
                 if(negative)//如果为负数,则添加负号
                     *(now++) = '-';
                 *now = '\0';

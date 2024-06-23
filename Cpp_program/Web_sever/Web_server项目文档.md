@@ -45,7 +45,7 @@
    ```C++
    1. 
    time_t time(time_t* tloc);//返回从1970年1月1日到当前时间的秒数.若tloc!=nullptr,则time()会将当前时间保存到tloc指向的内存位置;若为nullptr,则返回时间值
-   //time_t表示时间的基础类型,通常被定义为一个整数类型(__int64),用于存储自197年1月1日00:00:00 UTC起经过的秒数
+   //time_t表示时间的基础类型,通常被定义为一个整数类型(__int64),用于存储自1970年1月1日00:00:00 UTC起经过的秒数
    2. int ftime(struct timeb* tp);//将当前时间的秒数和毫秒数存储在tp中,比time()更精细
    struct timeb {
     time_t time;       // 从 Unix 纪元开始的秒数
@@ -256,10 +256,43 @@
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
 3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
 # Logging
-1. `logstream.cpp logstream.h`:类比于`ostream.h`类,它们主要是重载了`<<`(本项目的日志库采用与`muduo`一样的`C++ stream`),此时`logstream`类就相当于`std::cout`,能用`<<`符号接收输入,`cout`是输出到终端,而`logstream`类是把输出保存到自己内部的缓冲区,可以让外部程序把缓冲区的内容重定向输出到不同目标,如:文件(对于日志输出,就是输出到本地文件中)、终端、`socket`
+## logstream
+1. `logstream.cpp logstream.h`:类比于`ostream.h`类,它们主要是重载了`<<`(本项目的日志库采用与`muduo`一样的`C++ stream`),此时`logstream`类就相当于`std::cout`,能用`<<`符号接收输入,`cout`是输出到终端,而`logstream`类是把输出保存到自己内部的缓冲区,可以让外部程序把缓冲区的内容重定向输出到不同目标,如:文件(对于日志输出,就是输出到本地文件中)、终端、`socket`(即`logstream`流对象是输出到`buffer (Buffer = FixedBuffer<kSmallSize>`)`的)
 2. <mark>`logstream`类使用了自定义的`FixedBuffer`类,通过预先分配的固定大小的缓冲区来存储日志数据(注意:`logstream.cpp logstream.h`并没有给出日志输出到哪个本地文件啥的,只是到一个预先分配的缓冲区里了),这样可以减少频繁的动态内存分配,提高性能</mark>
 3. `logStream`类里面有一个`Buffer`(`Buffer = FixedBuffer<kSmallSize>`)成员(就是`FixedBuffer`类的,不是`tiny_muduo::Buffer`类).该类主要负责将要记录的日志内容放到这个`Buffer`里面.包括字符串,整型、`double`类型(整型和`double`要先将之转换成字符型(`FormatInteger`和`snprintf(buf, sizeof(buf), "%g", num)`),再放到`buffer`里面).该类对这些类型都重载了`<<`操作符.这个`logStream`类不做具体的IO操作(`::recv ::send`)
-4. <mark>`Buffer = FixedBuffer<kSmallSize>`定义的`Buffer`相当高效,因为它是利用`memcpy()`复制数据的,而`gcc g++`编译器会直接将`memcpy()`展开为内联代码,提高了执行效率</mark>
+4. <mark>`Buffer = FixedBuffer<kSmallSize>`定义的`Buffer`相当高效,因为它是利用`memcpy()`复制数据的,而`gcc`编译器会直接将`memcpy()`展开为内联代码,提高了执行效率</mark>
+5. <mark>`gcc`内置函数不是`C`标准定义的,而是由编译器自定义的.内置函数(`memcpy() strrchr()`等)都是`inline`的</mark>
+6. 流对象的形象理解:想象水流通过一根管道,水代表数据,管道代表流对象.数据在管道中流动,无论水的来源(例如水龙头、湖泊还是去向(例如水槽、河流),你都可以通过管道来运输水.在`C++`中,`std::cin`就像从键盘输入的管道,而`std::cout`就像输出到控制台的管道.对于`logstream`中的流对象,就是输出到`Buffer = FixedBuffer<kSmallSize>`这样的`buffer`中的管道
+## logfile
+1. 一个日志库大体分为前端和后端.前端是供应用程序使用的接口,并生成日志消息;后端则负责把日志消息写到目的地.`logfile`类是`webserver`日志库后端的实际管理者,主要负责日志的滚动
+2. 为了在写日志的时候更高效,写日志到缓冲中使用非加锁的`::fwrite_unlocked`函数,因此要求外部单线程处理或加锁,保证缓冲区日志不会发生交织混乱
+3. `fwrite_unlocked`比`fwrite`更高效
+4. 对于日志滚动,其实就是重新生成日志文件,再向里面写数据;本项目有两种情况日志滚动:
+   * 当日志消息文件大小达到设定值`rollSize_`就滚动
+   * 当到了新的一天,日志也会滚动
+5. 日志库不能每条消息都`flush`硬盘,更不能每条日志都`open/close`,这样性能开销太大.本项目定期(默认3秒)将缓冲区日志消息`flush`到硬盘
+6. 日志信息->`::fwirte_unlocked`写到`fp_`所代表的文件流对应的内部缓冲区中->`flush`到本地文件中
+7. 日志都在`./LogFiles/`文件夹中
+# logging
+1. 日志信息是有等级的,由低到高为:`DEBUG INFO WARN ERROR FATAL`:
+   ```C++
+   enum class Level{
+      DEBUG, // 调试信息级别
+      INFO,  // 普通信息级别
+      WARN,  // 警告信息级别
+      ERROR, // 错误信息级别
+      FATAL  // 致命错误信息级别
+   };
+
+   #define LOG_INFO \
+   if (LogLevel() <= tiny_muduo::Logger::Level::INFO) \
+    tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::INFO).stream()
+    //当输出的日志级别高于语句的日志级别(INFO),则打印日志(打印到屏幕)是个空操作,运行时开销接近0
+    ```
+2. 本项目的日志库的消息格式为:
+   ```s
+   日期  时间  微秒  线程ID   级别  源文件名 行号
+   ```
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

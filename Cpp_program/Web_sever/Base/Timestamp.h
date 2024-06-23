@@ -1,11 +1,11 @@
 #ifndef TINY_MUDUO_TIMESTAMP_H_
 #define TINY_MUDUO_TIMESTAMP_H_
 
-//使用C++11提供的std::chrono时间库
 #include <chrono>
 #include <string>
 #include <ctime>
 
+static const int kMicrosecond2Second = 1000*1000;//us->s 
 namespace tiny_muduo{
 class Timestamp {
   public:
@@ -27,10 +27,11 @@ class Timestamp {
     static Timestamp AddTime(const Timestamp&, double);
     int64_t microseconds() const ;
     int64_t seconds() const ;
+    static std::chrono::system_clock::time_point timestampToTimePoint(const Timestamp&);
+    static Timestamp timepointToTimestamp(const TimePoint&);
     std::string FormatTime(const char* format) const;//将micro_seconds_表示的时间点格式化为指定格式的字符串,并返回该字符串
   private:
-    TimePoint micro_seconds_;//时间的微妙表示
-    static const int kMicrosecond2Second = 1000*1000;//us->s  
+    TimePoint micro_seconds_;//时间的微妙表示 
 };
 }
 #endif

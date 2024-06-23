@@ -18,11 +18,11 @@ std::string Timestamp::ToFormattedString() const {
     return Timestamp::FormatTime("%Y%m%d %H:%M:%S") + "." + std::to_string(microseconds.count());//%Y:四位数的年份;%m:两位数的月份;%d:两位数的日期;%H:24小时制的小时数;%M:分钟数;%S:秒数
 }
 
-int64_t Timestamp::microseconds()const{//返回当前微秒数
+int64_t Timestamp::microseconds() const {//返回当前微秒数
     return std::chrono::duration_cast<Microseconds>(micro_seconds_.time_since_epoch()).count();
 }
 
-int64_t Timestamp::seconds()const{//返回当前秒数
+int64_t Timestamp::seconds() const {//返回当前秒数
     return std::chrono::duration_cast<std::chrono::seconds>(micro_seconds_.time_since_epoch()).count();
 }
 
@@ -33,6 +33,16 @@ Timestamp Timestamp::Now(){//返回当前时间
 Timestamp Timestamp::AddTime(const Timestamp& timestamp, double add_seconds){//返回增加指定秒数后的时间
     auto duration = Microseconds(static_cast<int64_t>(add_seconds * kMicrosecond2Second));//将指定的秒数转换为微秒数
     return Timestamp(timestamp.micro_seconds_ + duration);//<chrono>定义了std::chrono::time_point时间点类型和std::chrono::duration持续时间的直接相加操作
+}
+
+// 定义一个转换函数
+std::chrono::system_clock::time_point Timestamp::timestampToTimePoint(const Timestamp& ts) {
+    return std::chrono::system_clock::from_time_t(ts.seconds());
+}
+
+// 定义一个转换函数
+Timestamp Timestamp::timepointToTimestamp(const TimePoint& ts) {
+    return Timestamp(ts);
 }
 
 std::string Timestamp::FormatTime(const char* format) const {//将micro_seconds_表示的时间点格式化为指定格式的字符串,并返回该字符串

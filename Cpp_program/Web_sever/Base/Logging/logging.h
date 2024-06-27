@@ -69,7 +69,6 @@ class Logger : NonCopyAble{
                 LogStream stream_; // 日志流对象
         };
         std::unique_ptr<Implement> implement_; // 日志实现对象智能指针
-        static const int kLogLevelStringLength = 6; // 日志级别字符串的固定长度
 };
 }
 
@@ -79,7 +78,7 @@ tiny_muduo::Logger::Level LogLevel();
 void SetLogLevel(tiny_muduo::Logger::Level nowlevel);
 // 错误转字符串
 const char* ErrorToString(int err);
-// 日志输出宏定义：根据日志级别判断是否输出日志
+// 日志输出宏定义：根据日志级别判断是否输出日志   当使用宏,就会创建一个Logger对象,该对象在构造时会捕捉日志消息
 #define LOG_DEBUG \
   if (LogLevel() <= tiny_muduo::Logger::Level::DEBUG) \
     tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::DEBUG).stream()//如果当前日志级别比DEBUG小,才会执行DEBUG这个日志记录操作;如果比DEBUG大,那么就不会执行DEBUG这个日志记录(节省资源)
@@ -87,9 +86,12 @@ const char* ErrorToString(int err);
   if (LogLevel() <= tiny_muduo::Logger::Level::INFO) \
     tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::INFO).stream()
 #define LOG_WARN \
-  tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::WARN).stream()
+  if (LogLevel() <= tiny_muduo::Logger::Level::WARN) \
+    tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::WARN).stream()
 #define LOG_ERROR \
-  tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::ERROR).stream()
+  if (LogLevel() <= tiny_muduo::Logger::Level::ERROR) \
+    tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::ERROR).stream()
 #define LOG_FATAL \
-  tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::FATAL).stream()
+  if (LogLevel() <= tiny_muduo::Logger::Level::FATAL) \
+    tiny_muduo::Logger(__FILE__, __LINE__, tiny_muduo::Logger::Level::FATAL).stream()
 #endif

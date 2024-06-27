@@ -255,6 +255,8 @@
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
 3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
+4. `__thread`:
+5. 编译常量:
 # Logging
 ## logstream
 1. `logstream.cpp logstream.h`:类比于`ostream.h`类,它们主要是重载了`<<`(本项目的日志库采用与`muduo`一样的`C++ stream`),此时`logstream`类就相当于`std::cout`,能用`<<`符号接收输入,`cout`是输出到终端,而`logstream`类是把输出保存到自己内部的缓冲区,可以让外部程序把缓冲区的内容重定向输出到不同目标,如:文件(对于日志输出,就是输出到本地文件中)、终端、`socket`(即`logstream`流对象是输出到`buffer (Buffer = FixedBuffer<kSmallSize>`)`的)
@@ -291,8 +293,23 @@
     ```
 2. 本项目的日志库的消息格式为:
    ```s
-   日期  时间  微秒  线程ID   级别  源文件名 行号
+   日期 时间 微秒 线程ID 级别 写入的日志正文消息 - 源文件名:行号
    ```
+   ![](日志消息.png)
+3. 本项目的默认路径:`./webserver/tests/Logfiles/`
+4. 本项目的日志文件名:`LogFile_当前时间_微秒.log`
+5. 本项目的日志的使用方式(非异步):
+   ```C++
+   LOG_INFO << "AAA";
+   //LOG_INFO是一个宏，展开后为：muduo::Logger(__FILE__, __LINE__).stream() << "AAA";构造了一个匿名对象Logger，在这个对象构造的时候其实已经写入了文件名和行号.匿名对象调用.stream()函数拿到一个LogStream对象，由这个LogStream对象重载<<将“AAA”写入LogStream的数据成员FixBuffer对象的data_缓冲区内.匿名对象在这条语句执行完毕以后会被销毁，因此会调用~muduo::Logger()函数将日志消息输出至目的地(fflush)(标准输出或者磁盘的日志文件)
+   ```
+6. 日志流程(非异步):`Logger->Implment`->`LogStream`->`operator << (即stream_ <<)`->`LogStream的FixBuffer内`->`g_output`(这是`logging.cpp`的`Logger::OutputFunc g_output`)->`g_flush`(这是`logging.cpp`的`Logger::FlushFunc g_flush`)
+# 所遇问题
+1. 由于路径不正确的`segmentation fault`:写入日志的本地文件路径错误
+2. 本地文件出现乱码:`stream_ << GeneralTemplate(data, len)`这里传入的长度`len`如果大了,那么写入的日志文件就会乱码.因为在`logstream`的`append()`中,指针`cur_`会多向前移动一个位置,但是这个位置啥也没有,最终导致写入乱码;`len`小了,不会乱码,只是导致日志信息缺失
+3. `std::strlen`与`sizeof()`的区别:
+   * `std::strlen`:计算`C`风格字符串(以`\0`结尾的字符数组)的长度,计算字符数组的字符数(不包括`\0`).它只适用与以`\0`结尾的字符数组
+   * `sizeof()`:这是一个编译时的运算符,用于计算数据类型或对象在内存中的大小,以字节为单位
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -374,7 +391,7 @@
    fi
    cd ./build
    cmake .. 
-   make
+   make -B   # 强制重新编译所有目标文件   强制 make 忽略时间戳和依赖关系,不管源文件是否改变,总是重新构建所有目标文件
    make install
    ```
 2. <span style="color:red;"> 在`Windows`上编写完脚本,拷贝到`linux`上执行时,发现会报错:

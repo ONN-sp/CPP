@@ -10,7 +10,13 @@ namespace  tiny_muduo
     class FileUtil{//一些日志文件的简单操作,这个.h只是为了方便管理
         public:
             FileUtil(std::string filename) 
-                : fp_(filename.empty() ? nullptr : std::fopen(filename.c_str(), "ae")){
+                : fp_(::fopen(filename.c_str(), "ae")){
+                if(!fp_){// 如果没有提供文件路径，则使用默认路径   
+                    std::string DefaultPath = std::move("../Logfiles/LogFile_" +
+                              Timestamp::Now().Timestamp::ToFormattedDefaultLogString() +
+                              ".log");
+                    fp_ = ::fopen(DefaultPath.data(), "ae");
+                }
             }
             ~FileUtil() {::fclose(fp_);};
 

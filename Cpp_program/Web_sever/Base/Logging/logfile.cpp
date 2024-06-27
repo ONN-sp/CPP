@@ -1,16 +1,14 @@
 #include "logfile.h"
 #include "FileUtil.h"
-
 using namespace tiny_muduo;
 
 LogFile::LogFile(const std::string& filepath, long rollSize) : 
+        file_(new FileUtil(filepath)),
         rollSize_(rollSize),
         last_write_(Timestamp::Now()),
+        lastRoll_(Timestamp::Now()),
         startOfPeriod_(0),
-        last_flush_(Timestamp::Now()){
-        if(!file_){// 如果没有提供文件路径，则使用默认路径   
-            openDefaultLogFile(); // 打开默认的日志文件
-        }
+        last_flush_(Timestamp::Now()){     
     }
 LogFile::~LogFile(){
     Flush();
@@ -67,18 +65,9 @@ bool LogFile::rollFile(){
     return false;
 }
 
-// 打开默认的日志文件
-void LogFile::openDefaultLogFile() {
-  // 生成默认的日志文件路径
-  std::string default_path = std::move("./LogFiles/LogFile_" +
-                             Timestamp::Now().ToFormattedDefaultLogString() +
-                             ".log");//时间戳+.log
-  file_.reset(new FileUtil(default_path)); // 打开默认的日志文件
-}
-
-// 获取新的日志文件名
+// 获取新的日志文件名  保存在的是测试程序的Logfiles文件夹下
 std::string LogFile::getLogFileName(){
-    std::string default_path = std::move("./LogFiles/LogFile_" +
+    std::string default_path = std::move("../Logfiles/LogFile_" +
                              Timestamp::Now().ToFormattedDefaultLogString() +
                              ".log");//时间戳+.log
     return default_path;

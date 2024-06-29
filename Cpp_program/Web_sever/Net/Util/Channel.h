@@ -47,6 +47,8 @@ namespace tiny_muduo{
         void DisableWriting();
         //更新事件状态
         void Update();
+        //移除channel
+        void Remove();
         //设置接收到的事件
         void SetReceiveEvents(int);
         //设置Channel的状态
@@ -71,6 +73,7 @@ namespace tiny_muduo{
         std::weak_ptr<void> tie_; // 用于绑定的对象
         bool tied_; // 是否绑定了对象
         int errno_; // 错误号(通常在事件处理过程中设置)
+        bool addedToLoop_;// 当前Channel是否加进loop_中
 
         ChannelState state_; // Channel 的状态
         ReadCallback read_callback_; // 读事件的回调函数

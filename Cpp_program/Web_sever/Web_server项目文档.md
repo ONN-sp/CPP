@@ -27,6 +27,7 @@
    //flags:控制标志,如EFD_NONBLOCK：非阻塞模式;EFD_CLOEXEC：在 exec 系统调用时自动关闭这个文件描述符
    ```
 7. 回调函数的调用是上层来调的(如:`Tcpserver`等)
+8. <mark>`muduo  web_server`的具体的`recv send accept`函数的调用是在回调函数内部,回调函数是被是否有对应就绪事件而触发的(最终是在`Channel`中的`HandleEvent`触发的,根据现在的就绪事件类型触发相应的回调函数),而不是先在外部调用`recv send accept`后触发回调函数(如先调用`recv`再触发对应的`Readcallback`).`wakeup_channel_->SetReadCallback([this]{this->HandleRead();})`:`read`函数在`HandleRead()`内部</mark>
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出
@@ -38,7 +39,8 @@
 2. `muduo`依赖于`boost`库
 3. <mark>`Muduo`的设计理念:每个`EventLoop`运行在一个独立的线程中,每个线程负责管理一组I/O事件,这就是`one (event) loop per thread`</mark>
 4. 主线程有一个`EventLoop`,负责接受连接(`accept`在主线程);每个工作线程运行一个独立的`EventLoop`,负责处理已经建立连接(主线程中建立了)上的I/O事件
-5. `muduo`日志库是`C++ stream`风格,这样用起来更自然,不必费心保持格式字符串和参数类型的一致性,可以随用随写,而且是类型安全的(?)
+5. `muduo`日志库是`C++ stream`风格,这样用起来更自然,不必费心保持格式字符串和参数类型的一致性,可以随用随写,而且是类型安全的
+6. `muduo`广泛使用`RAII`这一方法来管理资源的生命周期 
 # 定时器
 1. 计算机中的时钟不是理想的计时器,它可能会漂移或跳变
 2. `Linux`的获取当前时间的函数:
@@ -173,10 +175,11 @@
    * `EventLoop` 持有一个 `Poller` 实例,并管理着一组 `Channel`
    * `Poller` 负责实际的 I/O 多路复用操作,它将发生的事件通知 `EventLoop`
    * `Channel` 与具体的文件描述符关联,负责将文件描述符上的事件分发给对应的处理函数
-   * `EventLoop` 通过调用 `Poller` 的 `poll` 方法来等待事件的发生,当事件发生时,它会遍历 `Channel` 列表,并调用每个 `Channel` 的回调函数处理事件
+   * `EventLoop` 通过调用 `Poller` 的 `poll` 方法来等待事件的发生,当获取到活动事件后,它会获取活动事件的`Channel`列表(即注册与当前就绪事件的`fd`对应的`Channel`,把这些活跃的`Channel`放入`active_channels`),再依次调用每个`Channel`的回调函数处理事件
 3. ![](EventLopp_Poller_Channel.png)
 4. 类比`tiny_httpserver`来理解这三者的关系:(以`tiny_httpserver`主线程为例)`EventLoop`就是`tiny_httpserver`中主线程的事件循环(`while(1)`);`Poller`负责底层的事件多路复用,通过调用系统调用如`epoll_wait`来监听文件描述符上的事件;`Channel`封装了文件描述符及其事件处理函数,负责具体的事件处理逻辑(`Channel`就是主线程调用的就绪事件的对应的执行函数(如:`acceptConn`))
 5. 一个线程<=>一个`EventLoop`,一个`EventLoop`可能涉及多个文件描述符
+6. `epoll_wait()`:返回的是就绪的文件描述符个数,即就绪事件的个数,就绪事件被放在了`events_`中
 # enum与enum class的区别
 1. 这是两种不同的枚举类型声明方式:
    * `enum class`引入了作用域,枚举值被限制在枚举类型的作用域内,不会自动转换为整数.因此,枚举值必须显式地指定为枚举类型的成员:
@@ -252,11 +255,53 @@
     ```
    `EventLoop::doPendingFunctors()`不是简单地在临界区内依次调用`Functor`,而是把回调列表`pendingFunctors_`交换到局部变量`functors`中去了,这样`functors`对于此`EventLoop`对应的线程它就是其独立拥有的,即线程安全的了(只是多消耗了栈空间).这样操作一方面减小了临界区的长度,另一方面也避免了死锁(此时可能出现的死锁情况:(`C++`中,`std::mutex`表示的就是非可重入互斥锁,这种锁不允许同一线程在已经持有锁的情况下再次获取同一个锁,否则会导致死锁),`Functor`可能再调用`QueueOneFunc`就可能出现一个线程再获取已经持有的锁)
 # CurrentThread
-1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的
+1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的.`__thread`可以用来修饰那些带有全局性且值可能变,但是又不值得用全局变量保护的变量
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
 3. 内联函数在`C++`中是一种特殊的函数,它通过编译器在调用点直接展开函数体,而不是像普通函数那样生成函数调用.这种特性通常用于简单且频繁调用的函数,以提高程序的执行效率和性能
-4. `__thread`:
-5. 编译常量:
+4. `__thread`使用规则:只能用于修饰`POD`类型(包括基本数据类型`int float char enum`等、结构体等,不能有自定义的构造函数、析构函数、拷贝构造函数、移动构造函数、虚函数、赋值运算符等),不能修饰`class`类型,因为无法自动调用构造函数和析构函数.`__thread`可以用于修饰全局变量、函数内的静态变量,但是不能用于修饰函数的局部变量或`class`的普通成员变量.`__thread`初始化只能用编译器常量:
+   ```C++
+   1.
+   __thread int counter;  // 基本类型
+   2.
+   struct NonPOD1 {
+    int x;
+    NonPOD1() : x(0) {}  // 自定义构造函数，不符合要求
+   };
+   struct NonPOD2 {
+      virtual void func() {}  // 包含虚函数，不符合要求
+   };
+   ```
+5. 编译常量:指的是在编译期就能确定其值的常量,包含:`字面值常量`:`42 3.14 'a'`等;`const常量`;`枚举类型`;`constexpr`;`模板参数`:
+   ```C++
+   1.
+   const int maxCount = 100;
+   const double pi = 3.14159;
+   2.
+   enum Color { Red = 1, Green = 2, Blue = 3 };
+   3.
+   constexpr int arraySize = 128;
+   constexpr double square(double x) { return x * x; }
+   4.
+   template<int N>
+   struct Factorial {
+      static const int value = N * Factorial<N - 1>::value;
+   };
+   template<>
+   struct Factorial<0> {
+      static const int value = 1;
+   };
+   ```
+6. `constexpr`:用于声明可以在编译时求值的常量表达式,它提供了比`const`更强大的编译时的计算能力:
+   * 与`const`类似,`constexpr`可以用于定义在编译期求值的常量变量
+   * `constexpr`关键字可以修饰函数,表示这个函数可以在编译期求值
+   * 与`const`不同,`constexpr`提供了在编译期进行复杂计算的能力,包括递归和逻辑运算
+   ```C++
+   constexpr int arraySize = 128;
+   constexpr int factorial(int n) {
+      return (n <= 1) ? 1 : (n * factorial(n - 1));
+   }
+   constexpr int result = factorial(5); // factorial 函数是一个 constexpr 函数，如果传递给它的参数是一个编译时常量（如 5），那么它的结果也是一个编译时常量
+   ```
 # Logging
 ## logstream
 1. `logstream.cpp logstream.h`:类比于`ostream.h`类,它们主要是重载了`<<`(本项目的日志库采用与`muduo`一样的`C++ stream`),此时`logstream`类就相当于`std::cout`,能用`<<`符号接收输入,`cout`是输出到终端,而`logstream`类是把输出保存到自己内部的缓冲区,可以让外部程序把缓冲区的内容重定向输出到不同目标,如:文件(对于日志输出,就是输出到本地文件中)、终端、`socket`(即`logstream`流对象是输出到`buffer (Buffer = FixedBuffer<kSmallSize>`)`的)
@@ -266,13 +311,13 @@
 5. <mark>`gcc`内置函数不是`C`标准定义的,而是由编译器自定义的.内置函数(`memcpy() strrchr()`等)都是`inline`的</mark>
 6. 流对象的形象理解:想象水流通过一根管道,水代表数据,管道代表流对象.数据在管道中流动,无论水的来源(例如水龙头、湖泊还是去向(例如水槽、河流),你都可以通过管道来运输水.在`C++`中,`std::cin`就像从键盘输入的管道,而`std::cout`就像输出到控制台的管道.对于`logstream`中的流对象,就是输出到`Buffer = FixedBuffer<kSmallSize>`这样的`buffer`中的管道
 ## logfile
-1. 一个日志库大体分为前端和后端.前端是供应用程序使用的接口,并生成日志消息;后端则负责把日志消息写到目的地.`logfile`类是`webserver`日志库后端的实际管理者,主要负责日志的滚动
+1. `logfile`类是`webserver`日志库后端的实际管理者,主要负责日志的滚动
 2. 为了在写日志的时候更高效,写日志到缓冲中使用非加锁的`::fwrite_unlocked`函数,因此要求外部单线程处理或加锁,保证缓冲区日志不会发生交织混乱
 3. `fwrite_unlocked`比`fwrite`更高效
 4. 对于日志滚动,其实就是重新生成日志文件,再向里面写数据;本项目有两种情况日志滚动:
    * 当日志消息文件大小达到设定值`rollSize_`就滚动
    * 当到了新的一天,日志也会滚动
-5. 日志库不能每条消息都`flush`硬盘,更不能每条日志都`open/close`,这样性能开销太大.本项目定期(默认3秒)将缓冲区日志消息`flush`到硬盘
+5. 日志库不能每条消息都`flush`硬盘,更不能每条日志都`open/close`,这样性能开销太大.本项目定期(默认3秒)将缓冲区日志消息`flush`到硬盘(注意:这里的3秒指的是写入磁盘的时间间隔,而`asynclogging`中的3秒指的是前端和后端线程交换的时间间隔)
 6. 日志信息->`::fwirte_unlocked`写到`fp_`所代表的文件流对应的内部缓冲区中->`flush`到本地文件中
 7. 日志都在`./LogFiles/`文件夹中
 # logging
@@ -303,7 +348,17 @@
    LOG_INFO << "AAA";
    //LOG_INFO是一个宏，展开后为：muduo::Logger(__FILE__, __LINE__).stream() << "AAA";构造了一个匿名对象Logger，在这个对象构造的时候其实已经写入了文件名和行号.匿名对象调用.stream()函数拿到一个LogStream对象，由这个LogStream对象重载<<将“AAA”写入LogStream的数据成员FixBuffer对象的data_缓冲区内.匿名对象在这条语句执行完毕以后会被销毁，因此会调用~muduo::Logger()函数将日志消息输出至目的地(fflush)(标准输出或者磁盘的日志文件)
    ```
-6. 日志流程(非异步):`Logger->Implment`->`LogStream`->`operator << (即stream_ <<)`->`LogStream的FixBuffer内`->`g_output`(这是`logging.cpp`的`Logger::OutputFunc g_output`)->`g_flush`(这是`logging.cpp`的`Logger::FlushFunc g_flush`)
+6. 日志流程(非异步):`Logger`->`Implment`->`LogStream`->`operator << (即stream_ <<  写入的是GeneralTemplate对象,其实就是调用的是logstream的Append方法)`->`LogStream的FixBuffer内`->`g_output`(这是`logging.cpp`的`Logger::OutputFunc g_output`)->`g_flush`(这是`logging.cpp`的`Logger::FlushFunc g_flush`)
+# asynclogging
+1. 一个日志库大体分为前端和后端.前端是供应用程序使用的接口,并生成日志消息(前端是业务线程产生一条条的日志消息);后端则负责把日志消息写到目的地(后端是一个日志线程,将日志消息写入文件,日志线程只有一个)
+2. <mark>前面的`logstream logfile logging`还是停留在单线程的日志考虑中,即还没涉及到前端和后端线程,`asynclogging`将它们整合形成了多线程异步日志库</mark>
+3. 日志线程和业务线程之间是典型地多生产者单消费者模型
+4. 由于磁盘IO是移动磁头的方式来记录文件的,其速度与CPU允许速度并不在一个数量级上,磁盘IO很慢很慢,因此在正常的实时业务处理流程中应该彻底避免磁盘IO(即业务线程中不应该有磁盘IO的出现),所以我们使用业务现场和日志线程分开
+5. <mark>我们采用的是双缓冲技术(实际是四个缓冲区,这里将抽象为两个缓冲区表述):准备`buffer`A和B,前端负责往`buffer`A填日志消息(各个业务线程互斥的填),后端负责将`buffer`B的数据写入本地文件(磁盘IO).当`buffer`A写满,交换A和B,让后端将`buffer`A的数据写入文件,而前端则往`buffer`B填入新的日志消息,如此往复.用两个`buffer`可以不必等待磁盘文件的读写(如果直接在业务线程往磁盘读写,那么很可能会阻塞很久,因为磁盘IO很慢),也避免了每条新日志消息都去唤醒日志线程,我们是拼成一个大的`buffer`再唤醒后端线程的.另外,为了及时将日志消息写入文件,即便`buffer`A未满,日志库也会3秒执行依次上述交换写入操作</mark>
+6. 如果前端写入速度太快,一下把前端线程(业务线程)的两块缓存都用完了,那么只好再分配一块新的`buffer`,因为此时磁盘IO还没完成,后端的`buffer`还换不到前端来,这是极少发生的情况
+7. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
+8. `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
+9.  <mark>在`asynclogging`中,不管是前端缓冲区的
 # 所遇问题
 1. 由于路径不正确的`segmentation fault`:写入日志的本地文件路径错误
 2. 本地文件出现乱码:`stream_ << GeneralTemplate(data, len)`这里传入的长度`len`如果大了,那么写入的日志文件就会乱码.因为在`logstream`的`append()`中,指针`cur_`会多向前移动一个位置,但是这个位置啥也没有,最终导致写入乱码;`len`小了,不会乱码,只是导致日志信息缺失
@@ -423,7 +478,41 @@
    make install
    ```
 6. `build.sh`的执行:`sudo bash build.sh`
-
+# RAII
+1. `RAII`是`C++`中一种重要的资源管理方法.它利用对象的生命周期管理资源(如内存、文件句柄、网络连接等),确保资源在使用期间被安全地获取和释放.这种模式在防止资源泄露和确保异常安全性方面起着关键作用
+2. <mark>`RAII`的核心思想是将资源的获取和释放绑定到对象的生命周期:</mark>
+   * 资源获取:在对象的构造函数中获取资源
+   * 资源释放:在对象的析构函数中释放资源.如:
+   ```C++
+   1.
+   class MutexLockGuard : public NonCopyAble {
+        public:
+            explicit MutexLockGuard(MutexLock& mutex)
+                     : mutex_(mutex) {
+                       mutex_.lock();//获取锁的所有权资源
+            }
+            ~MutexLockGuard() {
+                mutex_.unlock();//释放锁的所有权
+            }
+        private:
+            MutexLock& mutex_;
+    };
+    2.
+    Epoller::Epoller(EventLoop* loop)
+      : Poller(loop),
+         epollfd_(::epoll_create1(EPOLL_CLOEXEC)),//获取套接字资源
+         events_(kDefaultEvents) {}
+    Epoller::~Epoller() {
+      ::close(epollfd_);//释放套接字资源
+    }
+    ```
+3. 智能指针的内存管理实际上就是`RAII`的应用,它只是封装成API了,在调用它时就是构造函数获取内存资源(这个指针资源),在离开作用域时就会自动释放这个资源;`std::lock_guard<std::mutex> lock(mtx);`这类互斥锁也是`RAII`的应用,原理和智能指针一样,封装成了上层API,本项目相当于是自己写了一个`std::lock_guard<std::mutex>`
+4. `RAII`的优点:
+   * 异常安全性:通过在析构函数中释放资源,`RAII`确保了即使在异常情况下,资源也能被正确释放,防止资源泄露
+   * 简化代码:`RAII`将资源管理的责任交给对象,减少了手动管理资源的需求,使代码更简洁和易于维护
+   * 资源的自动管理:资源的获取和释放与对象的生命周期绑定,确保资源在需要时被分配,在不需要时被释放
+5. <mark>本项目和`muduo`一样广泛使用`RAII`这一方法来管理资源的生命周期</mark>
+6. 本项目所有的资源管理都是自己重新写的`RAII`对象,没有直接调用`C++`标准库中现成封装好的`RAII`对象,如:没有直接用`std::lock_guard<std::mutex>`,而是重新建了一个`MutexLock`对象;
 
 
 

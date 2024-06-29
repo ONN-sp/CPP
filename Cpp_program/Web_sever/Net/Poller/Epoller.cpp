@@ -29,7 +29,7 @@ Epoller::~Epoller() {
 
 Timestamp Epoller::Poll(int timeoutMs, Channels& active_channels) {
   // 调用 epoll_wait 等待事件
-  int eventnums = EpollWait(timeoutMs);
+  int eventnums = EpollWait(timeoutMs);// 返回的是就绪的文件描述符个数,即就绪事件的个数   就绪事件被放在了events_中
   // 填充活跃的 Channel 到 active_channels 容器
   Timestamp now(Timestamp::Now());
   int saveErrno = errno;

@@ -2,6 +2,7 @@
 #include <sys/poll.h>
 #include <sys/epoll.h>
 #include <iostream>
+#include <cassert>
 
 using namespace tiny_muduo;
 
@@ -11,9 +12,13 @@ Channel::Channel(EventLoop* loop, const int& fd)
       events_(0),
       recv_events_(0),
       tied_(false),
+      addedToLoop_(false),
       state_(ChannelState::kNew) {}
       
-Channel::~Channel() {}
+Channel::~Channel() {
+    assert(!addedToLoop_);// 确保当前Channel必须被加进某个loop
+    assert(!loop_->hasChannel(this));// 确保Channel在被销毁之前,它先从EventLoop中被移除了
+}
 
 //设置读回调函数(移动语义)
 void Channel::SetReadCallback(ReadCallback&& callback){
@@ -82,7 +87,14 @@ void Channel::DisableWriting(){
 
 //更新事件状态
 void Channel::Update(){
+    addedToLoop_ = true;
     loop_->UpdateChannel(this);
+}
+
+//移除当前Channel
+void Channel::Remove(){
+    addedToLoop_ = false;
+    loop_->RemoveChannel(this);
 }
 
 //设置接收到的事件

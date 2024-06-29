@@ -21,6 +21,7 @@ namespace tiny_muduo{
             void Flush();
             bool rollFile();//滚动日志  写满换下一个文件+每天零点新建日志文件
             std::string getLogFileName();
+            long writebytes();
         private:
             std::unique_ptr<FileUtil> file_; // 日志文件  负责管理 FILE* 类型的文件指针，并在 unique_ptr 析构时自动调用 fclose 函数来关闭文件
             Timestamp last_write_;

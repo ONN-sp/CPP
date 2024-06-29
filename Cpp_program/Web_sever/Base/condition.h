@@ -1,8 +1,8 @@
-#ifndef TINY_MUDUO_CONDITION_H_
-#define TINY_MUDUO_CONDITION_H_
+#ifndef CONDITION_H
+#define CONDITION_H
 
 #include <condition_variable>
-#include <mutex>
+#include "MutexLock.h"
 #include <chrono>
 
 #include "NonCopyAble.h"
@@ -10,7 +10,7 @@ namespace tiny_muduo {
 
 class Condition : public NonCopyAble {
  public:
-  explicit Condition(std::mutex& mutex) : mutex_(mutex) {}
+  explicit Condition(MutexLock& mutex) : mutex_(mutex) {}
 
   ~Condition() = default;
 
@@ -38,7 +38,7 @@ class Condition : public NonCopyAble {
   }
 
  private:
-  std::mutex& mutex_;
+  MutexLock& mutex_;
   std::condition_variable cond_;
 }; 
 

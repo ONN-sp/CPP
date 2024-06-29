@@ -73,6 +73,10 @@ std::string LogFile::getLogFileName(){
     return default_path;
 }
 
+long LogFile::writebytes(){
+    return file_->writtenbytes();
+}
+
 
 
 

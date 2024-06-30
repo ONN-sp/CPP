@@ -1,5 +1,5 @@
-#ifndef ASYNCLOGGING
-#define ASYNCLOGGING
+#ifndef ASYNCLOGGING_H
+#define ASYNCLOGGING_H
 
 #include <chrono>
 #include "../NonCopyAble.h"

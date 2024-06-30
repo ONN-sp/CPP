@@ -12,9 +12,6 @@ namespace tiny_muduo{
     __thread char t_time[64];// 缓存时间字符串
     __thread const int t_formattedtimeLength = 18;// 格式化时间字符串的长度
     __thread char t_errorbuf[512];// 用于存储错误信息的缓冲区
-    __thread int t_cachedTid = 0;
-    __thread char t_formattedTid[32] = {0};
-    __thread int t_formattedTidLength = 6;
 }
 
 using namespace tiny_muduo;

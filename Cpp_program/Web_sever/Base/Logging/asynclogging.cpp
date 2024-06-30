@@ -1,4 +1,5 @@
 #include "asynclogging.h"
+#include <functional>
 
 using namespace tiny_muduo;
 
@@ -56,7 +57,7 @@ void AsyncLogging::ThreadFunc(){
     //下面是后端线程的两个缓冲区
     BufferPtr newBuffer_current(new Buffer());//newBuffer_current是一个智能指针,所以它指向的内存资源会被自动释放,不用去管
     BufferPtr newBuffer_next(new Buffer());
-    LogFilePtr log(new LogFile(filepath_, rollSize_));
+    LogFilePtr log(new LogFile(filepath_, rollSize_));//log对象离开作用域就会调用LogFile的析构函数(完成flush,因此不需要在asynclogging的析构函数中显示调用AsyncFlush)
     //缓冲区在启动的时候会被初始化填充为0
     newBuffer_current->SetBufferZero();// 初始化新的当前缓冲区
     newBuffer_next->SetBufferZero();// 初始化新的备用缓冲区
@@ -73,7 +74,7 @@ void AsyncLogging::ThreadFunc(){
             next_ = std::move(newBuffer_next);
         }    
         for (const auto& buffer : buffers) // 写入所有需要处理的缓冲区
-            log->append(buffer->data(), buffer->len()); // 将缓冲区的数据写入到日志文件中
+            log->append(buffer->data(), buffer->len()); // 将缓冲区的数据写入到日志文件中(其实是写到一个文件流中)
         if (log->writebytes() >= kSingleFileMaxSize) // 如果日志文件大小超过了最大限制，创建一个新的日志文件
             log.reset(new LogFile(filepath_, rollSize_));       
         if (buffers.size() > 2) // 如果有过多的缓冲区，保留两个，多余的丢弃

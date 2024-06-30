@@ -4,8 +4,8 @@
 #include <condition_variable>
 #include "MutexLock.h"
 #include <chrono>
-
 #include "NonCopyAble.h"
+
 namespace tiny_muduo {
 
 class Condition : public NonCopyAble {
@@ -15,18 +15,13 @@ class Condition : public NonCopyAble {
   ~Condition() = default;
 
   void Wait() {
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::unique_lock<MutexLock> lock(mutex_.mutex());
     cond_.wait(lock);
   }
 
-  template <typename Duration>
-  bool WaitFor(Duration duration) {
-    std::unique_lock<std::mutex> lock(mutex_);
+  bool WaitForFewSeconds(std::chrono::seconds duration) {
+    std::unique_lock<MutexLock> lock(mutex_.mutex());
     return cond_.wait_for(lock, duration) == std::cv_status::no_timeout;
-  }
-
-  bool WaitForFewSeconds(double seconds) {
-    return WaitFor(std::chrono::duration<double>(seconds));
   }
 
   void Notify() {

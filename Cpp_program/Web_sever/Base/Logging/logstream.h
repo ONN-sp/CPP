@@ -1,5 +1,5 @@
 #ifndef LOGSTREAM_H
-#define  LOGGINGSTREAM_H
+#define  LOGSTREAM_H
 
 #include <string>
 #include <cstring>

@@ -2,7 +2,7 @@
 #define MUTEX_H
 
 #include <mutex>
-#include "../Base/NonCopyAble.h"
+#include "NonCopyAble.h"
 
 namespace tiny_muduo{
     class MutexLock : public NonCopyAble{
@@ -14,6 +14,9 @@ namespace tiny_muduo{
               }
               void unlock() {
                    mutex_.unlock();
+              }
+              std::mutex& mutex(){
+                return mutex_;
               }
         private:
             std::mutex mutex_;

@@ -52,7 +52,7 @@ class Logger : NonCopyAble{
                 Implement(SourceClass&&, int, Level);
                 ~Implement();
                 void FormattedTime();//格式化时间
-                const char* GetLogLevel() const ;//获取日志级别字符串
+                const char* GetLogLevel(int&) const ;//获取日志级别字符串
 
                 void Finish(){//完成日志记录，输出文件名、行号等信息
                   stream_ << " - "

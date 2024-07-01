@@ -15,12 +15,12 @@ class Condition : public NonCopyAble {
   ~Condition() = default;
 
   void Wait() {
-    std::unique_lock<MutexLock> lock(mutex_.mutex());
+    std::unique_lock<std::mutex> lock(mutex_.mutex(), std::defer_lock);//创建一个std::unique_lock,但是不上锁  因为在asynclogging的ThreadFunc一开始就上锁了,如果这还上锁那么就会死锁
     cond_.wait(lock);
   }
 
   bool WaitForFewSeconds(std::chrono::seconds duration) {
-    std::unique_lock<MutexLock> lock(mutex_.mutex());
+    std::unique_lock<std::mutex> lock(mutex_.mutex(), std::defer_lock);
     return cond_.wait_for(lock, duration) == std::cv_status::no_timeout;
   }
 

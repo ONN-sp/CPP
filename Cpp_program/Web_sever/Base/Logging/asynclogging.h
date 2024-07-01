@@ -39,7 +39,7 @@ namespace tiny_muduo{
             //下面是前端线程的两个缓冲区
             BufferPtr current_;//当前业务线程(前端)的当前缓冲区
             BufferPtr next_;//前端的备用缓冲区
-            BufferVector bufferToWrite_;//日志线程中要写入本地文件的缓冲区队列
+            BufferVector buffers_;//业务线程的缓冲区队列
     };
 }
 

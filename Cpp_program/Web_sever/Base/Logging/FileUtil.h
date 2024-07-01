@@ -25,13 +25,10 @@ namespace  tiny_muduo
             }
             void append(const char* data, int len){
                 ::fwrite_unlocked(data, 1, len, fp_);//fwrite_unlocked更高效  
-            }
-            long writtenbytes() const { 
-                return written_bytes_; 
+
             }
         private:
             FILE* fp_;
-            long written_bytes_;
     };
 }
 #endif

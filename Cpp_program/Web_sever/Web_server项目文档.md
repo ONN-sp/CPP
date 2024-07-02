@@ -29,6 +29,9 @@
 7. 回调函数的调用是上层来调的(如:`Tcpserver`等)
 8. <mark>`muduo  web_server`的具体的`recv send accept`函数的调用是在回调函数内部,回调函数是被是否有对应就绪事件而触发的(最终是在`Channel`中的`HandleEvent`触发的,根据现在的就绪事件类型触发相应的回调函数),而不是先在外部调用`recv send accept`后触发回调函数(如先调用`recv`再触发对应的`Readcallback`).`wakeup_channel_->SetReadCallback([this]{this->HandleRead();})`:`read`函数在`HandleRead()`内部</mark>
 9. 本项目中对于基本组件(`mutex condition thread`等)都不是直接在需要使用的地方调用标准库封装好的API,而是先自己将它们的创建、使用等方法封装成一个`RAII`对象,再在其他地方进行调用
+10. 本项目有两个3秒的应用地方:
+    * 3秒后业务线程的前端缓冲区队列会和日志线程的后端缓冲区队列进行交换(`buffersToWrite.swap(buffers_);`)
+    * 3秒后`Logfile`就会把写入`FixedBuffer`中的日志信息写入到本地文件`::fflush(fp_)`
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出
@@ -353,14 +356,28 @@
 # asynclogging
 1. 一个日志库大体分为前端和后端.前端是供应用程序使用的接口,并生成日志消息(前端是业务线程产生一条条的日志消息);后端则负责把日志消息写到目的地(后端是一个日志线程,将日志消息写入文件,日志线程只有一个)
 2. <mark>前面的`logstream logfile logging`还是停留在单线程的日志考虑中,即还没涉及到前端和后端线程,`asynclogging`将它们整合形成了多线程异步日志库</mark>
-3. 日志线程和业务线程之间是典型地多生产者单消费者模型
+3. 日志线程和业务线程之间是典型地多生产者单消费者模型,前端的多个业务线程不用考虑后端,会一直无阻塞的向后端的日志线程写日志信息
 4. 由于磁盘IO是移动磁头的方式来记录文件的,其速度与CPU允许速度并不在一个数量级上,磁盘IO很慢很慢,因此在正常的实时业务处理流程中应该彻底避免磁盘IO(即业务线程中不应该有磁盘IO的出现),所以我们使用业务现场和日志线程分开
 5. <mark>我们采用的是双缓冲技术(实际是四个缓冲区,这里将抽象为两个缓冲区表述):准备`buffer`A和B,前端负责往`buffer`A填日志消息(各个业务线程互斥的填),后端负责将`buffer`B的数据写入本地文件(磁盘IO).当`buffer`A写满,交换A和B,让后端将`buffer`A的数据写入文件,而前端则往`buffer`B填入新的日志消息,如此往复.用两个`buffer`可以不必等待磁盘文件的读写(如果直接在业务线程往磁盘读写,那么很可能会阻塞很久,因为磁盘IO很慢),也避免了每条新日志消息都去唤醒日志线程,我们是拼成一个大的`buffer`再唤醒后端线程的.另外,为了及时将日志消息写入文件,即便`buffer`A未满,日志库也会3秒执行依次上述交换写入操作</mark>
 6. 如果前端写入速度太快,一下把前端线程(业务线程)的两块缓存都用完了,那么只好再分配一块新的`buffer`,因为此时磁盘IO还没完成,后端的`buffer`还换不到前端来,这是极少发生的情况
-7. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
-8. `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
-9.  <mark>在`asynclogging`中,不管是前端缓冲区的`current_ next_`,还是后端缓冲区的`newBuffer_current newBuffer_next`,它们都没有拷贝,而是简单的指针交换`std::move`实现,不会带来多大开销</mark>
-10. 对于多线程异步日志程序,只有在日志信息大于给定的日志文件大小(`log->writebytes() >= kSingleFileMaxSize`)才会新建一个`LogFile`,即新建一个本地的`.log`文件(其它情况(3秒到了,它只是flush到本地,只要大小没超kSingleFileMaxSize,那么第二个3秒写的还是同一个文件))
+7. 业务线程的缓冲区队列和日志线程的缓冲区队列的交换有两种条件,`if (buffers_.empty())`:为空就说明没写满的;不为空说明有写满的
+   * 超时(3秒)
+   * 业务线程写满了一个或多个`buffer`
+当条件满足时,先将当前缓冲`current_`移入`buffers_`,并离开将空闲的`newBuffer_current`移为当前缓冲(`current_ = std::move(newBuffer_current);`).接下来将`buffers_`与`buffersToWrite`交换(`buffersToWrite.swap(buffers_);`).最后用`newBuffer_next`代替`next_`(如果`next_`为空,说明当前没有备用缓冲区可以使用,需要从预留的`newBuffer_next`中获取一个新的缓冲区来充当`next_`),这样前端始终有一个预备的`buffer`可供调配.最终`buffersToWrite`内的`buffer`重新填充`newBuffer_current newBuffer_next`,这样下一次执行的时候还有两个空闲的`buffer`可用于替换前端的当前缓冲和备用缓冲
+8. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
+9.  `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
+10. <mark>在`asynclogging`中,不管是前端缓冲区的`current_ next_`,还是后端缓冲区的`newBuffer_current newBuffer_next`,它们都没有拷贝,而是简单的指针交换`std::move`实现,不会带来多大开销</mark>
+11. 对于多线程异步日志程序,只有在日志信息大于给定的日志文件大小(`log->writebytes() >= kSingleFileMaxSize`)才会新建一个`LogFile`,即新建一个本地的`.log`文件(其它情况(3秒到了,它只是`flush`到本地,只要大小没超`kSingleFileMaxSize`,那么第二个3秒写的还是同一个本地文件(`.log`)))
+12. `buffers_.reserve(16)`:对容器`std::vector<BufferPtr> buffer_`的内存预分配操作,避免频繁的内存重新分配.<mark>`std::vector`是动态数组,其大小可以根据需要增长.然而,每次增加空间时,`std::vector`需要重新分配内存,并将旧数据复制到新位置.通过调用`reserve(16)`,我们可以提前为16个元素预分配空间,减少后续添加元素时的重新分配开销</mark>
+14. 《`Linux`多线程服务端编程》的P114-119:
+    * 第一种情况是前端日志的频度不高,后端3秒超时后将"当前缓冲`current_`"写入文件:
+    ![](asynclogging_1.png)
+    * 第二种情况,在3秒超时之前已经写满了当前缓冲,于是唤醒后端线程开始写入文件:
+    ![](asynclogging_2.png)  
+    * 第三种情况,前端在短时间内密集写入日志消息,用完了两个缓冲,并重新分配了一块新的缓冲:
+    ![](asynclogging_3.png) 
+    * 第四种情况,文件写入速度较慢,导致前端耗尽了两个缓冲,并分配了新缓冲:
+    ![](asynclogging_4.png) 
 # 所遇问题
 1. 由于路径不正确的`segmentation fault`:写入日志的本地文件路径错误
 2. 本地文件出现乱码:`stream_ << GeneralTemplate(data, len)`这里传入的长度`len`如果大了,那么写入的日志文件就会乱码.因为在`logstream`的`append()`中,指针`cur_`会多向前移动一个位置,但是这个位置啥也没有,最终导致写入乱码;`len`小了,不会乱码,只是导致日志信息缺失
@@ -369,9 +386,10 @@
    * `sizeof()`:这是一个编译时的运算符,用于计算数据类型或对象在内存中的大小,以字节为单位
 4.  `asynclogging`的调用出现死锁:经过几个小时的验证,最终发现死锁不是由于主线程(`asynclogging`中创建日志线程的原线程)和新创建的子线程(日志线程)之间调用(`CutDown() wait()`)导致`Latch`中锁的死锁,因为它们之间没有出现同一个线程持有同一把锁的情况,`CutDown()`是在线程1中执行,然后对有着同一个`latch_`对象的线程2产生唤醒操作.真正导致死锁的原因是:`condition.h`定义的条件变量对象,之前使用的是`std::unique_lock<std::mutex> lock(mutex_.mutex());`:此时在`asynclogging`的`ThreadFunc`一开始就上锁了,如果这还上锁那么就会死锁.解决办法:`std::unique_lock<std::mutex> lock(mutex_.mutex(), std::defer_lock);`:`std::defer_lock`表示不调用`std::unique_lock  std::lock_guard`时就立即上锁,而是后面需要上锁自己手动`lock()`
 5. 忘写`written_bytes_ += len;`,导致一直不能新建`LogFile`,即就算输出的日志超过了给定的日志文件最大限制`kSingleFileMaxSize`,它也不能新建一个本地文件进行写入
-6. `LogFile`的`Flush`和`append`函数在使用互斥锁前,一定要先判断是否存在,即`if(mutex_)`.必须先判断,不然程序有bug!这个`mutex_`可能在其它地方被销毁了,而此时还没有`new`一个`LogFile`(一个`LogFile`有一个属于自己的局部变量`std::unique_ptr<MutexLock> mutex_;`),那么此时就会出现卡死的bug(因为`mutex_`已经被销毁了)
+6. `LogFile`的`Flush`和`append`函数在使用互斥锁前,一定要先判断是否存在,即`if(mutex_)`.必须先判断,不然程序有bug! 这个`mutex_`可能在其它地方被销毁了,而此时还没有`new`一个`LogFile`(一个`LogFile`有一个属于自己的局部变量`std::unique_ptr<MutexLock> mutex_;`),那么此时就会出现卡死的bug(因为`mutex_`已经被销毁了)
 7. 如果写入的日志消息很小,占不满一个缓冲区,并且业务线程在3秒内就`Stop`了日志线程,那么本地文件啥也写不进来
 8. 如果某个业务线程只做一个动作:往日志线程中写日志,它一直源源不断写日志.这个操作在实际本地日志文件中可能会出现"丢包"的情况,即有些日志在传输中被丢失了,因此往往不可能一个业务线程只做往日志线程写日志的动作,只要有了一定的其它动作处理,就能保证业务线程的日志传入日志线程不会太快,此时就能解决"丢包"的问题(业务线程写日志的速度过快,以至于缓冲区无法及时被清空,可能会触发缓冲区溢出,导致部分日志数据丢失)
+9. 当前端拼命发送日志消息,超过后端的输出到本地的能力,会导致日志消息在内存中的堆积,实际上就是生产者速度高于消费者速度导致的.为了解决这个问题,我们和`muduo`一样的思路:直接丢掉多余的日志`buffer`(只留两个`buffer`),腾出内存(`asynclogging.cpp`的82-94行)
 # Latch
 1. 在多线程环境中,启动一个新线程后,主线程或其他管理线程可能需要确保新线程已经完成初始化和准备好处理任务.`latch_.wait();`的作用就是在启动线程后等待线程内部的初始化操作完成(即当新创建的线程初始化完毕并且准备好处理任务后,那么就会`latch_.CountDown()`),然后再继续执行主线程或其他线程的操作
 2. 在多线程应用中,有时主线程或其他线程需要确保新创建的线程已经完成了必要的初始化和准备工作,才能继续后续的操作.`Latch`可以帮助实现这一点,通过在启动线程前等待`Latch`的计数器减为0,然后再继续执行

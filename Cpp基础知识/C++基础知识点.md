@@ -1031,7 +1031,7 @@ void Swap(AnyType &a, AnyType &b);
    }
    //threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
    ```
-6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>(`std::move`见`Multithreading-and-thread-pooling/learn.md`)
+6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>(`std::move`见`多线程&线程池.md`)
 # 命名空间
 1. 变量对程序而言可见的范围被称为作用域
 2. 组织编写程序的策略:

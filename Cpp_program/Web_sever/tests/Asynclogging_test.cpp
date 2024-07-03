@@ -1,5 +1,5 @@
-#include "../Base/Logging/asynclogging.h"
-#include "../Base/Logging/logging.h"
+#include "../Base/Logging/Asynclogging.h"
+#include "../Base/Logging/Logging.h"
 #include "../Base/Timestamp.h"
 #include <stdio.h>
 #include <unistd.h>

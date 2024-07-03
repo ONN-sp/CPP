@@ -2,7 +2,7 @@
 #define LOGGING_H
 
 #include "../NonCopyAble.h" 
-#include "logstream.h"
+#include "Logstream.h"
 #include <functional>
 #include <string>
 #include <memory>

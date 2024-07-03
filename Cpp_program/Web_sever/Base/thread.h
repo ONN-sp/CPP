@@ -2,7 +2,7 @@
 #define THREAD_H
 
 #include <thread>
-#include "latch.h"
+#include "Latch.h"
 #include <functional>
 #include "NonCopyAble.h"
 #include <sys/prctl.h>
@@ -14,7 +14,7 @@ namespace tiny_muduo
     class Thread : public NonCopyAble {
         public:
             using ThreadFunc = std::function<void()>;
-            Thread(const ThreadFunc&, const std::string&);
+            Thread(const ThreadFunc&, const std::string& name = std::string());// name参数提供了默认值
             ~Thread();
             //启动线程
             void StartThread();

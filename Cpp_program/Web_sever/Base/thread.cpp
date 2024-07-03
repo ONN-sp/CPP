@@ -1,4 +1,4 @@
-#include "thread.h"
+#include "Thread.h"
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <cstring>

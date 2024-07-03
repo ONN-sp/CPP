@@ -3,14 +3,14 @@
 
 #include <chrono>
 #include "../NonCopyAble.h"
-#include "logstream.h"
+#include "Logstream.h"
 #include <memory>
 #include <vector>
-#include "logfile.h"
+#include "Logfile.h"
 #include "../MutexLock.h"
-#include "../condition.h"
-#include "../thread.h"
-#include "../latch.h"
+#include "../Condition.h"
+#include "../Thread.h"
+#include "../Latch.h"
 
 namespace tiny_muduo{
     static const std::chrono::seconds kBufferWriteTimeout (3);//3秒前端和后端日志线程交换

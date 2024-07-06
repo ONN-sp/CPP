@@ -5,13 +5,13 @@
 #include "../../Base/NonCopyAble.h"
 #include <functional>
 #include <memory>
-#include "../../Base/Timestamp.h"
-#include "../Timer/TimerQueue.h"
 #include "../../Base/MutexLock.h"
 #include "Channel.h"
 
 namespace tiny_muduo{
 class Epoller;
+class Timestamp;
+class TimerQueue;
 class Channel;
 class EventLoop : public NonCopyAble{
     public:
@@ -49,7 +49,7 @@ class EventLoop : public NonCopyAble{
         std::unique_ptr<TimerQueue> timer_queue_; // 定时器队列管理对象
         bool calling_functors_; // 标志当前loop是否有需要执行的回调函数
         Channels active_channels_; // 活跃的 Channel 列表
-        ToDoList pendingFunctors_; // 存储loop需要执行的所有回调操作(上层给定需要执行回调函数向量)  这个向量
+        ToDoList pendingFunctors_; // 任务队列  存储loop需要执行的所有回调操作(上层给定需要执行回调函数向量)  这个向量
         MutexLock mutex_; // 互斥锁，保护共享资源
         const int KPollTimeMs = 10000;// Poll方法调用的超时时间(实际上是设置的epoll_wait)
 };

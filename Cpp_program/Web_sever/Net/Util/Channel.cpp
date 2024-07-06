@@ -151,6 +151,9 @@ void Channel::HandleEvent(){
 
 //带有保护机制的事件处理
 void Channel::HandleEventWithGuard(){
+    if((recv_events_ & POLLHUP) && !(recv_events_ & POLLIN))// POLLHUP表示挂起(挂断)事件,表示事件被挂起或关闭(挂起和关闭时都要调用close_callback_)
+        if(close_callback_)
+            close_callback_();
     if (recv_events_ & POLLNVAL) 
         std::cout << "Channel::HandleEventWithGuard POLLNVAL";//TODO:modify?
     if (recv_events_ & (EPOLLERR | POLLNVAL))  //错误事件

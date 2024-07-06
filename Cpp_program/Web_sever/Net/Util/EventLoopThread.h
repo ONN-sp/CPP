@@ -22,6 +22,7 @@ namespace tiny_muduo{
             Thread thread_;
             MutexLock mutex_;
             Condition cond_;
+            const std::string name_;
             bool exiting_;  // 标识线程是否已退出
             ThreadInitCallback callback_;// 一个用于线程初始化的回调函数(通常不存在,除非自己指定)
     };

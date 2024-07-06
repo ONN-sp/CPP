@@ -11,6 +11,7 @@ EventLoopThread::EventLoopThread(const ThreadInitCallback& cf,
       thread_(std::bind(&EventLoopThread::StartFunc, this), name),
       mutex_(),
       cond_(mutex_),
+      name_(name),
       callback_(cf)// 初始化线程启动时的回调函数
       {}
 

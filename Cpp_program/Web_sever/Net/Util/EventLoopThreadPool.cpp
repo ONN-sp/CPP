@@ -4,9 +4,10 @@
 
 using namespace tiny_muduo;
 
-EventLoopThreadPool::EventLoopThreadPool(EventLoop* loop)
+EventLoopThreadPool::EventLoopThreadPool(EventLoop* loop, const std::string& name)
     : base_loop_(loop),// 通常是主线程中的 EventLoop
       thread_nums_(0),
+      name_(name),
       next_(0)// 初始下一个 EventLoop 的索引为 0
       {}
 
@@ -18,7 +19,7 @@ void EventLoopThreadPool::SetThreadNums(int thread_nums) {
 // 启动线程池并创建指定数量的 EventLoop 线程
 void EventLoopThreadPool::StartLoop(const ThreadInitCallback& cf){
     for(int i=0;i<thread_nums_;i++){
-        auto thread = std::make_unique<EventLoopThread>();
+        auto thread = std::make_unique<EventLoopThread>(cf, name_);
         threads_.emplace_back(std::move(thread));
         loops_.emplace_back(thread->StartLoop());
     }

@@ -79,6 +79,7 @@ namespace tiny_muduo{
         ReadCallback read_callback_; // 读事件的回调函数
         WriteCallback write_callback_; // 写事件的回调函数
         ErrorCallback error_callback_; // 错误事件的回调函数
+        CloseCallback close_callback_;// 关闭事件的回调函数  处理文件描述符关闭事件
     };
 }
 

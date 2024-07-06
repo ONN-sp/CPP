@@ -13,7 +13,7 @@ namespace tiny_muduo{
             using ThreadInitCallback = std::function<void(EventLoop*)>;
             using Thread = std::vector<std::unique_ptr<EventLoopThread>>;
             using Loop = std::vector<EventLoop*>;
-            EventLoopThreadPool(EventLoop*);
+            EventLoopThreadPool(EventLoop*, const std::string& name = std::string());
             ~EventLoopThreadPool();
             void SetThreadNums(int);// 设置线程数量
             void StartLoop(const ThreadInitCallback& cf = ThreadInitCallback());// 启动所有线程并开始运行它们的 EventLoop
@@ -26,6 +26,7 @@ namespace tiny_muduo{
             Loop loops_;// 存储所有的 EventLoop 指针,便于快速访问(不包含base_loop_)
             int thread_nums_;// 线程池中的线程数量
             int next_;// 用于循环选择下一个 EventLoop 的索引(在loops_中的索引)
+            const std::string name_;// 当前EventLoopThreadPool的名称
     };
 }
 

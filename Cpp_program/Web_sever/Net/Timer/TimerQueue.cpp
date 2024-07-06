@@ -23,7 +23,7 @@ TimerQueue::~TimerQueue() {
     delete timerpair.second;//没用智能指针,所以必须手动释放
   }
 }
-
+// 添加定时器(包括定时时间,定时完成的回调函数)到定时器队列中
 TimerId TimerQueue::AddTimer(Timestamp timestamp, BasicFunc&& cb, double interval) {
   Timer* timer = new Timer(timestamp, std::move(cb), interval);//此时需要手动delete(delete timerpair.second;)   TODO:也许可以用智能指针std::unique_ptr<Timer>
   loop_->RunOneFunc([this, timer]{this->AddTimerInLoop(timer);});// 在事件循环中异步执行AddTimerInLoop函数，将定时器加入到定时器队列中

@@ -1,5 +1,7 @@
 #include "EventLoop.h"
 #include "CurrentThread.h"
+#include "../../Base/Timestamp.h"
+#include "../Timer/TimerQueue.h"
 #include <cassert>
 #include <signal.h>
 #include <sys/eventfd.h>
@@ -55,8 +57,8 @@ void EventLoop::loop() {
         active_channels_.clear(); // 清空活跃 Channel 列表
         epoller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
         for (const auto& channel : active_channels_)
-            channel->HandleEvent(); //Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
-        doPendingFunctors(); // 处理待回调函数列表中的任务   for中没有返回执行doPendingFunctors,因为如果某个回调函数要
+            channel->HandleEvent(); // Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
+        doPendingFunctors(); // 处理待回调函数列表中的任务 
     }
     running_ = false; // 事件循环结束
 }
@@ -91,7 +93,7 @@ void EventLoop::RunOneFunc(BasicFunc func) {
     if (IsInThreadLoop())
         func(); // 如果当前调用RunOneFunc的线程的线程id=RunOneFunc函数所属的EventLoop所属的线程id,则直接执行任务函数
     else
-        QueueOneFunc(std::move(func)); // 在非当前EventLoop所属线程的线程中执行func(),就将任务添加到待执行任务列表中,并且要唤醒EventLoop所属的线程执行QueueOneFunc
+        QueueOneFunc(std::move(func)); // 在非当前EventLoop所属线程的线程中调用RunOneFunc,就将对应的任务添加到待执行任务列表中,并且要唤醒EventLoop所属的线程执行QueueOneFunc
 }
 
 void EventLoop::doPendingFunctors() {
@@ -124,4 +126,18 @@ void EventLoop::RemoveChannel(Channel* channel){
 
 bool EventLoop::hasChannel(Channel* channel){
     return epoller_->hasChannel(channel);
+}
+// 将指定的定时器(包括对应的定时回调函数)加入当前EventLoop(即当到了指定的时间timestamp时,就会调用相应的回调函数cb)  并且只执行一次interval=0.0
+void EventLoop::RunAt(Timestamp timestamp, BasicFunc&& cb) {
+    timer_queue_->AddTimer(timestamp, std::move(cb), 0.0);
+}
+// 将在当前时间后指定等待时间的一个定时器(包括对应的定时回调函数)加入当前EventLoop  并且只执行一次interval=0.0
+void EventLoop::RunAfter(double wait_time, BasicFunc&& cb) {
+    Timestamp timestamp(Timestamp::AddTime(Timestamp::Now(), wait_time)); 
+    timer_queue_->AddTimer(timestamp, std::move(cb), 0.0);
+}
+// 将在当前时间后指定等待时间的一个定时器(包括对应的定时回调函数)加入当前EventLoop  并且每隔interval时间执行一次
+void EventLoop::RunEvery(double interval, BasicFunc&& cb) {
+    Timestamp timestamp(Timestamp::AddTime(Timestamp::Now(), interval)); 
+    timer_queue_->AddTimer(timestamp, std::move(cb), interval);
 }

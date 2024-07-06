@@ -52,6 +52,18 @@
    };
    //应该尽量不使用mutable,避免破坏类的const语义
    ```
+13. `#include <stdexcept>`:`C++`标准库的一部分,包含了一组常用的标准异常类:
+    * `std::exception`:所有标志异常的基类,可以捕获所有标准异常
+    * `std::logic_error`:表示逻辑上的错误
+    * `std::runtime_error`:表示程序在运行时遇到的错误,这些错误无法在编译时检测到
+    * `std::invalid_argument`:表示函数收到一个无效的参数,如:传递了一个不合法的值个函数
+    * `std::out_of_range`:表示访问了一个超出有效范围的元素
+    * `std::length_error`:表示一个操作超出了长度限制.如:尝试向容器中插入超过最大长度的元素
+    * `std::domain_error`:表示函数参数超出了有效的数学域.如:传递负数给一个只能接受非负数的数学函数
+    * `std::overflow_error  std::underflow_error`:分别表示算数运算中的溢出和下溢
+14. `SO_KEEPALIVE`:这个一个套接字选项,用于启用或禁用TCP连接的"保活"功能(`Keep Alive`).在网络编程中,`SO_KEEPALIVE`选项的作用是帮助检测"死"连接,也就是那些已经断开但并未关闭的连接.<mark>启用`SO_KEEPALIVE`后,`TCP/IP`协议栈会定期发送探测消息(`Keep-Alive`探测包)以确认连接的另一端是否仍然存在和响应.如果连接的另一端没有响应探测消息,`TCP/IP`协议栈会尝试重传一定次数的探测消息.如果多次探测都没有响应,则认为连接已经失效,会终止连接</mark>
+15. 本项目最重要的就是搞清楚一层一层网络的回调函数的调用和传递
+16. `channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));`:对于调用`std::bind`绑定类的成员函数时,传递`this`指针是必要的,因为成员函数需要一个对象实例来调用
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出
@@ -143,6 +155,8 @@
 10. `std::pair<Timestamp, Timer*>`:为了处理两个到期时间相同的情况,这里使用`std::pair<Timestamp, Timer*>`作为`std::set`的`key`,这样就可以区分到期时间形相同的定时器
 11. `TimerQueue`的成员函数只在其所属的I/O线程调用,因此不用加锁.如:借助`EventLoop::RunOneFunc`可以使`TimeQueue::addTimer`变成线程安全的,即无需用锁.办法是`loop_->RunOneFunc([this, timer](){this->AddTimerInLoop(timer);})`,即把定时器实际的工作转移到所属的I/O线程中去了
 12. 在实际编程任务中,一定不能用`sleep()`或类似的方法来让程序原地停留等待,这会让程序失去响应.对于定时任务,我们应该把它变成一个特定的事件(`timerfd_create()/timerfd_gettime()/timerfd_settime()`将其变成了一个可读事件),到定时时间就会触发一个相应定时完成后需要完成的处理函数(即回调)
+## Timer
+1. `Timer::Timer(Timestamp expiration__, BasicFunc&& cb, double interval = 0.0)`:表示定义一个给定过期时间`expiration_`、回调函数`cb`、重复执行的间隔时间`interval`(为0表示不重复执行)的定时器
 # std::pair
 1. `std::pair`作用是将两个数据组合成一个数据,这两个数据可以是同一类型或不同类型,如:
    ```C++
@@ -190,6 +204,28 @@
    std::function<void()> funcPtr = foo;
    funcPtr(); // 调用 foo 函数
    ```
+# std::bind
+1. `std::bind`通常期望传入普通指针或引用,而不是智能指针,所以对于智能指针要用`.get()`获取智能指针内部封装的裸指针:` loop_->RunOneFunc(std::bind(&Acceptor::Listen, acceptor_.get()));`
+2. <mark>`std::bind`绑定成员函数时一定要传入该对象指针:</mark>
+   ```C++
+   class MyClass {
+      public:
+         void show(int x) {
+            std::cout << "Value: " << x << std::endl;
+         }
+      };
+      int main() {
+         MyClass my_obj;
+         auto bound_show = std::bind(&MyClass::show, &my_obj, std::placeholders::_1);// std::placeholders::_1表示绑定后的函数的第一个参数的位置
+         bound_show(5); // 输出: Value: 5
+         return 0;
+      }
+      ```
+3. <mark>占位符在`C++`的`std::placeholders`命名空间中定义,用于在使用`std::bind`绑定函数时,表示将来调用时需要传入的参数位置:</mark>
+   ```C++
+   auto func = std::bind(&SomeClass::memberFunction, objectPtr, std::placeholders::_1, std::placeholders::_2);
+   // std::placeholders::_1, std::placeholders::_2分别表示memberFunction函数的第一个参数位置和第二个参数位置
+   ```
 # `Poller  Channel  EventLoop`
 1. `Poller  Channel  EventLoop`是`Muduo`网络库的核心组件,它们共同协作以实现高效的事件驱动编程
    * `Poller`:这是一个抽象基类,用于封装底层的I/O复用机制,如`epoll`.它负责监听多个文件描述符,并在它们有事件发生时通知`EventLoop`
@@ -233,6 +269,9 @@
    * `kNew`:`Channel`刚创建,尚未加入到`epoll`树上.这通常是默认状态,表示`Channel`尚未参与到任何事件监控中
    * `kAdded`:`Channel`已经被添加到`epoll`树上,并正在监控其感兴趣的事件
    * `kDeleted`:`Channel`曾经在`epoll`树上,但当前已被标记为删除.`Channel`已经从`epoll`树中删除了
+8. `Channel`类是用来封装文件描述符(通常是`socket`)的,它负责处理文件描述符上的事件,并调用相应的回调函数,这个回调函数是在检测到写/读/错误事件后就会立即调用的,而不是说检测到写事件后,再`write()`结束后才调用的
+9. 本项目和`muduo`中有两种回调函数:一种是`Channel`中的读、写、错误、关闭回调;一种是非`Channel`回调,如`Acceptor`中属于`Channel`的可读回调`handleread()`中的`NewConnectionCallback`回调等
+10. `Channel`的`close_callback_`可以理解为是为了资源清理时而设置的,当检测到`POLLHUP`事件且没有`POLLIN`事件时,表示此时的连接(其实就是套接字)可能已经挂起或关闭,此时就回调`close_callback_`
 # Poller
 1. 这是一个基类,因为在muduo中同时支持`poll()`和`epoll()`.本项目只用了`epoll()`,所以只有`epoller`继承了`Poller`,继承后需要重写纯虚函数
 2. `Poller`是I/O多路复用的封装,它是`EventLoop`的组成,与`EventLoop`的生命期相同,为`EventLoop`提供`poll()`方法.`poll()`方法是`Poller`的核心功能,它调用`epoll_wait()`获得当前就绪事件,然后注册一个`Channel`与该就绪事件的`fd`绑定(将`Channel`对象放在`epoll_event`中的用户数据区,这样可以实现文件描述符和`Channel`的一一对应.当`epoll`返回事件时,我们可以通过 `epoll_event`的`data.ptr`字段快速访问到对应的`Channel`对象,而不需要额外的查找操作),然后将该`Channel`填充到`active_channels`
@@ -268,7 +307,7 @@
     }
     ```
 10. `pendingFunctors_`是每个`EventLoop`对象独立存储的,但在多线程服务器中,其它线程(上层)可能需要向当前这个`EventLoop`添加回调函数(如:上层`EventLoop`会写入定时器回调函数),因此`pendingFunctors_`需要线程安全
-11. 为什么`if (!IsInThreadLoop() || calling_functors_)`后才`wakeup()`?
+11. 为什么`if (!IsInThreadLoop() || calling_functors_)`后要`wakeup()`?
     * 首先,其它线程向所属当前线程的`EventLoop`添加任务,那么此时一定要`wakeup`(因为其它线程加进来的任务一定不在当前线程的`EventLoop`中,而当前`EventLoop`可能被阻塞住了);其次,如果新加进来的任务不是已经被执行了的,即此时加进来的是下一轮要去执行的,那么需要`wakeup`(为了使新加进来的任务在下一轮能被立即执行),即`calling_functors_`(当前`pendingFunctors_`执行完毕时会给`calling_functors_`置`false`)
 12. `doPendingFunctors`中的经典操作:
     ```C++
@@ -279,6 +318,10 @@
     ```
    `EventLoop::doPendingFunctors()`不是简单地在临界区内依次调用`Functor`,而是把回调列表`pendingFunctors_`交换到局部变量`functors`中去了,这样`functors`对于此`EventLoop`对应的线程它就是其独立拥有的,即线程安全的了(只是多消耗了栈空间).这样操作一方面减小了临界区的长度,另一方面也避免了死锁(此时可能出现的死锁情况:(`C++`中,`std::mutex`表示的就是非可重入互斥锁,这种锁不允许同一线程在已经持有锁的情况下再次获取同一个锁,否则会导致死锁),`Functor`可能再调用`QueueOneFunc`就可能出现一个线程再获取已经持有的锁)
 13. `EventLoop`的`loop`方法是一个死循环,除非主动调用`quit`,或调用了该`loop_`的析构函数才能终止(和`Asynclogging::ThreadFunc`一样)
+14. `EventLoop`采用的是`epoll`的水平触发(默认就是水平触发),而不是边沿触发,为什么?
+    * 为了与传统的`poll()`兼容(`poll`没有边沿触发),因为在文件描述符数目较少,活动文件描述符比例较高时,`epoll`不见得比`poll`更高效,必要时可以切换`Poller`
+    * 水平触发更简单
+    * 读写的时候不必等候触发`EAGAIN`(表示缓冲区是否满(满对应写操作)),可以节省系统调用次数,降低延迟
 # EventLoopThread&EventLoopThreadLoop
 1. 为了更直接的表示`one loop per thread`,我们建立了`EventLoopThread`,`thread_(std::bind(&EventLoopThread::StartFunc, this), name)`:体现了一个`thread`与一个`loop`绑定
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
@@ -389,14 +432,14 @@
 7. 业务线程的缓冲区队列和日志线程的缓冲区队列的交换有两种条件,`if (buffers_.empty())`:为空就说明没写满的;不为空说明有写满的
    * 超时(3秒)
    * 业务线程写满了一个或多个`buffer`
-当条件满足时,先将当前缓冲`current_`移入`buffers_`,并离开将空闲的`newBuffer_current`移为当前缓冲(`current_ = std::move(newBuffer_current);`).接下来将`buffers_`与`buffersToWrite`交换(`buffersToWrite.swap(buffers_);`).最后用`newBuffer_next`代替`next_`(如果`next_`为空,说明当前没有备用缓冲区可以使用,需要从预留的`newBuffer_next`中获取一个新的缓冲区来充当`next_`),这样前端始终有一个预备的`buffer`可供调配.最终`buffersToWrite`内的`buffer`重新填充`newBuffer_current newBuffer_next`,这样下一次执行的时候还有两个空闲的`buffer`可用于替换前端的当前缓冲和备用缓冲
-1. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
-2.  `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
-3.  <mark>在`asynclogging`中,不管是前端缓冲区的`current_ next_`,还是后端缓冲区的`newBuffer_current newBuffer_next`,它们都没有拷贝,而是简单的指针交换`std::move`实现,不会带来多大开销</mark>
-4.  对于多线程异步日志程序,只有在日志信息大于给定的日志文件大小(`log->writebytes() >= kSingleFileMaxSize`)才会新建一个`LogFile`,即新建一个本地的`.log`文件(其它情况(3秒到了,它只是`flush`到本地,只要大小没超`kSingleFileMaxSize`,那么第二个3秒写的还是同一个本地文件(`.log`)))
-5.  `buffers_.reserve(16)`:对容器`std::vector<BufferPtr> buffer_`的内存预分配操作,避免频繁的内存重新分配.<mark>`std::vector`是动态数组,其大小可以根据需要增长.然而,每次增加空间时,`std::vector`需要重新分配内存,并将旧数据复制到新位置.通过调用`reserve(16)`,我们可以提前为16个元素预分配空间,减少后续添加元素时的重新分配开销</mark>
-6.  `Asynclogging`的`ThreadFunc`方法是一个死循环,除非主动调用`quit`,或调用了该`log_`的析构函数才能终止
-7.  《`Linux`多线程服务端编程》的P114-119:
+   当条件满足时,先将当前缓冲`current_`移入`buffers_`,并离开将空闲的`newBuffer_current`移为当前缓冲(`current_ = std::move(newBuffer_current);`).接下来将`buffers_`与`buffersToWrite`交换(`buffersToWrite.swap(buffers_);`).最后用`newBuffer_next`代替`next_`(如果`next_`为空,说明当前没有备用缓冲区可以使用,需要从预留的`newBuffer_next`中获取一个新的缓冲区来充当`next_`),这样前端始终有一个预备的`buffer`可供调配.最终`buffersToWrite`内的`buffer`重新填充`newBuffer_current newBuffer_next`,这样下一次执行的时候还有两个空闲的`buffer`可用于替换前端的当前缓冲和备用缓冲
+8. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
+9. `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
+10. <mark>在`asynclogging`中,不管是前端缓冲区的`current_ next_`,还是后端缓冲区的`newBuffer_current newBuffer_next`,它们都没有拷贝,而是简单的指针交换`std::move`实现,不会带来多大开销</mark>
+11. 对于多线程异步日志程序,只有在日志信息大于给定的日志文件大小(`log->writebytes() >= kSingleFileMaxSize`)才会新建一个`LogFile`,即新建一个本地的`.log`文件(其它情况(3秒到了,它只是`flush`到本地,只要大小没超`kSingleFileMaxSize`,那么第二个3秒写的还是同一个本地文件(`.log`)))
+12. `buffers_.reserve(16)`:对容器`std::vector<BufferPtr> buffer_`的内存预分配操作,避免频繁的内存重新分配.<mark>`std::vector`是动态数组,其大小可以根据需要增长.然而,每次增加空间时,`std::vector`需要重新分配内存,并将旧数据复制到新位置.通过调用`reserve(16)`,我们可以提前为16个元素预分配空间,减少后续添加元素时的重新分配开销</mark>
+13. `Asynclogging`的`ThreadFunc`方法是一个死循环,除非主动调用`quit`,或调用了该`log_`的析构函数才能终止
+14. 《`Linux`多线程服务端编程》的P114-119:
     * 第一种情况是前端日志的频度不高,后端3秒超时后将"当前缓冲`current_`"写入文件:
     ![](asynclogging_1.png)
     * 第二种情况,在3秒超时之前已经写满了当前缓冲,于是唤醒后端线程开始写入文件:
@@ -432,6 +475,171 @@
    * 为了避免阻塞等待每个线程的结束,而是通过标记线程为分离状态,让每个消除在完成后(调用`thread`析构函数)自动管理其资源,这种方式可以提高程序的响应率和效率.若要使用`.join()`,可以直接调用`thread.cpp`的`Join()`
 3. 为什么要先判断`.joinable()`?
    * 判断此线程是否可`detach()`或`join()`
+# Acceptor
+1. `int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);`:用于获取一个与已连接套接字管理的远程对端地址信息:
+   * 已连接套接字:对于一个已连接的套接字(如客户端与服务器之间的连接),`getpeername`可以用来获取对端的地址信息,包括`IP`地址和端口号(客户端和服务器两方都可以通过这个函数获得对方的地址信息)
+   * 监听套接字:对于一个监听套接字,它可以获取最近一次连接到达的对端地址信息,这在服务器端用于获取连接者的信息
+2. <mark>本项目和`muduo`处理文件描述符耗尽时一种优雅的方法:创建空闲文件描述符`id_lefd_`+重新调用`accept`(操作系统在接受新连接时可能会进行的内部文件描述符管理)</mark>
+   ```C++
+   if(connfd < 0){
+        if(errno == EMFILE){// 此时是因为文件描述符耗尽才建立连接失败
+            ::close(id_lefd_);// 先关闭之前创建的空闲文件描述符 此时就有一个新的文件描述符可以用了(因此一定可以再次成功调用accept,只有成功调用后(成功调用后,文件描述符又耗尽了),此时操作系统就会自动会在内部关闭一些不再需要的文件描述符)
+            id_lefd_ = ::accept(listen_fd_, NULL, NULL);// 重新尝试通过::accept()接受一个连接,以让操作系统释放一些不再使用的文件描述符(当文件描述符耗尽时,再次调用会让它自动释放不用的文件描述符)
+            ::close(id_lefd_);// 此时id_lefd_是重新建立连接的通信文件描述符,此时需要立即关闭重新接受的文件描述符.这样做的目的是确保不会因为文件描述符泄露(没close就会泄露)而导致资源浪费或系统限制
+            id_lefd_ = ::open(::open("/dev/null", O_RDONLY | O_CLOEXEC));
+        }
+        return;
+   }
+   ```
+3. <mark>`id_lefd_`在处理文件描述符耗尽的作用:`id_lefd_`通过占用一个文件描述符的位置,可以在`EMFILE`(前面的`accept4()`)错误发生时,尝试通过重新调用`::accept()`来间接释放其他不再需要的文件描述符(操作系统在接受新连接时可能会进行的内部文件描述符管理)(只有先`::close(id_lefd_);`了,才能再次重新调用`::accept()`成功,因为此时才有一个空的位置).这种方法的目的是利用操作系统在`::accept()`调用时可能释放其他文件描述符的内部行为,从而为新连接请求腾出文件描述符</mark>注:`::close(id_lefd_);`不会直接释放其它不需要的文件描述符 
+4. `Acceptor`中如果不对文件描述符达到上限进行处理(既不优雅处理耗尽,也不采用直接退出的方法),那么会出现`busy loop`:此时因为没有新的文件描述符,那么新来的连接会放在`accept`队列中,于是可读事件会一直触发,因此出现`busy loop`
+5. 在网络编程汇总,`busy loop`主要出现在以下几种情况:
+   * 不断检查事件:如果没有任何事件发生,仍然频繁检查事件的状态,此时就是`busy loop`(`epoll_wait`的`timeout`非常短就会发生这种情况,此时会一直检查事件状态)
+   * 轮询等待:程序通过不停地检查某个条件是否满足,而不是阻塞等待事件的改变(使用非`IO mutlexing`)
+   * 高频任务执行:如若网络库在处理`socket`可读事件时,必须一次性把`socket`里的数据读完,否则会反复触发`POLLIN`事件,造成`busy loop`
+6. `Acceptor`的`socket`是监听文件描述符,`channel_`用于检测此`socket`上的可读事件,一旦触发,就回调`handleRead()`(这个回调是`Channel`中的回调),在`accept()`成功之后接受了新连接,此时会调用`new_connection_callback_`新连接回调(这个不是`Channel`回调),这是为了处理连接建立后可能出现的后续的操作(如发送或接收数据等)
+7. 在完整项目中,`Acceptor`的`new_connection_callback_`其实是`Tcpserver::HandleNewConnection`,实际上是上层`Tcpserver`传给`Acceptor`对象的.`new_connection_callback_`是在`handleRead`中调用的,而`handleRead`是在`acceptChannel_`(它是与`acceptSocket_->fd()`绑定的`Channel`)上有读事件就绪时调用的
+## Socket
+1. `Socket`类是对套接字的一个封装,用于封装一个`Socket RAII`对象,自动管理`socket`生命周期,包括创建、绑定、监听、连接和关闭(`shutdown` 非`close`)等操作
+2. `int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags)`:这是`accept`的扩展,它多了一个`flags`参数,可以用来在接受连接时设置一些额外的标志,如:`SOCK_NONBLOCK`等
+3. `memset()`与`bzero()`:
+   * `void *memset(void *s, int c, size_t n);`:`s`指向要填充的内存块的指针.`c`是要填充的值.`n`是要填充的字节数
+   * `void bzero(void *s, size_t n);`:`s`和`n`同上
+4. 为什么`Socket`类中定义了`ShutDownWrite`?
+   因为TCP是一个全双工协议,同一个文件描述符既可读又可写,`ShutDownWrite`只关闭了"写"端,而可以继续读,这样是为了不漏收数据;如果直接`close`,此时会把`sockfd_`的读写端都关闭了
+5. `address.sin_addr.s_addr = LookBackOnly ? htol(INADDR_LOOPBACK) : htonl(INADDR_ANY);`:表示绑定为回环地址或任意地址,默认绑定任意地址(即不给定`LookBackOnly`参数时)
+6. 监听回环地址:表示只接受来自本地的连接;监听任意地址:表示接受来自网络上的任何地址连接
+# Buffer
+1. 为什么非阻塞网络编程中应用层的`buffer`是必须的?
+   `non-blocking`网络编程中,`non-blocking IO`核心思想是避免阻塞在`read()/write()`或其他IO系统调用,可以最大限度复用`thread-of-control`,让一个线程能服务于多个`socket`连接.而IO线程只能阻塞在`IO-multiplexing`函数上,如`select()/poll()/epoll_wait()`,这样应用层的缓冲区就是必须的
+2. `TcpConnection`必须要有`output buffer`:
+   * 程序想通过`TCP`连接发送`100K byte`数据,但在`write()`调用中,操作系统只接收`80K`(受`TCP`通告窗口`advertised window`的控制),而程序又不能原地阻塞等待,事实上也不知道要等多久.程序应该尽快交出控制器,返回到`event loop`.此时,剩余20K数据怎么办？对应用程序,它只管生成数据,不应该关心数据是一次发送,还是分几次发送,这些应该由网络库操心,程序只需调用`TcpConnection::send()`即可.网络库应该接管剩余的20K数据,把它保存到`TcpConnection`的`output buffer`,然后注册`POLLOUT`事件(需要注意的是不是一开始就关注`POLLOUT`(写)事件,而是在`write`无法完全写入内核缓冲区的时候才关注,将未写入的数据添加到应用层的`output buffer`缓冲区中,直到应用层这个缓冲区写完,就停止关注写事件,此时写完不停止关注的话就可能会造成`busy loop`),一旦`socket`变得可写就立刻发送数据.当然,第二次不一定能完全写入20K,如果有剩余,网络库应该继续关注`POLLOUT`事件;如果写完20K,网络库应该停止关注`POLLOUT`,以免造成`busy loop`
+   * 如果程序又写入50K,而此时`output buffer`里还有待发20K数据,那么网络库不应该直接调用`write()`,而应该把这50K数据`append`到那20K数据之后,等`socket`变得可写时再一并写入
+   * 如果`output buffer`里还有待发送数据,而程序又想关闭连接,但对程序而言,调用`TcpConnection::send()`后就认为数据迟早会发出去,此时网络库不应该直接关闭连接,而要等数据发送完毕.因为此时数据可能还在内核缓冲区中,并没有通过网卡成功发送给接收方.将数据`append`到`buffer`.甚至`write`进内核，都不代表数据成功发送给对端
+3. `TcpConnection`必须要有`input buffer`:
+   * `Tcp`是一个无边界的字节流协议,接收方可能出现粘包和分包的问题,因此需要`input buffer`
+4. 对于应用层来说,它不会直接去操作`read() write()`这些IO函数,而是操作`input buffer`和`output buffer`
+5. `std::copy`:`C++`标准库中将一个范围内的元素复制到另一个范围的算法.通常用于在容器之间复制元素,也可用于指针指向的数组之间的复制:
+   ```C++
+   OutputIterator copy(InputIterator first, InputIterator last, OutputIterator result);
+   //InputIterator first: 指向要复制的元素范围的起始位置（包括该位置的元素）
+   //InputIterator last: 指向要复制的元素范围的结束位置（不包括该位置的元素）
+   //OutputIterator result: 指向复制结果存储的起始位置
+   //返回指向最后一个复制元素之后的位置(即目标范围的.end()迭代器)
+   ```
+   ```C++
+   1.
+   std::vector<int> source = {1, 2, 3, 4, 5};
+   std::vector<int> destination(3);
+   std::copy(source.begin() + 1, source.begin() + 4, destination.begin());
+   2.
+   const char source[] = "Hello, World!";
+   char destination[50];
+   std::copy(source, source + strlen(source) + 1, destination); // 包含 '\0'
+   ```
+6. `std::search()`:`C++`标准库的算法,用于在一个范围内查找子范围的第一个匹配位置:
+   ```C++
+   ForwardIterator1 search(ForwardIterator1 first1, ForwardIterator1 last1,
+                        ForwardIterator2 first2, ForwardIterator2 last2);
+   //first1, last1: 指向要搜索的范围的起始和结束位置
+   //first2, last2: 指向待匹配的子范围的起始和结束位置
+   1.
+   std::vector<int> haystack = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+   std::vector<int> needle = {4, 5, 6};
+   auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end());
+   ```
+7. `std::to_string()`:`C++`标准库函数,用于将数值类型转换为字符串.提供了一种方便的方法来将整数、浮点数等数值类型转换为标准库中的`std::string`对象:
+   ```C++
+   namespace std {
+    string to_string(int value);
+    string to_string(unsigned value);
+    string to_string(long value);
+    string to_string(unsigned long value);
+    string to_string(long long value);
+    string to_string(unsigned long long value);
+    string to_string(float value);
+    string to_string(double value);
+    string to_string(long double value);
+   }
+   ```
+8. `Buffer`故意设计成非线程安全的:
+   * 对于`input buffer`,`onMessage()`回调发生在该`TcpConnection`所属IO线程,应用程序应该在`onMessage()`中完成对`input buffer`的操作,并且不要把`input buffer`暴露给其他线程.这样,对`input buffer`的操作都在同一个IO线程,因此`Buffer class`不必是线程安全的。
+   * 对于`output buffer`,应用程序不会直接操作它,而是调用`TcpConenction::send()`来发送数据,后者是线程安全的.准确来说,是会让`output buffer`只会在所属IO线程操作
+9. `Buffer`的数据结构:
+   ![](Buffer数据结构.png)
+   2个索引`readIndex writeIndex`把缓冲区分为了三块:`prependable readable writable`:可以理解为三块缓冲区(预留缓冲区、可读缓冲区、可写缓冲区),这三块缓冲区的大小可以是0
+   `prependable = readIndex`
+   `readable = writeIndex - readIndex`
+   `writable = size() - writeIndex`
+   `0 <= readIndex <= writeIndex <= size()`
+10. `Buffer`中有两个常数:
+    ```C++
+    static const size_t kCheapPrepend = 8;   // 初始预留的prependable空间大小
+    static const size_t kInitialSize = 1024; // Buffer初始大小
+    ```
+    初始化完成后的`Buffer`结构:
+    ![](Buffer初始化完成.png)
+11. `Buffer`的基本IO操作对应的结构图:
+    * 初始化完成后,向`Buffer`写入200字节:
+      ![](Buffer写入200字节.png) 
+      此时`readIndex`不变,`writeIndex`向后移动200字节
+    * 读出50字节:
+      ![](Buffer读出50字节.png)  
+      `readIndex`向后移动50字节,`writeIndex`不变
+    * 接下来,一次性读入150字节,由于全部数据读完了,`readIndex writeIndex`返回原位以备新一轮使用:
+      ![](Buffer读完数据.png)   
+    * <mark>`Buffer`的长度不是固定的,可以自动增长(`MakeSureEnoughStorage`中的`resize()`)(因为底层数据结构用的是`vector<char>`).`readable`由增长为1350(刚好增加了1200),`writeable`由824减为0.另外,`readIndex`由58回到了初始位置8,保证`prependable`等于`kCheapPrependable`.注意由于`vector`重新分配了内存,原来`Buffer`中指向其元素的指针就会失效,这也就是为什么`readIndex writeIndex`是整数下标而不是指针的原因</mark>.`Buffer`没有缩写功能,下次写1350字节数据的时候,就不用重新分配了
+      ![](Buffer的resize.png)
+12. `vector`的`size`和`capacity`:`size`指的是当前存储的有效数据量;`capacity`指的是当前`vector`可以存储的最大数据量.两者是不同的概念
+13. `Buffer`使用`vector`数据结构的好处:
+    * <mark>此时利用了`vector`的`capacity`机制:(`.resize(size_t n)`)`resize`改的是有效数据区域的大小(即把`Buffer`用来存储数据的有效区域改为`n`),将`vector`的大小调整为`n`,即`size`设置为`n`.如果`n>size`,新的元素会被添加到末尾.需要注意的是:`vector`的容量`capacity`在只有当`n > capacity`时,才会自动按照指数增长的方式(如:2倍)增长`capacity`;如果`n<capacity`,那么`resize`只会改变当前的`Buffer`的`size`,而不会改变其容量大小(即不会进行重新的内存分配,而只是直接在后面添加,直接`push_back`,此时的平均复杂的是常数);则在接下来写入`capacity()-size()`字节的数据时,都不会重新分配内存
+    * `Buffer`需要对外表现为一块连续内存且`size()`可以自动增长,以适应不同大小的消息.因此使用`vector`</mark>
+14. 为什么不需要调用`reserve()`(像`AsyncLogging`的`buffers_`一样)来预先分配空间?
+    因为`Buffer`在构造函数里把初始`capacity`(`std::vector<char> buffer_(1024)`,初始时`size=capacity`)设为1KB,这样当需要设置的`size`超过1KB时`vector`会把`capacity`加倍,等于说`resize`就实现了`reserve`的功能,所以不需要`reserve`了
+15. 内部腾挪:经过若干次读写,`readIndex`移到了比较靠后的位置,留下了很大的`prependable`空间,此时想写入`len`长的数据,如果`writeablebytes()+prependablebytes() >= kCheapPrepend+len`,那么`Buffer`此时不会重新分配内存,而是先把已有的数据移到前面去,减小多余的(比`kCheapPrepend`多的,都叫多余的)`prependable`空间,为`writeable`缓冲区腾出空间
+16. `prependable`的作用:它可以让程序以极低的代价完成在数据前添加几个字节.在很多网络协议中,发送数据时需要在实际数据前面添加一些协议头部信息,比如消息长度、消息类型等.这些头部信息通常是在数据准备好之后才确定的.使用`prependable`区域可以避免在缓冲区的头部插入数据时进行不必要的数据拷贝.通常,如果我们在缓冲区的前面插入数据,会需要移动已有的数据,以腾出空间.而 `prependable`区域提供了一个可以直接写入的预留空间,从而避免了额外的内存拷贝和移动
+17. `Peek()`和`begingRead()`函数不是一样的吗,为什么要写两个?
+    * `Peek()`:`Peek()`方法调用`beginRead()`并返回`readIndex_`位置的指针.功能上,它与`beginRead()`返回相同的指针.但是,`Peek()`的设计意图更高层次,它是一个公开的方法,通常用于高层次的读取操作,比如查看当前缓冲区中的内容而不改变读索引的位置
+    * `begingRead()`:用于直接返回当前可读数据的开始位置,即`buffer_`中指向`readIndex_`的位置.函数名更为直观,表示获取当前读操作的起始位置指针.在实现细节上,它是最底层的函数,其他函数(如`Peek()`)依赖于它来获取读指针
+    * 总的来说,这两个函数的功能是一样的,只是为了提供一个上层与"查看"目的相对应的一个公开接口,而使用了`Peek()`
+18. 为什么要提供常量和非常量函数的两个版本?如:`char* begin() const char* begin() cosnt`
+    对于只需要读取数据的函数，可以使用常量函数,从而确保不会意外地修改数据;对于需要修改数据的函数,可以使用非常量函数,以便修改缓冲区的内容
+19. `readv`:用于从文件或文件描述符中将数据读入多个非连续的缓冲区.它避免了多次调用`read()`或额外的内存拷贝
+   ```C++
+   ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+   // fd:文件描述符:如果套接字
+   // iov:指向iovec结构体数组的指针,iovec结构体定义了缓冲区的地址和长度
+   struct iovec {
+      void  *iov_base;  // 缓冲区的起始地址
+      size_t iov_len;   // 缓冲区的长度
+   };
+   // iovcnt:iovec数组的长度,即数组中缓冲区的个数
+   ```
+20. 对于`ReadFd`:在非阻塞网络编程中,一方面我们希望减少系统调用,一次读的数据越多越好,那么似乎要准备一个大的缓冲区;另一方面希望减少内存占用:如果有10000个并发连接,每个连接一建立就分配各50KB的读写缓冲区的话,此时将占用1GB,而大多数时候这些缓冲区的使用率很低(即很多内存其实可能没有使用).怎样解决这个问题?
+    * 本项目和`muduo`使用`readv`结合栈上空间(临时缓冲区`extrabuf`)解决:
+      - 具体做法是:在栈上准备一个65536字节的`extrabuf`(选用这个值),然后利用`readv`来读取数据,`iovec`有两块,第一块指向`Buffer`中的`writeable`字节,另一块指向栈上的`extrabuf`.这样此时如果读入的数据不多,那么全部都读到`Buffer`中去了;如果此时读入的数据长度超过了`Buffer`的`writeable`字节数,就会读到`extrabuf`中去,然后程序在一次读取之后再把`extrabuf`里的数据`Append()`到`Buffer`中(此时如果预先给定的大小`kInitialSize`不够大,它会在`MakeSureEnoughStorage`中自动调整大小`resize`)
+    * 这么做的好处?
+      - 这样做利用了栈空间`extrabuf`,避免了每个连接的初始`Buffer`过大造成的内存浪费(因为只会在数据确实有那么多的时候才使用栈空间,不然不使用)
+      - 避免了反复调用`read()`的系统开销(由于缓冲区足够大,通常一次`readv()`就行)
+      - 由于采用的是水平事件触发,因此此时不会反复调用`read()`直到其返回`EAGAIN`(这个标志意味着从`fd`读完了),从而可以降低消息处理的延迟  
+# Tcpserver
+1. `Tcpserver`中的回调函数是最上层的,一层一层往下传递(如`Tcpserver->Tcpconnection`)
+2. 为什么` std::unique_ptr<Acceptor> acceptor_;`不用`shared_ptr`:
+   不用`shared_ptr`,是为了确保只有`Tcpserver`控制`Acceptor`的生命周期(确保`Acceptor`只会在`Tcpserver`的析构函数中被释放),即只有他独占,没有其它地方共享,所以设计为`unique_ptr`
+3. 为什么`std::shared_ptr<EventLoopThreadPool> threadPool_;`用`shared_ptr`:
+   因为在多线程环境中,多个线程可能需要同时访问`threadPool_`,此时需要共享所有权(免得出现空悬指针的情况)
+4. `Tcpserver`新建连接实际的函数调用关系如下:`Acceptor::channel_`(绑定到`acceptSocket_`了)对应的读事件触发->调用读回调函数`handleRead`->调用`TcpServer::HandleNewConnection`->创建`TcpConnection`对象
+   ![](Tcpserver调用关系.png)
+   <mark>需要注意的是:回调函数实际的调用顺序和回调函数的实际的传入顺序是相反的,这就等价于递归中的递推和回溯过程</mark>
+5. `Tcpserver`处于`HTTP`的下一层(很上层了),其中的连接建立、销毁连接等操作的具体执行是在其所属的`EventLoop`的任务队列`pendingFunctors_`中,在`Tcpserver`中不会执行具体的这些操作,只是把这些操作注册到所属的`EventLoop`中(如`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`)
+6. 本项目的`ConnectionMap connections_`中是一个`TcpConnection`名称和一个`TcpConnectionPtr`映射,而`TcpConnection`名称=`ip_port`(服务器的`IP`和端口)+文件描述符值+该`TcpConnection`的`ID`(`next_conn_id`)
+7. `Tcpserver`中的`connection_callback_  message_callback_`是人为外部自定义传入的,然后又会在`TcpServer::HandleNewConnection`中把这两个回调函数传入`TcpConnection`中
+8. 当新连接一到达,`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
+# TcpConnection
+1. `TcpConnection`有2个`Buffer`:`input buffer`,`output buffer`:
+   * `input buffer`:`TcpConnection`会从`socket`读取数据,然后写入`input buffer`(实际是由`Buffer::readFd()`完成);客户代码在`onMessage`回调中,从`input buffer`读取数据
+   * `output buffer`,客户代码把数据写入`output buffer`(用`Connection::send()`完成);`TcpConnection`从`output buffer`读取数据并写入`socket`
+2. `TcpConnection`的回调都是`Tcpserver`传入的
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -573,7 +781,7 @@
       ::close(epollfd_);//释放套接字资源
     }
     ```
-3. 智能指针的内存管理实际上就是`RAII`的应用,它只是封装成API了,在调用它时就是构造函数获取内存资源(这个指针资源),在离开作用域时就会自动释放这个资源;`std::lock_guard<std::mutex> lock(mtx);`这类互斥锁也是`RAII`的应用,原理和智能指针一样,封装成了上层API,本项目相当于是自己写了一个`std::lock_guard<std::mutex>`
+3. 智能指针的内存管理实际上就是`RAII`的应用,它只是封装成API了,在调用它时就是构造函数获取内存资源(这个指针资源),在离开作用域时就会自动释放这个资源(因为离开作用域后,这个对象就会自动调用析构函数了);`std::lock_guard<std::mutex> lock(mtx);`这类互斥锁也是`RAII`的应用,原理和智能指针一样,封装成了上层API,本项目相当于是自己写了一个`std::lock_guard<std::mutex>`
 4. `RAII`的优点:
    * 异常安全性:通过在析构函数中释放资源,`RAII`确保了即使在异常情况下,资源也能被正确释放,防止资源泄露
    * 简化代码:`RAII`将资源管理的责任交给对象,减少了手动管理资源的需求,使代码更简洁和易于维护

@@ -1,6 +1,7 @@
 #include "ThreadPool.h"
 #include <cassert>
 #include <iostream>
+#include <stdexcept>
 
 using namespace tiny_muduo;
 
@@ -123,5 +124,6 @@ void ThreadPool::runInThread()
   catch (...)
   {
     std::cerr << "unknown exception caught in ThreadPool " << name_ << std::endl;
+    throw std::exception("unknown exception");
   }
 }

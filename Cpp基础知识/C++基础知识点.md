@@ -79,7 +79,7 @@
 32. `void *`是一个通用的指针类型,它可以指向任何类型的数据.然后,使用`void *`需要小心,因为它失去了类型信息,需要在使用时进行强制类型转换
 33. <mark>对数组名取地址得到的整个数组的地址</mark>
 34. `cout << 'b'-'a' << endl;`输出1
-35. <span style="color:red;">`C++代码块`通常指的是一段用花括号`{}`包围起来的`C++`代码,用于定义一个作用域.在这个作用域内声明的变量在作用域外是不可见的,这样可以限制变量的作用范围,提高代码的可读性和安全性</span>
+35. <span style="color:red;">`C++代码块`通常指的是一段用花括号`{}`包围起来的`C++`代码,用于定义一个作用域.在这个作用域内声明的变量在作用域外是不可见的(即离开作用域,里面的变量就会自动销毁),这样可以限制变量的作用范围,提高代码的可读性和安全性</span>
 36. <mark>在`C++`中,函数形参为`const`类型的作用:</mark>
     * 保护实参的值不被修改:使用`const`修饰函数参数可以确保函数内部不会修改实参的值,这样有助于提高代码的可读性,并防止意外的修改实参导致的错误
     * 提高函数的通用性:形参为`const`类型,则实参可以是`const`类型,也可以是非`const`类型
@@ -1257,7 +1257,7 @@ void Swap(AnyType &a, AnyType &b);
    ```
 3. `C++`类中,若定义了有参构造函数,那么在实例化对象时若没有提供参数,编译器会报错,此时不会自动调用默认构造函数
 4. 对于无参构造函数,调用时不用`()`,即:`Myclass obj`就行
-5. `C++`类的析构函数会在对象被销毁时自动调用.具体地说:
+5. <mark>`C++`类的析构函数会在对象被销毁时自动调用(即离开作用域时会自动调用析构函数):</mark>
    ```C++
    1. 当对象超出其作用域时,析构函数会被自动调用
    2. 当对象是动态分配的,通过delete手动释放内存时析构函数会被调用
@@ -1362,6 +1362,50 @@ void Swap(AnyType &a, AnyType &b);
     //类A在定义中使用了一个指向类B的指针,因此为了让编译器B什么,我们需要提前声明
     ```
     前向声明和类的完整定义最终指向的是同一个类
+16. <mark>以下几种情况函数的前向声明是不用给的:</mark>
+    ```C++
+    1. 如果函数在调用点前已经完整定义,此时不用前向声明:
+    void functionB() {
+    std::cout << "In functionB" << std::endl;
+    }
+    void functionA() {
+        functionB(); // 此时 functionB 已经完整定义，可以直接调用
+    }
+    2. 类的成员函数在类内部可以相互调用,不用声明(不管是前还是后):
+    class MyClass {
+    public:
+        void functionA() {
+            functionB(); // functionB 可以直接被调用
+        }
+        void functionB() {
+        }
+    };
+    3. 如果一个类或函数在头文件中已经完整定义,则在引用它们的源文件(.cpp)中不需要额外的声明:
+    // Myclass.h
+    class MyClass {
+    public:
+        void functionA();
+        void functionB();
+    };
+    // Myclass.cpp
+    #include "MyClass.h"
+    void MyClass::functionA() {
+        functionB(); // 已经在头文件中声明，可以直接调用
+    }
+    void MyClass::functionB() {
+    }
+    ```
+    ```C++
+    4. 在一个文件中,如果函数A在调用时还没有见过函数B的声明(非类的成员函数),那么就需要提取声明B:
+    void functionB();
+    void functionA() {
+        std::cout << "In functionA" << std::endl;
+        functionB(); // 调用 functionB，但此时 functionB 还没有定义
+    }
+    void functionB() {
+        std::cout << "In functionB" << std::endl;
+    }
+    ```
 # 类模板
 1. 
 ```C++
@@ -1536,11 +1580,11 @@ int main() {
 # this
 1. `C++`的`this`指针不仅适用于类,也适用于结构体.`this`指针指向当前对象的地址,无论是类还是结构体,都可以使用`this`指针来访问当前对象的成员变量和成员函数
 # assert
-1. `assert`是用于在程序中插入断言,即一种条件判断.它通常在调试阶段用于验证程序的假设是否成立,头文件包含`#include <cassert>`:
+1. `assert`是用于在程序中插入断言,即一种条件判断(条件成立则断言什么都不做,不成立就触发异常或错误).它通常在调试阶段用于验证程序的假设是否成立,头文件包含`#include <cassert>`:
    ```C++
    1. 只有expression:
    int x = 5;
-   assert(x == 5);
+   assert(x == 5);// 不等于5就会触发异常或错误
    2. 带消息的断言(逗号操作符或&&):
    assert(x==5 && "x must be 5);
    assert((void("x must be 5"), x==5));//void用来抑制警告

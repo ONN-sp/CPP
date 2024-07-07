@@ -15,7 +15,6 @@ Acceptor::Acceptor(EventLoop* loop, const Address& address, bool reuseport)
       channel_(std::make_unique<Channel>(loop_, acceptSocket_->fd())){
         acceptSocket_->SetSockoptReuseAddr(true);// 设置地址复用选项
         acceptSocket_->SetSockoptReusePort(reuseport);// 设置地址复用选项
-        acceptSocket_->SetSockoptKeepAlive(true);// 设置保持连接选项
         acceptSocket_->BindAddress(address);// 绑定Acceptor的监听文件描述符到指定地址
         channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));// 设置读回调函数为handleRead方法  即listen_fd_对应的channel的读事件回调为handleRead
       }

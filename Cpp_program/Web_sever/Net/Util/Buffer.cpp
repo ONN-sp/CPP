@@ -90,7 +90,7 @@ void Buffer::Append(const char* message, int len){
 void Buffer::Append(const std::string& message){
     Append(message.data(), static_cast<int>(message.size()));
 }
-// 从缓冲区中提取指定长度的数据
+// 从缓冲区中提取指定长度的数据  实际上就是一个移动readIndex_的过程(因为从缓冲区提取了数据,直接改变的就是readIndex_),不会关心具体的内容
 void Buffer::Retrieve(int len){
     assert(readablebytes() >= len);
     if(len+readIndex_ < writeIndex_)
@@ -103,7 +103,7 @@ void Buffer::RetrieveUnitilIndex(const char* index){
     assert(index <= beginWrite());
     readIndex_ += static_cast<int>(index-beginRead());
 }
-// 提取缓冲区所有数据
+// 复位操作
 void Buffer::RetrieveAll(){
     // 提取完数据后,就把两个索引writeIndex_ readIndex_复原到最初的kCheapPrepend位置
     writeIndex_ = kCheapPrepend;
@@ -111,6 +111,12 @@ void Buffer::RetrieveAll(){
 }
 // 从缓冲区中提取指定长度的数据,并返回一个std::string
 std::string Buffer::RetrieveAsString(int len){
+    std::string ret = std::move(PeekAsString(len));// 将读缓冲区的数据移到ret中
+    Retrieve(len);
+    return ret;
+}
+// 从缓冲区中提取所有的数据,并返回一个std::string
+std::string Buffer::RetrieveAllAsString(){
     std::string ret = std::move(PeekAllAsString());// 将读缓冲区的数据移到ret中
     RetrieveAll();
     return ret;

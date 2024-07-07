@@ -64,6 +64,7 @@
 14. `SO_KEEPALIVE`:这个一个套接字选项,用于启用或禁用TCP连接的"保活"功能(`Keep Alive`).在网络编程中,`SO_KEEPALIVE`选项的作用是帮助检测"死"连接,也就是那些已经断开但并未关闭的连接.<mark>启用`SO_KEEPALIVE`后,`TCP/IP`协议栈会定期发送探测消息(`Keep-Alive`探测包)以确认连接的另一端是否仍然存在和响应.如果连接的另一端没有响应探测消息,`TCP/IP`协议栈会尝试重传一定次数的探测消息.如果多次探测都没有响应,则认为连接已经失效,会终止连接</mark>
 15. 本项目最重要的就是搞清楚一层一层网络的回调函数的调用和传递
 16. `channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));`:对于调用`std::bind`绑定类的成员函数时,传递`this`指针是必要的,因为成员函数需要一个对象实例来调用
+17. 调用线程和所属线程要分清楚,这两者往往涉及到线程安全的问题
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出
@@ -270,8 +271,11 @@
    * `kAdded`:`Channel`已经被添加到`epoll`树上,并正在监控其感兴趣的事件
    * `kDeleted`:`Channel`曾经在`epoll`树上,但当前已被标记为删除.`Channel`已经从`epoll`树中删除了
 8. `Channel`类是用来封装文件描述符(通常是`socket`)的,它负责处理文件描述符上的事件,并调用相应的回调函数,这个回调函数是在检测到写/读/错误事件后就会立即调用的,而不是说检测到写事件后,再`write()`结束后才调用的
-9. 本项目和`muduo`中有两种回调函数:一种是`Channel`中的读、写、错误、关闭回调;一种是非`Channel`回调,如`Acceptor`中属于`Channel`的可读回调`handleread()`中的`NewConnectionCallback`回调等
-10. `Channel`的`close_callback_`可以理解为是为了资源清理时而设置的,当检测到`POLLHUP`事件且没有`POLLIN`事件时,表示此时的连接(其实就是套接字)可能已经挂起或关闭,此时就回调`close_callback_`
+9. `Channel::Tie()`:`TcpConnection`中注册了`channel_`对应的回调函数,传入的回调函数均为`TcpConnection`对象的成员方法,因此可以说明`channel_`的结束一定早于`TcpConnection`对象,否则可能会出现`TcpConnection`对象在其拥有的`channel_`中被销毁了,而此时事件还没结束,所以此时的`channel_`就成为了空悬指针.此处用`Tie`去解决`TcpConnection`和其拥有的`Channel`的生命周期时长问题,从而保证了`Channel`对象能够在其所属的`TcpConnection`对象销毁前销毁
+10. 本项目和`muduo`中有两种回调函数:一种是`Channel`(文件描述符)中的读、写、错误、关闭回调;一种是非`Channel`(文件描述符)回调,如`Acceptor`中属于`Channel`的可读回调`handleread()`中的`NewConnectionCallback`回调等
+11. `Channel`的`close_callback_`可以理解为是为了资源清理时而设置的,当检测到`POLLHUP`事件且没有`POLLIN`事件时,表示此时的连接(其实就是套接字)可能已经挂起或关闭,此时就回调`close_callback_`
+12. <mark>`Channel::HandleEvent`处理的是`channel`对应文件描述符的读、写、关闭、错误四种回调;而`EventLoop::doPendingFunctors()`解决的是上层回调(非文件描述符的回调)(将上层回调放到所属的`loop`中的任务队列中执行,可以保证线程安全性),如`MessageCallback   ConnectionCallback  TcpServer::HandleCloseInLoop  TcpConnection::ConnectionEstablished`等等</mark>
+13. `Channel::HandleEvent()`四种回调函数是在上层的`TcpConnection`的构造函数中注册的
 # Poller
 1. 这是一个基类,因为在muduo中同时支持`poll()`和`epoll()`.本项目只用了`epoll()`,所以只有`epoller`继承了`Poller`,继承后需要重写纯虚函数
 2. `Poller`是I/O多路复用的封装,它是`EventLoop`的组成,与`EventLoop`的生命期相同,为`EventLoop`提供`poll()`方法.`poll()`方法是`Poller`的核心功能,它调用`epoll_wait()`获得当前就绪事件,然后注册一个`Channel`与该就绪事件的`fd`绑定(将`Channel`对象放在`epoll_event`中的用户数据区,这样可以实现文件描述符和`Channel`的一一对应.当`epoll`返回事件时,我们可以通过 `epoll_event`的`data.ptr`字段快速访问到对应的`Channel`对象,而不需要额外的查找操作),然后将该`Channel`填充到`active_channels`
@@ -306,7 +310,7 @@
     running_ = false; // 事件循环结束
     }
     ```
-10. `pendingFunctors_`是每个`EventLoop`对象独立存储的,但在多线程服务器中,其它线程(上层)可能需要向当前这个`EventLoop`添加回调函数(如:上层`EventLoop`会写入定时器回调函数),因此`pendingFunctors_`需要线程安全
+10. `pendingFunctors_`是每个`EventLoop`对象独立存储的,但在多线程服务器中,其它线程(上层)可能需要向当前这个`EventLoop`添加回调函数(如:上层`EventLoop`会写入定时器回调函数),因此`pendingFunctors_`需要线程安全,因此加了锁
 11. 为什么`if (!IsInThreadLoop() || calling_functors_)`后要`wakeup()`?
     * 首先,其它线程向所属当前线程的`EventLoop`添加任务,那么此时一定要`wakeup`(因为其它线程加进来的任务一定不在当前线程的`EventLoop`中,而当前`EventLoop`可能被阻塞住了);其次,如果新加进来的任务不是已经被执行了的,即此时加进来的是下一轮要去执行的,那么需要`wakeup`(为了使新加进来的任务在下一轮能被立即执行),即`calling_functors_`(当前`pendingFunctors_`执行完毕时会给`calling_functors_`置`false`)
 12. `doPendingFunctors`中的经典操作:
@@ -322,6 +326,7 @@
     * 为了与传统的`poll()`兼容(`poll`没有边沿触发),因为在文件描述符数目较少,活动文件描述符比例较高时,`epoll`不见得比`poll`更高效,必要时可以切换`Poller`
     * 水平触发更简单
     * 读写的时候不必等候触发`EAGAIN`(表示缓冲区是否满(满对应写操作)),可以节省系统调用次数,降低延迟
+15. <mark>本项目基于`muduo`设计的核心思想:每个`EventLoop`运行在一个单独的线程中,并且所有与该`EventLoop`相关的操作都应该在这个线程中执行(因此把上层的所有回调函数都放到了其所属的`EventLoop`的任务队列中去了(如:`TcpServer`中的`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`等等)).这个设计理念旨在保证线程安全性和系统的一致性,同时简化了并发编程的复杂性</mark>
 # EventLoopThread&EventLoopThreadLoop
 1. 为了更直接的表示`one loop per thread`,我们建立了`EventLoopThread`,`thread_(std::bind(&EventLoopThread::StartFunc, this), name)`:体现了一个`thread`与一个`loop`绑定
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
@@ -509,17 +514,19 @@
    因为TCP是一个全双工协议,同一个文件描述符既可读又可写,`ShutDownWrite`只关闭了"写"端,而可以继续读,这样是为了不漏收数据;如果直接`close`,此时会把`sockfd_`的读写端都关闭了
 5. `address.sin_addr.s_addr = LookBackOnly ? htol(INADDR_LOOPBACK) : htonl(INADDR_ANY);`:表示绑定为回环地址或任意地址,默认绑定任意地址(即不给定`LookBackOnly`参数时)
 6. 监听回环地址:表示只接受来自本地的连接;监听任意地址:表示接受来自网络上的任何地址连接
+7. 一个`Socket`对象<=>一个文件描述符<=>一个`channel`
 # Buffer
 1. 为什么非阻塞网络编程中应用层的`buffer`是必须的?
    `non-blocking`网络编程中,`non-blocking IO`核心思想是避免阻塞在`read()/write()`或其他IO系统调用,可以最大限度复用`thread-of-control`,让一个线程能服务于多个`socket`连接.而IO线程只能阻塞在`IO-multiplexing`函数上,如`select()/poll()/epoll_wait()`,这样应用层的缓冲区就是必须的
 2. `TcpConnection`必须要有`output buffer`:
-   * 程序想通过`TCP`连接发送`100K byte`数据,但在`write()`调用中,操作系统只接收`80K`(受`TCP`通告窗口`advertised window`的控制),而程序又不能原地阻塞等待,事实上也不知道要等多久.程序应该尽快交出控制器,返回到`event loop`.此时,剩余20K数据怎么办？对应用程序,它只管生成数据,不应该关心数据是一次发送,还是分几次发送,这些应该由网络库操心,程序只需调用`TcpConnection::send()`即可.网络库应该接管剩余的20K数据,把它保存到`TcpConnection`的`output buffer`,然后注册`POLLOUT`事件(需要注意的是不是一开始就关注`POLLOUT`(写)事件,而是在`write`无法完全写入内核缓冲区的时候才关注,将未写入的数据添加到应用层的`output buffer`缓冲区中,直到应用层这个缓冲区写完,就停止关注写事件,此时写完不停止关注的话就可能会造成`busy loop`),一旦`socket`变得可写就立刻发送数据.当然,第二次不一定能完全写入20K,如果有剩余,网络库应该继续关注`POLLOUT`事件;如果写完20K,网络库应该停止关注`POLLOUT`,以免造成`busy loop`
+   * 程序想通过`TCP`连接发送`100K byte`数据,但在`write()`调用中,操作系统(内核缓冲区)只接收`80K`(受`TCP`通告窗口`advertised window`的控制),而程序又不能原地阻塞等待,事实上也不知道要等多久.程序应该尽快交出控制器,返回到`event loop`.此时,剩余20K数据怎么办？对应用程序,它只管生成数据,不应该关心数据是一次发送,还是分几次发送,这些应该由网络库操心,程序只需调用`TcpConnection::send()`即可.网络库应该接管剩余的20K数据,把它保存到`TcpConnection`的`output buffer`,然后注册`POLLOUT`事件(需要注意的是不是一开始就关注`POLLOUT`(写)事件,而是在`write`无法完全写入内核缓冲区的时候才关注,将未写入的数据添加到应用层的`output buffer`缓冲区中,直到应用层这个缓冲区写完,就停止关注写事件,此时写完不停止关注的话就可能会造成`busy loop`),一旦`socket`变得可写就立刻发送数据.当然,第二次不一定能完全写入20K,如果有剩余,网络库应该继续关注`POLLOUT`事件;如果写完20K,网络库应该停止关注`POLLOUT`,以免造成`busy loop`
    * 如果程序又写入50K,而此时`output buffer`里还有待发20K数据,那么网络库不应该直接调用`write()`,而应该把这50K数据`append`到那20K数据之后,等`socket`变得可写时再一并写入
    * 如果`output buffer`里还有待发送数据,而程序又想关闭连接,但对程序而言,调用`TcpConnection::send()`后就认为数据迟早会发出去,此时网络库不应该直接关闭连接,而要等数据发送完毕.因为此时数据可能还在内核缓冲区中,并没有通过网卡成功发送给接收方.将数据`append`到`buffer`.甚至`write`进内核，都不代表数据成功发送给对端
 3. `TcpConnection`必须要有`input buffer`:
    * `Tcp`是一个无边界的字节流协议,接收方可能出现粘包和分包的问题,因此需要`input buffer`
 4. 对于应用层来说,它不会直接去操作`read() write()`这些IO函数,而是操作`input buffer`和`output buffer`
-5. `std::copy`:`C++`标准库中将一个范围内的元素复制到另一个范围的算法.通常用于在容器之间复制元素,也可用于指针指向的数组之间的复制:
+5. <mark>`Buffer`类中关注的是数据的管理方式(如可读、可写、预留的区域的大小等),而不会关注具体管理和解释数据的具体内容</mark>
+6. `std::copy`:`C++`标准库中将一个范围内的元素复制到另一个范围的算法.通常用于在容器之间复制元素,也可用于指针指向的数组之间的复制:
    ```C++
    OutputIterator copy(InputIterator first, InputIterator last, OutputIterator result);
    //InputIterator first: 指向要复制的元素范围的起始位置（包括该位置的元素）
@@ -537,7 +544,7 @@
    char destination[50];
    std::copy(source, source + strlen(source) + 1, destination); // 包含 '\0'
    ```
-6. `std::search()`:`C++`标准库的算法,用于在一个范围内查找子范围的第一个匹配位置:
+7. `std::search()`:`C++`标准库的算法,用于在一个范围内查找子范围的第一个匹配位置:
    ```C++
    ForwardIterator1 search(ForwardIterator1 first1, ForwardIterator1 last1,
                         ForwardIterator2 first2, ForwardIterator2 last2);
@@ -548,7 +555,7 @@
    std::vector<int> needle = {4, 5, 6};
    auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end());
    ```
-7. `std::to_string()`:`C++`标准库函数,用于将数值类型转换为字符串.提供了一种方便的方法来将整数、浮点数等数值类型转换为标准库中的`std::string`对象:
+8. `std::to_string()`:`C++`标准库函数,用于将数值类型转换为字符串.提供了一种方便的方法来将整数、浮点数等数值类型转换为标准库中的`std::string`对象:
    ```C++
    namespace std {
     string to_string(int value);
@@ -562,24 +569,24 @@
     string to_string(long double value);
    }
    ```
-8. `Buffer`故意设计成非线程安全的:
+9. `Buffer`故意设计成非线程安全的:
    * 对于`input buffer`,`onMessage()`回调发生在该`TcpConnection`所属IO线程,应用程序应该在`onMessage()`中完成对`input buffer`的操作,并且不要把`input buffer`暴露给其他线程.这样,对`input buffer`的操作都在同一个IO线程,因此`Buffer class`不必是线程安全的。
    * 对于`output buffer`,应用程序不会直接操作它,而是调用`TcpConenction::send()`来发送数据,后者是线程安全的.准确来说,是会让`output buffer`只会在所属IO线程操作
-9. `Buffer`的数据结构:
+10. `Buffer`的数据结构:
    ![](Buffer数据结构.png)
    2个索引`readIndex writeIndex`把缓冲区分为了三块:`prependable readable writable`:可以理解为三块缓冲区(预留缓冲区、可读缓冲区、可写缓冲区),这三块缓冲区的大小可以是0
    `prependable = readIndex`
    `readable = writeIndex - readIndex`
    `writable = size() - writeIndex`
    `0 <= readIndex <= writeIndex <= size()`
-10. `Buffer`中有两个常数:
+11. `Buffer`中有两个常数:
     ```C++
     static const size_t kCheapPrepend = 8;   // 初始预留的prependable空间大小
     static const size_t kInitialSize = 1024; // Buffer初始大小
     ```
     初始化完成后的`Buffer`结构:
     ![](Buffer初始化完成.png)
-11. `Buffer`的基本IO操作对应的结构图:
+12. `Buffer`的基本IO操作对应的结构图:
     * 初始化完成后,向`Buffer`写入200字节:
       ![](Buffer写入200字节.png) 
       此时`readIndex`不变,`writeIndex`向后移动200字节
@@ -590,21 +597,21 @@
       ![](Buffer读完数据.png)   
     * <mark>`Buffer`的长度不是固定的,可以自动增长(`MakeSureEnoughStorage`中的`resize()`)(因为底层数据结构用的是`vector<char>`).`readable`由增长为1350(刚好增加了1200),`writeable`由824减为0.另外,`readIndex`由58回到了初始位置8,保证`prependable`等于`kCheapPrependable`.注意由于`vector`重新分配了内存,原来`Buffer`中指向其元素的指针就会失效,这也就是为什么`readIndex writeIndex`是整数下标而不是指针的原因</mark>.`Buffer`没有缩写功能,下次写1350字节数据的时候,就不用重新分配了
       ![](Buffer的resize.png)
-12. `vector`的`size`和`capacity`:`size`指的是当前存储的有效数据量;`capacity`指的是当前`vector`可以存储的最大数据量.两者是不同的概念
-13. `Buffer`使用`vector`数据结构的好处:
+13. `vector`的`size`和`capacity`:`size`指的是当前存储的有效数据量;`capacity`指的是当前`vector`可以存储的最大数据量.两者是不同的概念
+14. `Buffer`使用`vector`数据结构的好处:
     * <mark>此时利用了`vector`的`capacity`机制:(`.resize(size_t n)`)`resize`改的是有效数据区域的大小(即把`Buffer`用来存储数据的有效区域改为`n`),将`vector`的大小调整为`n`,即`size`设置为`n`.如果`n>size`,新的元素会被添加到末尾.需要注意的是:`vector`的容量`capacity`在只有当`n > capacity`时,才会自动按照指数增长的方式(如:2倍)增长`capacity`;如果`n<capacity`,那么`resize`只会改变当前的`Buffer`的`size`,而不会改变其容量大小(即不会进行重新的内存分配,而只是直接在后面添加,直接`push_back`,此时的平均复杂的是常数);则在接下来写入`capacity()-size()`字节的数据时,都不会重新分配内存
     * `Buffer`需要对外表现为一块连续内存且`size()`可以自动增长,以适应不同大小的消息.因此使用`vector`</mark>
-14. 为什么不需要调用`reserve()`(像`AsyncLogging`的`buffers_`一样)来预先分配空间?
+15. 为什么不需要调用`reserve()`(像`AsyncLogging`的`buffers_`一样)来预先分配空间?
     因为`Buffer`在构造函数里把初始`capacity`(`std::vector<char> buffer_(1024)`,初始时`size=capacity`)设为1KB,这样当需要设置的`size`超过1KB时`vector`会把`capacity`加倍,等于说`resize`就实现了`reserve`的功能,所以不需要`reserve`了
-15. 内部腾挪:经过若干次读写,`readIndex`移到了比较靠后的位置,留下了很大的`prependable`空间,此时想写入`len`长的数据,如果`writeablebytes()+prependablebytes() >= kCheapPrepend+len`,那么`Buffer`此时不会重新分配内存,而是先把已有的数据移到前面去,减小多余的(比`kCheapPrepend`多的,都叫多余的)`prependable`空间,为`writeable`缓冲区腾出空间
-16. `prependable`的作用:它可以让程序以极低的代价完成在数据前添加几个字节.在很多网络协议中,发送数据时需要在实际数据前面添加一些协议头部信息,比如消息长度、消息类型等.这些头部信息通常是在数据准备好之后才确定的.使用`prependable`区域可以避免在缓冲区的头部插入数据时进行不必要的数据拷贝.通常,如果我们在缓冲区的前面插入数据,会需要移动已有的数据,以腾出空间.而 `prependable`区域提供了一个可以直接写入的预留空间,从而避免了额外的内存拷贝和移动
-17. `Peek()`和`begingRead()`函数不是一样的吗,为什么要写两个?
+16. 内部腾挪:经过若干次读写,`readIndex`移到了比较靠后的位置,留下了很大的`prependable`空间,此时想写入`len`长的数据,如果`writeablebytes()+prependablebytes() >= kCheapPrepend+len`,那么`Buffer`此时不会重新分配内存,而是先把已有的数据移到前面去,减小多余的(比`kCheapPrepend`多的,都叫多余的)`prependable`空间,为`writeable`缓冲区腾出空间
+17. `prependable`的作用:它可以让程序以极低的代价完成在数据前添加几个字节.在很多网络协议中,发送数据时需要在实际数据前面添加一些协议头部信息,比如消息长度、消息类型等.这些头部信息通常是在数据准备好之后才确定的.使用`prependable`区域可以避免在缓冲区的头部插入数据时进行不必要的数据拷贝.通常,如果我们在缓冲区的前面插入数据,会需要移动已有的数据,以腾出空间.而 `prependable`区域提供了一个可以直接写入的预留空间,从而避免了额外的内存拷贝和移动
+18. `Peek()`和`begingRead()`函数不是一样的吗,为什么要写两个?
     * `Peek()`:`Peek()`方法调用`beginRead()`并返回`readIndex_`位置的指针.功能上,它与`beginRead()`返回相同的指针.但是,`Peek()`的设计意图更高层次,它是一个公开的方法,通常用于高层次的读取操作,比如查看当前缓冲区中的内容而不改变读索引的位置
     * `begingRead()`:用于直接返回当前可读数据的开始位置,即`buffer_`中指向`readIndex_`的位置.函数名更为直观,表示获取当前读操作的起始位置指针.在实现细节上,它是最底层的函数,其他函数(如`Peek()`)依赖于它来获取读指针
     * 总的来说,这两个函数的功能是一样的,只是为了提供一个上层与"查看"目的相对应的一个公开接口,而使用了`Peek()`
-18. 为什么要提供常量和非常量函数的两个版本?如:`char* begin() const char* begin() cosnt`
+19. 为什么要提供常量和非常量函数的两个版本?如:`char* begin() const char* begin() cosnt`
     对于只需要读取数据的函数，可以使用常量函数,从而确保不会意外地修改数据;对于需要修改数据的函数,可以使用非常量函数,以便修改缓冲区的内容
-19. `readv`:用于从文件或文件描述符中将数据读入多个非连续的缓冲区.它避免了多次调用`read()`或额外的内存拷贝
+20. `readv`:用于从文件或文件描述符中将数据读入多个非连续的缓冲区.它避免了多次调用`read()`或额外的内存拷贝
    ```C++
    ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
    // fd:文件描述符:如果套接字
@@ -615,31 +622,49 @@
    };
    // iovcnt:iovec数组的长度,即数组中缓冲区的个数
    ```
-20. 对于`ReadFd`:在非阻塞网络编程中,一方面我们希望减少系统调用,一次读的数据越多越好,那么似乎要准备一个大的缓冲区;另一方面希望减少内存占用:如果有10000个并发连接,每个连接一建立就分配各50KB的读写缓冲区的话,此时将占用1GB,而大多数时候这些缓冲区的使用率很低(即很多内存其实可能没有使用).怎样解决这个问题?
+21. 对于`ReadFd`:在非阻塞网络编程中,一方面我们希望减少系统调用,一次读的数据越多越好,那么似乎要准备一个大的缓冲区;另一方面希望减少内存占用:如果有10000个并发连接,每个连接一建立就分配各50KB的读写缓冲区的话,此时将占用1GB,而大多数时候这些缓冲区的使用率很低(即很多内存其实可能没有使用).怎样解决这个问题?
     * 本项目和`muduo`使用`readv`结合栈上空间(临时缓冲区`extrabuf`)解决:
       - 具体做法是:在栈上准备一个65536字节的`extrabuf`(选用这个值),然后利用`readv`来读取数据,`iovec`有两块,第一块指向`Buffer`中的`writeable`字节,另一块指向栈上的`extrabuf`.这样此时如果读入的数据不多,那么全部都读到`Buffer`中去了;如果此时读入的数据长度超过了`Buffer`的`writeable`字节数,就会读到`extrabuf`中去,然后程序在一次读取之后再把`extrabuf`里的数据`Append()`到`Buffer`中(此时如果预先给定的大小`kInitialSize`不够大,它会在`MakeSureEnoughStorage`中自动调整大小`resize`)
     * 这么做的好处?
       - 这样做利用了栈空间`extrabuf`,避免了每个连接的初始`Buffer`过大造成的内存浪费(因为只会在数据确实有那么多的时候才使用栈空间,不然不使用)
       - 避免了反复调用`read()`的系统开销(由于缓冲区足够大,通常一次`readv()`就行)
       - 由于采用的是水平事件触发,因此此时不会反复调用`read()`直到其返回`EAGAIN`(这个标志意味着从`fd`读完了),从而可以降低消息处理的延迟  
+22. `Buffer`中的`Retrieve`系列函数指的是提取指定长度字节后,`Buffer`中`readIndex_ writeIndex_`的设置,即:用于移动 `Buffer`对象中的`readerIndex_ writeIndex_`(`RetrieveAll`实际就是一个复位操作),从而标识已经从缓冲区中提取了一定数量的数据(`Buffer`不关心读取的具体内容)
 # Tcpserver
 1. `Tcpserver`中的回调函数是最上层的,一层一层往下传递(如`Tcpserver->Tcpconnection`)
 2. 为什么` std::unique_ptr<Acceptor> acceptor_;`不用`shared_ptr`:
    不用`shared_ptr`,是为了确保只有`Tcpserver`控制`Acceptor`的生命周期(确保`Acceptor`只会在`Tcpserver`的析构函数中被释放),即只有他独占,没有其它地方共享,所以设计为`unique_ptr`
 3. 为什么`std::shared_ptr<EventLoopThreadPool> threadPool_;`用`shared_ptr`:
    因为在多线程环境中,多个线程可能需要同时访问`threadPool_`,此时需要共享所有权(免得出现空悬指针的情况)
-4. `Tcpserver`新建连接实际的函数调用关系如下:`Acceptor::channel_`(绑定到`acceptSocket_`了)对应的读事件触发->调用读回调函数`handleRead`->调用`TcpServer::HandleNewConnection`->创建`TcpConnection`对象
+4. 客户端发起一个新建连接(即一个新的`TcpConnection`)请求实际的函数调用关系如下:(起初创建`accpetor`对象就已经`::bind`了)`TcpServer::Start()`(启动`Acceptor::Listen()`)->`Acceptor::channel_`(绑定到`acceptSocket_`了)对应的读事件触发->调用读回调函数`handleRead`->调用`TcpServer::HandleNewConnection`->创建`TcpConnection`对象、传递`TcpServer`中的上层回调到该`TcpConnection`中、将`TcpConnection::ConnectionEstablished`放入所属的`EventLoop`中(用户自定义的`connection_callback_`就在这个函数里面执行)
    ![](Tcpserver调用关系.png)
    <mark>需要注意的是:回调函数实际的调用顺序和回调函数的实际的传入顺序是相反的,这就等价于递归中的递推和回溯过程</mark>
 5. `Tcpserver`处于`HTTP`的下一层(很上层了),其中的连接建立、销毁连接等操作的具体执行是在其所属的`EventLoop`的任务队列`pendingFunctors_`中,在`Tcpserver`中不会执行具体的这些操作,只是把这些操作注册到所属的`EventLoop`中(如`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`)
 6. 本项目的`ConnectionMap connections_`中是一个`TcpConnection`名称和一个`TcpConnectionPtr`映射,而`TcpConnection`名称=`ip_port`(服务器的`IP`和端口)+文件描述符值+该`TcpConnection`的`ID`(`next_conn_id`)
 7. `Tcpserver`中的`connection_callback_  message_callback_`是人为外部自定义传入的,然后又会在`TcpServer::HandleNewConnection`中把这两个回调函数传入`TcpConnection`中
-8. 当新连接一到达,`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
+8. 当新连接一建立(`Acceptor::handlRead()`了),`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
+9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
 # TcpConnection
 1. `TcpConnection`有2个`Buffer`:`input buffer`,`output buffer`:
-   * `input buffer`:`TcpConnection`会从`socket`读取数据,然后写入`input buffer`(实际是由`Buffer::readFd()`完成);客户代码在`onMessage`回调中,从`input buffer`读取数据
-   * `output buffer`,客户代码把数据写入`output buffer`(用`Connection::send()`完成);`TcpConnection`从`output buffer`读取数据并写入`socket`
+   * `input buffer`:`TcpConnection`会从`socket`(内核缓冲区)读取数据,然后写入`input buffer`(用户缓冲区)(实际是由`Buffer::readFd()`完成);客户代码在`onMessage`回调中,从`input buffer`读取数据
+   * `output buffer`,客户代码把数据写入`output buffer`(用户缓冲区)(用`Connection::send()`完成);`TcpConnection`从`output buffer`读取数据并写入`socket`(内核缓冲区)
 2. `TcpConnection`的回调都是`Tcpserver`传入的
+3. 本项目中讨论的连接文件描述符就是`accept`得到的`fd`(之前我把它描述成的是通信文件描述符)
+4. <mark>一个`TcpConnection`<=>一个`connfd`<=>一个`channel`</mark>
+5. 为什么`SetSockoptKeepAlive()`设置在`TcpConnection`而不是`Acceptor`中?
+   `Tcp`的`KeepAlive`用在`TcpConnection`是最合理的,因为这里才是一个新的`Tcp`连接的起点(`TcpServer::HandleNewConnection`一创建一个新的连接,就会立即进入`Tcpconnection`构造函数中),而`Acceptor`中的`bind listen`是使用`TCP`协议,而不是一个真正的`TCP`连接的起点
+6. `shared_from_this()`:这是`C++`中智能指针`std::shared_ptr`的一种高级用法.它是一个成员函数,它允许对象在其成员函数内部获取指向自身的`std::shared_ptr`(如果是获得指向自身的指针,那么就是`this`).<mark>要在类中的成员函数使用`shared_from_this()`,该类必须要继承自`std::enable_shared_from_this<T>`,其中`T`是类本身.这样,`shared_from_this()`函数会被添加到类中,如:`class TcpConnection : public std::enable_shared_from_this<TcpConnection>`</mark>
+7. 为什么`Shutdown`要放入到所属的`Loop`中执行?
+   如果`TcpConnection::shutdown`函数直接在当前调用线程中执行关闭操作,而这个线程可能不是`TcpConnection`所属的 `EventLoop`的线程,就会导致线程安全问题
+8. `if(errno != EWOULDBLOCK)`:由于`connfd_`在`Aceeptor`中被设置成的非阻塞,所以可能出现一种情况是:当前操作无法立即完成而被阻塞导致`send_size<0`,此时其实不是真正的错误,所以写日志的时候需要区分开
+9. 给`TcpConnection`传入的`connfd`是由`Acceptor::handleRead()`中的`Accept4`得到的一个已连接的文件描述符
+10. `TcpConnection::Handlewrite()`中如果`output_buffer_`写完了,不关闭对应`channel_`的话,它就会`busy loop`,即一直触发可写事件(`channel_->DisableWriting();`)
+11. 对于`TcpConnection`的`output_buffer_`如果一次没写完,即此时`ouput_buffer_`还有可读的区域,那么会继续触发可写事件,继续执行`TcpConnection::HandleWrite()`
+12. `TcpConnection::Send()`:首先,直接将待发送的`message`发送到内核缓冲区(此时不利用`Buffer`类),如果发送完了`Send()`就结束了;否则,将剩下的数据先添加到当前`TcpConnection`对象的`output_buffer_`中,以待后续通过触发可写事件回调`TcpConnection::HandleWrite()`进行写(写剩下的数据其实就和可写事件触发回调`TcpConnection::HandleWrite()`一样了).需要注意的是:此时一定要注册写事件`channel_->EnableWriting();`,否则后续无法触发可写事件了
+13. 为什么`TcpConnection`的对象指针要用`shared_ptr`管理,而不是像其它对象那样用`unique_ptr`?(只有`TcpConnection`的指针对象用`shared_ptr`管理)
+    
+14. `TcpConnection::ConnectionEstablished()`中为什么要用`Tie()`?
+    `channel_`中注册了当前`TcpConnection`对象的回调事件.如果在回调事件处理过程中,拥有`channel_`的高层对象(对应的`TcpConnection`)被销毁了,这就会导致`channel_`指向的对象变得无效或指向非法内存(空悬指针),因此我们应该延长该`TcpConnection`对象的生命周期,使之比其拥有的`channel_`长,所以要调用`channel_->Tie(shared_from_this());`    
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

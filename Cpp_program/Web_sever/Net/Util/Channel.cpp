@@ -50,13 +50,13 @@ void Channel::SetErrorCallback(const ErrorCallback& callback){
     error_callback_ = std::move(callback);
 }
 
-//将Channel绑定到某个对象的生命周期上,避免使用时对象已被销毁
-//Tie什么时候被调用了?   TcpConnection => channel
+//将Channel绑定到某个对象A的生命周期上,避免使用时对象A已被销毁
+//Tie什么时候被调用了?   TcpConnection => channel_
 /**
  * @brief TcpConnection中注册了Channel对应的回调函数,传入的回调函数均为TcpConnection对象的成员方法,因此可以说明:Channel的结束一定早于TcpConnection对象
  * 此处用Tie去解决TcpConnection和Channel的生命周期时长问题,从而保证了Channel对象能够在TcpConnection销毁前销毁
  */
-void Channel::Tie(const std::shared_ptr<void>& ptr){
+void Channel::Tie(const std::shared_ptr<void>& ptr){// 防止对象ptr在事件处理过程(它自己的channel中的回调事件)中被销毁
     tied_ = true;
     tie_ = ptr;
 }
@@ -149,7 +149,7 @@ void Channel::HandleEvent(){
         HandleEventWithGuard();
 }
 
-//带有保护机制的事件处理
+//带有保护机制的事件处理   下面四种回调函数是在TcpConnection的构造函数中注册的
 void Channel::HandleEventWithGuard(){
     if((recv_events_ & POLLHUP) && !(recv_events_ & POLLIN))// POLLHUP表示挂起(挂断)事件,表示事件被挂起或关闭(挂起和关闭时都要调用close_callback_)
         if(close_callback_)

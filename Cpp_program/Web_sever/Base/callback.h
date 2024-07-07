@@ -8,7 +8,7 @@ namespace tiny_muduo{
     class TcpConnection;//前向声明
     using TcpConnectionPtr = std::shared_ptr<TcpConnection>;
     class Buffer;
-    using ConnectionCallback = std::function<void(const TcpConnectionPtr&, Buffer*)>;
+    using ConnectionCallback = std::function<void(const TcpConnectionPtr&)>;
     using MessageCallback = std::function<void(const TcpConnectionPtr&, Buffer*)>;
     using ReadCallback = std::function<void()>;
     using WriteCallback = std::function<void()>;

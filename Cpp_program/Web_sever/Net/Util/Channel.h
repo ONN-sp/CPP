@@ -35,7 +35,7 @@ namespace tiny_muduo{
         void SetErrorCallback(ErrorCallback&&);
         //设置错误回调函数(移动语义)
         void SetErrorCallback(const ErrorCallback&);
-        //将Channel绑定到某个对象的生命周期上,避免使用时对象已被销毁
+        //将Channel绑定到某个对象的生命周期上,避免使用时对象已被销毁  延长某个对象的生命期
         void Tie(const std::shared_ptr<void>&);
         //启动读事件
         void EnableReading();

@@ -42,7 +42,7 @@ class EventLoop : public NonCopyAble{
         void doPendingFunctors(); //执行上层回调
         bool running_; // 标志事件循环是否在运行
         bool quit_;// 标志事件循环是否退出 
-        pid_t tid_; // 记录当前EventLoop是被哪个线程id创建的  即标识了当前EventLoop的所属线程id,这个是标识当前EventLoop所属的线程id
+        pid_t tid_; // 记录当前EventLoop是被哪个线程id创建的  即标识了当前EventLoop的所属线程id
         std::unique_ptr<Epoller> epoller_; // 管理事件的 Epoller 对象
         int wakeup_fd_; // 事件循环使用的唤醒文件描述符  当主mainloop获取一个新用户的Channel(即获得一个文件描述符)  需要轮询算法选择一个subloop  通过wakeup_fd_唤醒subloop
         std::unique_ptr<Channel> wakeup_channel_; // 唤醒事件循环的 Channel 对象

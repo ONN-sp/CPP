@@ -1,6 +1,7 @@
 #include "Tcpserver.h"
 #include "EventLoop.h"
 #include "EventLoopThreadPool.h"
+#include "Tcpconnection.h"
 #include "../../Base/Address.h"
 #include "Acceptor.h"
 #include "../../Base/Logging/Logging.h"
@@ -12,8 +13,8 @@ TcpServer::TcpServer(EventLoop* loop, const Address& address, const std::string&
     : loop_(loop),
       next_conn_id(1),
       name_(name), 
-      threads_(std::make_unique<EventLoopThreadPool>(loop_, name_)),
-      acceptor_(std::make_shared<Acceptor>(loop_, address, option == Option::kReusePort)),// Acceptor类构造函数需要给定是否重用端口的一个参数
+      threads_(std::make_unique<EventLoopThreadPool>(loop, name)),
+      acceptor_(std::make_shared<Acceptor>(loop, address, option == Option::kReusePort)),// Acceptor类构造函数需要给定是否重用端口的一个参数
       ip_port_(address.IpPortToString()),
       connection_callback_(),
       message_callback_(){ 
@@ -39,12 +40,12 @@ void TcpServer::Start(){
     threads_->StartLoop(threadInit_callback_);
     loop_->RunOneFunc(std::bind(&Acceptor::Listen, acceptor_.get()));// std::bind通常期望传入普通指针或引用,而不是智能指针,所以对于智能指针要用`.get()`获取智能指针内部封装的裸指针
 }
-
+// HandleClose()是channel中的关闭回调
 void TcpServer::HandleClose(const TcpConnectionPtr& ptr){
-    // 当一个TcpConnection关闭时,将关闭操作排入主EventLoop的任务队列中(放到了pendingFunctors_中)
+    // 当一个TcpConnection关闭时,将关闭操作放入主EventLoop的任务队列中(放到了pendingFunctors_中)
     loop_->RunOneFunc(std::bind(&TcpServer::HandleCloseInLoop, this, ptr));
 }
-
+// HandleCloseInLoop不是channel中的关闭回调,它是HandleClose()这个channel关闭回调里的回调函数  这是一个上层回调
 void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     // 确保要关闭的连接在哈希表中
     assert(connections_.find(ptr->name())!=connections_.end());
@@ -52,11 +53,9 @@ void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     LOG_INFO << "TcpServer::HandleCloseInLoop - remove connection " << "["  
            << ip_port_ << '#' << ptr->id() << ']';
     EventLoop* loop = ptr->loop();// 获取TcpConnection对象所属的loop
-    // 将销毁连接的操作放入其所属的EventLoop中的任务队列
-    loop->QueueOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));
 }
 
-void TcpServer::HandleNewConnection(int connfd, const Address& address){
+void TcpServer:: HandleNewConnection(int connfd, const Address& address){
     // 取一个子EventLoop来管理connfd对应的channel
     EventLoop* sub_loop = threads_->NextLoop();
     // 创建一个新的TcpConnection对象来处理新连接

@@ -45,7 +45,7 @@ EventLoop::~EventLoop() {
     ::close(wakeup_fd_); // 关闭唤醒的文件描述符
 }
 
-bool EventLoop::IsInThreadLoop(){//判断当前EventLoop对象是否在自己的线程里   通过判断当前EventLoop所属的id与调用这个EventLoop中的函数的的线程id是不是相同的来进行识别
+bool EventLoop::IsInThreadLoop(){// 判断当前EventLoop对象是否在自己所属的线程里   通过判断当前EventLoop所属的id与调用这个EventLoop中的函数的的线程id是不是相同的来进行识别
     return CurrentThread::tid() == tid_; // 此处的CurrentThread::tid()表示当前调用IsInThreadLoop()的线程ID 
 }
 

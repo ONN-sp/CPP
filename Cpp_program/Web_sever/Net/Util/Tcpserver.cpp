@@ -53,6 +53,7 @@ void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     LOG_INFO << "TcpServer::HandleCloseInLoop - remove connection " << "["  
            << ip_port_ << '#' << ptr->id() << ']';
     EventLoop* loop = ptr->loop();// 获取TcpConnection对象所属的loop
+    loop->QueueOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));// 这里必须要放在Loop里,如果直接执行就可能出现TcpConnection的被析构了(它所拥有的channel_也会析构),但此时可能channel_回调的事件并没结束,导致channel_无引用定义
 }
 
 void TcpServer:: HandleNewConnection(int connfd, const Address& address){
@@ -66,7 +67,7 @@ void TcpServer:: HandleNewConnection(int connfd, const Address& address){
     // 设置连接的各种回调函数
     ptr->SetConnectionCallback(connection_callback_);
     ptr->SetMessageCallback(message_callback_);
-    ptr->SetCloseCallback(std::bind(&TcpServer::HandleClose, this, std::placeholders::_1));
+    ptr->Set(std::bind(&TcpServer::HandleClose, this, std::placeholders::_1));
     // 打印日志
     LOG_INFO << "TcpServer::HandleNewConnection - new connection " << "[" 
         << ip_port_ << '#' << next_conn_id << ']' << " from " 

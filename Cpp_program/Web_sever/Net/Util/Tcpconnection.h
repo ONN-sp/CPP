@@ -57,16 +57,14 @@ namespace tiny_muduo{
             void HandleRead();// 内核缓冲区->用户缓冲区->输出消息
             // 处理可写事件
             void HandleWrite();// 输入消息->用户缓冲区->内核缓冲区
-            // 通过Buffer发送数据
-            void Send(Buffer*);
+            void forceClose();// 服务器主动关闭连接
+            void forceCloseInLoop();
             // 通过字符串发送数据
             void Send(const std::string&);
-            // 通过字符指针和指定长度发送数据
-            void Send(const char*, int);
-            // 只通过字符指针发送数据
-            void Send(const char*);
+            // 将Send操作放入所属的EventLoop中
+            void SendInLoop(const char*, int);
             // 指定更新时间戳 为了后续写入日志
-            void UpdateTimestamp(Timestamp now){ return timestamp_ = now;}
+            void UpdateTimestamp(Timestamp now){ timestamp_ = now;}
             // 获取时间戳
             Timestamp timestamp() const {return timestamp_;}
             // 获取当前TcpConnection的名称
@@ -76,8 +74,7 @@ namespace tiny_muduo{
             // 获取关联的事件循环loop
             EventLoop* loop() const { return loop_;}
             // 获取HTTP内容
-            HttpContent* GetHttpContent() {return content_;}
-            const std::string name() const { return name_;}
+            HttpContent* GetHttpContent() {return &content_;}
         private:
             EventLoop* loop_; // 当前连接所属的loop
             const std::string ip_port_;// 服务器的IP和端口

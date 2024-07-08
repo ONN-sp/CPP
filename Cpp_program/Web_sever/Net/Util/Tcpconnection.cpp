@@ -22,7 +22,7 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
         channel_->SetReadCallback(std::bind(&TcpConnection::HandleRead, this));
         channel_->SetWriteCallback(std::bind(&TcpConnection::HandleWrite, this));
         channel_->SetErrorCallback(std::bind(&TcpConnection::HandleError, this));
-        channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this)); 
+        channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this)); // 这个channel_的关闭回调和服务端被动关闭调用HandleClose是两码事
         //  Tcp的KeepAlive用在这是最合理的,因为这里才是一个新的Tcp连接的起点  Acceptor中的bind listen是使用TCP协议,而不是一个真正的TCP连接的起点
         TcpConnectionSocket_->SetSockoptKeepAlive(); 
     }
@@ -84,14 +84,32 @@ void TcpConnection::HandleClose(){
     channel_->DisableAll();
     TcpConnectionPtr guard(shared_from_this());
     connection_callback_(guard);// 执行连接关闭回调函数
-    close_callback_(guard);// 执行关闭连接的回调 执行的是TcpServer::HandleClose回调方法 
+    close_callback_(guard);// 执行关闭连接的回调 执行的是TcpServer::HandleClose回调方法 (close_callback_在TcpServer::HandleNewConnection中被设置)
 }
+
+// 当前服务器主动关闭连接(在实际应用中不常用,因为一般都是用的被动关闭)
+void TcpConnection::forceClose()
+{
+  if (state_ == ConnectionState::kConnected || state_ == ConnectionState::kDisconnecting)
+  {
+    state_ = ConnectionState::kDisconnecting;
+    loop_->QueueOneFunc(std::bind(&TcpConnection::forceCloseInLoop, shared_from_this()));
+  }
+}
+
+// 当前服务器主动关闭连接(在实际应用中不常用,因为一般都是用的被动关闭)
+void TcpConnection::forceCloseInLoop()
+{
+  if (state_ == ConnectionState::kConnected || state_ == ConnectionState::kDisconnecting)
+    handleClose();
+}
+
 // 处理收到的消息
 void TcpConnection::HandleRead(){
     int read_size = input_buffer_.ReadFd(connfd_);// 内核缓冲区读到用户缓冲区input_buffer_
     if(read_size > 0)//   // 已建立连接的用户有可读事件发生了 调用用户自定义的回调操作onMessage    shared_from_this就是获取了TcpConnection的智能指针
         message_callback_(shared_from_this(), &input_buffer_);
-    else if(read_size == 0)// 客户端断开
+    else if(read_size == 0)// 客户端断开  这种是被动关闭,即对方关闭  服务端通过读取数据为0来判断对方关闭了
         HandleClose();
     else{
         HandleError();
@@ -118,20 +136,28 @@ void TcpConnection::HandleWrite(){
         }
     }
 }
+
+void TcpConnection::Send(const std::string& message){
+    if(state_ == ConnectionState::kConnected){
+        if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程
+            SendInLoop(message.c_str(), message.size());
+        else
+            loop_->RunOneFunc(std::bind(&TcpConnection::SendInLoop, this, message.c_str(), message.size()));
+    }
+}
+
 // 直接将给定的非Buffer中的数据message发送给内核缓冲区
-void TcpConnection::Send(const char* message, int len) {
+void TcpConnection::SendInLoop(const char* message, int len){
     int remain = len;
     int send_size = 0;
-    if(state_ == ConnectionState::kConnected){
-        if (!channel_->IsWriting() && output_buffer_.readablebytes() == 0) {// 表示channel_第一次开始写数据或缓冲区没有待发数据
-            send_size = static_cast<int>(::write(connfd_, message, len));
-            if (send_size >= 0) 
-                remain -= send_size;// message没写完的字节数  此时内核缓冲区满了
-            else {
-                if (errno != EWOULDBLOCK)
-                    LOG_ERROR << "TcpConnection::Send write failed";
-                return;
-            }
+    if (!channel_->IsWriting() && output_buffer_.readablebytes() == 0) {// 表示channel_第一次开始写数据或缓冲区没有待发数据
+        send_size = static_cast<int>(::write(connfd_, message, len));
+        if (send_size >= 0) 
+            remain -= send_size;// message没写完的字节数  此时内核缓冲区满了
+        else {
+            if (errno != EWOULDBLOCK)
+                LOG_ERROR << "TcpConnection::Send write failed";
+            return;
         }
         /**
          * 下面程序处理的是当前这一次write并没有把数据全部发送出去,而剩余的数据需要保存到缓冲区当中
@@ -141,28 +167,9 @@ void TcpConnection::Send(const char* message, int len) {
          * 把发送缓冲区outputBuffer_的内容全部发送完成
          **/
         if (remain > 0) {// message没写完的部分
-            output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)
+            output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)    不能在此处直接发送,因为之前output_buffer_可能有剩的数据,如果此处直接发送就会造成数据乱序
             if (!channel_->IsWriting()) 
                 channel_->EnableWriting(); // 一定要注册写事件,因为此时还没写完,所以还要继续写(继续通过触发可写事件回调TcpConnection::HandleWrite()进行写)
         }
     }
-}
-
-void TcpConnection::Send(const char* message){
-    if(state_ == ConnectionState::kDisconnected)
-        return;
-    Send(message, static_cast<int>(std::strlen(message)));
-}
-
-void TcpConnection::Send(Buffer* buffer){
-    if(state_ == ConnectionState::kDisconnected)
-        return;
-    Send(buffer->Peek(), buffer->readablebytes());
-    buffer->RetrieveAll();
-}
-
-void TcpConnection::Send(const std::string& message){
-    if(state_ == ConnectionState::kDisconnected)
-        return;
-    Send(message.c_str(), static_cast<int>(message.size()));
 }

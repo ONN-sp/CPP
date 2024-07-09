@@ -122,7 +122,7 @@
     ```C++
     1. int epoll_create(int size);//创建epoll实例,通过一颗红黑树管理待检测集合,这个参数在新版linux已经没什么用了,只需给一个大于0的数就行
     2. int epoll_create1(int flags);//flags是一个整数,可以传递0或一个标志位EPOLL_CLOEXEC(意味着在调用exec函数时会关闭该文件描述符)
-    3. int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event);//管理红黑树上的文件描述符(添加、修改、删除)
+    3. int epoll_ctl(int epfd, int op, int fd, struct epoll_event* event);//管理红黑树上的文件描述符(添加、修改、删除)   注册文件描述符到epoll树上
     //epfd:epoll的文件描述符,epoll_create的返回值
     //op:指定epoll树上的操作.EPOLL_CTL_ADD、EPOLL_CTL_MOD、EPOLL_CTL_DEL等
     //fd:待操作的文件描述符

@@ -88,7 +88,7 @@ namespace tiny_muduo{
             HttpContent content_; // 用于处理HTTP请求的内容
             bool shutdown_state_; // 表示连接是否已关闭
             Timestamp timestamp_; // 记录连接的时间戳
-            ConnectionCallback connection_callback_;  // 上层回调 连接建立和销毁关闭的回调函数
+            ConnectionCallback connection_callback_;  // 上层回调 连接建立和连接销毁的回调函数
             MessageCallback message_callback_;        // 上层回调 消息到达的回调函数
             CloseCallback close_callback_;            // 连接关闭的回调函数
     };

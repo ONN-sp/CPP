@@ -28,7 +28,7 @@ Acceptor::~Acceptor(){
 // 使监听文件描述符进入监听状态
 void Acceptor::Listen(){
     acceptSocket_->Listen();
-    channel_->EnableReading(); // 启用Acceptor对应的Channel的读事件监听
+    channel_->EnableReading(); // 启用Acceptor对应的Channel的读事件监听  将监听的文件描述符acceptSocket_注册在epoller树上  此时才可读
 }
 // 处理新的连接
 void Acceptor::handleRead(){

@@ -451,7 +451,14 @@
     3. 动态存储:new和delete管理了一个内存池(堆),堆和用于静态变量和自动变量的内存是分开的.使用new和delete能够在一个函数中分配内存,在另一个函数中释放它.因此,使用new和delete让程序员对程序如何使用内存有更大的控制权
     ```
 25. 如果使用`new`在堆中创建变量后,没有`delete`,那么会发生<mark>内存泄露</mark>
-26. `Vector`对象(更详细的见`leetcode/learn.md`)
+26.  `array`对象
+    ```C++
+    1. 和数组一样,array对象的长度也是固定的,也使用栈,但它更方便、安全
+    2. array<typeName, n_elem> arr;#创建了一个名为arr的array对象,但这的n_elem不能是变量
+    ```
+27. 空指针:指向已经销毁的对象或已经回收的地址;野指针:指的是未经初始化的指针
+# std::vector
+1. `Vector`对象(更详细的见`leetcode/learn.md`)
     ```C++
     1. vector类似string类,也是一个动态数组.可以在运行阶段设置vector对象的长度,可在末尾附加新数据,还可以插入新数据.
     2. vertor是使用new创建动态数组的替代,vector本质管理内存还是new和delete,但这些工作是自动完成的
@@ -483,12 +490,23 @@
             // std::cout << *it << std::endl;
         }
     ```
-27.  `array`对象
-    ```C++
-    1. 和数组一样,array对象的长度也是固定的,也使用栈,但它更方便、安全
-    2. array<typeName, n_elem> arr;#创建了一个名为arr的array对象,但这的n_elem不能是变量
-    ```
-28. 空指针:指向已经销毁的对象或已经回收的地址;野指针:指的是未经初始化的指针
+2. `std::vector`的`.data()`方法返回一个指向当前`vector`这个元素数组的指针:
+   ```C++
+   std::vector<int> vec = {1, 2, 3};
+   vec.data()<=>&(*vec.begin())<=>&vec[0];
+   // 注意:只有在vec不为空时第三个等号才成立,因为若vec为空,直接用下标访问该vector数组和使用解引用的方法访问都会报错(未定义);但是vec.data()只是返回一个空指针nullptr
+   // &(*vec.begin())在vec为空时也会报错未定义
+   ```
+3. `std::vector`为空时不能直接用下标访问(未定义的错误);而解引用访问也会报错,如`&(*vec.begin())`(`vec.begin()`为空,则`*vec.begin()`解引用会报未定义的错误)
+4. <mark>`std::vector`在`C++`中频繁`push_back`会导致的问题:</mark>
+   * 内存容量成倍增加:当`vector`的容量不足以容纳新元素时,它需要重新分配内存.而重新分配内存会涉及以下几步:
+     - 先分配一块新的、更大的内存块(通常是当前容量的2倍)
+     - 再将旧内存块中的元素复制到新内存块
+     - 最后将释放旧内存块
+     这样重新分配内存的操作很昂贵,会对性能产生较大的影响
+   * 迭代器失效:在上面的重新分配内存中时,可能会导致所有指向`vector`元素的迭代器、指针和引用都失效了(因为之前的地址没东西了,被分配到新位置了),进而导致未定义
+   * 性能问题:虽然`vector`会通过指向增长的方式来尽量减少重新分配内存的次数,但在最坏的情况下,频繁的`push_back`操作仍可能会导致大量的内存重新分配和元素拷贝,进而影响性能
+  
 # 循环和关系表达式
 1. 语句和表达式的区别就是一个分号`;`
 2. 在`for`语句中声明的变量只能用在`for`语句中,当程序离开循环后,变量也会消失
@@ -1586,7 +1604,16 @@ int main() {
     ```
     在需要`Address`对象的地方,可以直接使用`Inet6SocketAddress`对象,而不需要显示地调用转换函数
 # this
-1. `C++`的`this`指针不仅适用于类,也适用于结构体.`this`指针指向当前对象的地址,无论是类还是结构体,都可以使用`this`指针来访问当前对象的成员变量和成员函数
+1. `this`是一个指向当前对象的隐含指针.每个非静态成员函数都有一个隐式的`this`指针,它指向调用该成员函数的对象,其使用范围:
+   * 成员函数中使用
+   * 构造函数和析构函数中可以使用
+   * 静态成员函数中不能使用:静态成员函数没有`this`指针,因为它们不依赖于类的任何具体实例对象
+2. `C++`的`this`指针不仅适用于类,也适用于结构体.`this`指针指向当前对象的地址,无论是类还是结构体,都可以使用`this`指针来访问当前对象的成员变量和成员函数
+# shared_from_this
+1. `shared_from_this`用于获取指向当前对象的`std::shared_ptr`.它是`std::enable_shared_from_this`类模板的一部分,允许对象安全地获取自身的`shared_ptr`,其使用范围:
+   * 成员函数中使用:`shared_from_this`通常在类的非静态成员函数中使用
+   * 不能在构造函数和析构函数中使用:在构造函数中,`shared_ptr`还没有完全控制对象;而在析构函数中,`shared_ptr`正在销毁对象,所以在构造和析构函数中调用`shared_from_this`会导致未定义行为
+   * 必须在对象由`std::shared_ptr`管理时使用:`shared_from_this`只能用在用`std::shared_ptr`管理的对象
 # assert
 1. `assert`是用于在程序中插入断言,即一种条件判断(条件成立则断言什么都不做,不成立就触发异常或错误).它通常在调试阶段用于验证程序的假设是否成立,头文件包含`#include <cassert>`:
    ```C++
@@ -1815,9 +1842,9 @@ int main() {
    class time_point;
    2.
    std::chrono::system_clock::time_point<=>std::chrono::time_point<std::chrono::system_clock>
-   3. 
+   2. 
    std::chrono::system_clock::time_point s;//将创建一个表示 epoch（1970-01-01 00:00:00 UTC）的时间点
-   4. 在计算机中,epoch 是一个固定的时间点,用作时间计算的参考点.std::chrono::system_clock的epoch通常是Unix时间纪元(1970年1月1日 00:00:00 UTC)
+   3. 在计算机中,epoch 是一个固定的时间点,用作时间计算的参考点.std::chrono::system_clock的epoch通常是Unix时间纪元(1970年1月1日 00:00:00 UTC)
    std::chrono::system_clock::time_point second(std::chrono::seconds(5));//使用std::chrono::seconds(5)作为时间点
    second.time_since_epoch();//返回一个duration对象,表示从time_point所关联的时钟的epoch(起始时间点)到当前 time_point的时间间隔
    ```
@@ -1967,6 +1994,10 @@ int main() {
    ```
 3. <span style="color:red;">在`C++`中,内联函数在类的外部还是不能通过类名和作用域解析运算符`::`来进行调用</span>
 4. <mark>想要在其它类中直接利用该类名+域解析符调用该类的成员函数,必须将该成员函数设为`static`</mark>
+# static_cast
+1. `static_cast<...>`:`C++`中的强制类型转换,`C`和`C++`强制类型转换的区别:
+   * `int value = (int)someVariable;`:`C`中的强制类型转换,这种使用更方便,但他在编译期间的类型检测不如`C++`严格,可能会导致一些类型不安全的问题
+   * `int value = static_cast<int>(someVariable);`:`C++`中的强制类型转换,`static_cast`在编译期间进行严格的类型检查,只允许进行类型安全的转换.它会拒绝任何不安全的转换操作,从而提高了代码的安全性
 
 
 

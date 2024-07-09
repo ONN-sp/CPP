@@ -17,15 +17,16 @@ Buffer::Buffer(int initialSize)
       }
 // 从文件描述符读取数据到缓冲区(其实就是往Buffer中写)
 int Buffer::ReadFd(int fd){
-    char extrabuf[65536] = {0};// 临时缓冲区
+    char extrabuf[65536] = {0};// 临时缓冲区 65536/1024=64KB
     struct iovec iv[2];// 用于分散/聚集IO操作的结构体
     const int writeable = writeablebytes();// 获取可写字节数
     // 设置iovec数组,用于readv操作   iv其实有两个缓冲区   对于iv[0],其实它就指向了Buffer中可写缓冲区块,而iv[1]是为了数据太长写不下,而设计的
-    iv[0].iov_base = beginWrite();// 第一个iovec指向缓冲区的可写部分
+    iv[0].iov_base = beginWrite();// 第一个iovec指向Buffer缓冲区的可写部分
     iv[0].iov_len = writeable;
-    iv[1].iov_base = extrabuf;// 第二个iovec指向临时缓冲区
+    iv[1].iov_base = extrabuf;// 第二个iovec指向临时栈空间缓冲区
     iv[1].iov_len = sizeof(extrabuf);
     // 如果可写入字节数小于临时缓冲区的大小,则使用两个iovec(两个iovec就是同时包括上面的iv[0]  iv[1]),一个指向Bufer的可写部分,一个指向extrabuf;否则使用一个iovec(只有iv[0]),指向Buffer可写部分
+    // 利用Buffer+extrabuf    此时一次最多只能读128k-1字节(但是还是会读完)(因为Buffer的writeable<sizeof(extrabuf)才会使用栈缓冲区   当writeable=sizeof(extrabuf),此时为可读的最大长度  Buffer=64kB-1;extrabuf=64KB)
     const int iovcnt = (writeable < static_cast<int>(sizeof(extrabuf)) ? 2:1);
     // 指向分散读的操作,将数据从fd读入iv中的缓冲区
     int readn = static_cast<int>(::readv(fd, iv, iovcnt));// readv系统调用是一个分散读取操作,它允许将数据从一个文件描述符一次性地读取到多个缓冲区中
@@ -40,7 +41,7 @@ int Buffer::ReadFd(int fd){
 }
 // 获取缓冲区起始位置的指针
 char* Buffer::begin(){
-    return buffer_.data();
+    return buffer_.data();// <=> &(*buffer_.begin())
 }
 // 获取缓冲区起始位置的指针
 const char* Buffer::begin() const {
@@ -74,7 +75,7 @@ void Buffer::Append(const char* message){
 // 追加指定长度的字符串到缓冲区
 void Buffer::Append(const char* message, int len){
     bool ResizeOrUnresize = MakeSureEnoughStorage(len);
-    if(ResizeOrUnresize){// // 确保缓冲区有足够的存储空间存储len长的char
+    if(ResizeOrUnresize){// 确保缓冲区有足够的存储空间存储len长的char
         std::copy(message, message+len, beginWrite());// 将message复制到beginWrite()位置
         writeIndex_ += len;
     }
@@ -95,7 +96,7 @@ void Buffer::Retrieve(int len){
     assert(readablebytes() >= len);
     if(len+readIndex_ < writeIndex_)
         readIndex_ += len;
-    else
+    else // 此时说明提取完数据了,那么要把readIndex_ writeIndex_复位
         RetrieveAll();
 }
 // 提取直到指定位置的数据
@@ -112,7 +113,7 @@ void Buffer::RetrieveAll(){
 // 从缓冲区中提取指定长度的数据,并返回一个std::string
 std::string Buffer::RetrieveAsString(int len){
     std::string ret = std::move(PeekAsString(len));// 将读缓冲区的数据移到ret中
-    Retrieve(len);
+    Retrieve(len);// 提取出来了就要复位len长
     return ret;
 }
 // 从缓冲区中提取所有的数据,并返回一个std::string

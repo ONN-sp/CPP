@@ -167,7 +167,7 @@ void TcpConnection::SendInLoop(const char* message, int len){
          * 把发送缓冲区outputBuffer_的内容全部发送完成
          **/
         if (remain > 0) {// message没写完的部分
-            output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)    不能在此处直接发送,因为之前output_buffer_可能有剩的数据,如果此处直接发送就会造成数据乱序
+            output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)    不能在此处直接发送,因为之前output_buffer_可能有剩的数据,如果此处直接发送就会乱序
             if (!channel_->IsWriting()) 
                 channel_->EnableWriting(); // 一定要注册写事件,因为此时还没写完,所以还要继续写(继续通过触发可写事件回调TcpConnection::HandleWrite()进行写)
         }

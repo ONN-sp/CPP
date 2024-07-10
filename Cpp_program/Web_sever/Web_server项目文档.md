@@ -78,6 +78,7 @@
 4. 主线程有一个`EventLoop`,负责接受连接(`accept`在主线程);每个工作线程运行一个独立的`EventLoop`,负责处理已经建立连接(主线程中建立了)上的I/O事件
 5. `muduo`日志库是`C++ stream`风格,这样用起来更自然,不必费心保持格式字符串和参数类型的一致性,可以随用随写,而且是类型安全的
 6. `muduo`广泛使用`RAII`这一方法来管理资源的生命周期 
+7. `muduo`的`TcpClient`类没有高水位回调的主要原因是设计上的考虑.`TcpClient`作为客户端连接的封装,通常由应用程序控制数据的发送,而服务端(`TcpServer`)则需要处理更多的客户端连接和更复杂的流量控制
 # 定时器
 1. 计算机中的时钟不是理想的计时器,它可能会漂移或跳变
 2. `Linux`的获取当前时间的函数:
@@ -286,6 +287,7 @@
    2. 使用 EPOLL_CTL_ADD 再次添加 Channel，可以方便地将其重新激活，而不必频繁地删除和重新添加
    ```
 4. `Poller.h`中只需要`Channel`类的指针或引用,不需要其完整定义,因此不需要包含`Channel.h`头文件
+5. `events_`的初始大小为16(`kDefaultEvents`),如果事件数组已满,则将其大小加倍(`vector`的`resize`,这里是直接`vector.size`加倍,不是`vector`的`capacity`自动加倍的处理)
 # EventLoop
 1. `EventLoop`是I/O线程的事件循环,它能确保所有注册的事件都在`EventLoop`对象所在的线程中执行
 2. `EventLoop::loop()`它调用`Poller::poll()`获得当前活动事件(就绪事件)的`Channel`列表,然后依次调用每个`Channel`的`handleEvent()`函数
@@ -682,6 +684,7 @@
    ```
    服务端被动关闭的一个函数调用流程:
    ![](被动关闭函数调用.png)
+17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位谁回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

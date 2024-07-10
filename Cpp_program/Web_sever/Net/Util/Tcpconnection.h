@@ -37,6 +37,8 @@ namespace tiny_muduo{
             // 设置关闭时的回调 可以使用右值引用或常引用
             void SetCloseCallback(const CloseCallback& cb) {close_callback_ = cb;}
             void SetCloseCallback(CloseCallback&& cb) {close_callback_ = cb;}
+            // 设置高水位回调  用户自定义传入的
+            void setHighWaterMarkCallback(const HighWaterMarkCallback &cb, size_t highWaterMark) { highWaterMarkCallback_ = cb; highWaterMark_ = highWaterMark; }
             // 标记连接已建立(即设置连接已建立时对应的一些标志、状态)
             void ConnectionEstablished();
             // 关闭连接  半关闭 实际上是调用的Socket::ShutDownWrite()
@@ -61,6 +63,8 @@ namespace tiny_muduo{
             void forceCloseInLoop();
             // 通过字符串发送数据
             void Send(const std::string&);
+            void Send(const char*, int );
+            void Send(Buffer*);
             // 将Send操作放入所属的EventLoop中
             void SendInLoop(const char*, int);
             // 指定更新时间戳 为了后续写入日志
@@ -86,11 +90,13 @@ namespace tiny_muduo{
             Buffer input_buffer_; // 接收缓冲区
             Buffer output_buffer_; // 发送缓冲区
             HttpContent content_; // 用于处理HTTP请求的内容
-            bool shutdown_state_; // 表示连接是否已关闭
             Timestamp timestamp_; // 记录连接的时间戳
+            size_t highWaterMark_;// 触发高水位回调函数的数据大小
             ConnectionCallback connection_callback_;  // 上层回调 连接建立和连接销毁的回调函数
             MessageCallback message_callback_;        // 上层回调 消息到达的回调函数
             CloseCallback close_callback_;            // 连接关闭的回调函数
+            HighWaterMarkCallback highWaterMarkCallback_; // 高水位回调  用户自定义
+            WriteCompleteCallback writeCompleteCallback_; // 消息发送完成以后的回调  低水位回调  用户自定义
     };
     using TcpConnectionPtr = std::shared_ptr<TcpConnection>; // 定义一个指向 TcpConnection 对象的共享指针类型   不能用unique_ptr
 }

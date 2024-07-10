@@ -14,5 +14,7 @@ namespace tiny_muduo{
     using WriteCallback = std::function<void()>;
     using CloseCallback = std::function<void(const TcpConnectionPtr&)>;
     using ErrorCallback = std::function<void()>;
+    using WriteCompleteCallback = std::function<void(const TcpConnectionPtr &)>;
+    using HighWaterMarkCallback = std::function<void(const TcpConnectionPtr &, size_t)>;
 }
 #endif

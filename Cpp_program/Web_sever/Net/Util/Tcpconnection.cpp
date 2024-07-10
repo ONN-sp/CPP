@@ -17,7 +17,7 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
       ip_port_(address.IpPortToString()),// 为了构造当前TcpConnection的名称
       TcpConnectionSocket_(std::make_unique<Socket>(connfd)),// connfd是一个已连接的文件描述符
       channel_(std::make_unique<Channel>(loop, connfd)),// TcpConnection是在Tcpserver::HandleNewConnection中新建的,此时的connfd_是accept(已连接)之后的文件描述符
-      shutdown_state_(false){
+      highWaterMark_(64 * 1024 * 1024){
         // 下面几行就注册了Channel::HandleEventWithGuard中的四种回调函数
         channel_->SetReadCallback(std::bind(&TcpConnection::HandleRead, this));
         channel_->SetWriteCallback(std::bind(&TcpConnection::HandleWrite, this));
@@ -146,14 +146,35 @@ void TcpConnection::Send(const std::string& message){
     }
 }
 
+void TcpConnection::Send(const char* message, int len){
+    if(state_ == ConnectionState::kConnected){
+        if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程
+            SendInLoop(buffer->Peek(), buffer->readablebytes());
+        else
+            loop_->RunOneFunc(std::bind(&TcpConnection::SendInLoop, this, message, len));
+    }
+}
+
+void TcpConnection::Send(Buffer* message){
+    if(state_ == ConnectionState::kConnected){
+        if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程
+            SendInLoop(message, len);
+        else
+            loop_->RunOneFunc(std::bind(&TcpConnection::SendInLoop, this, buffer->Peek(), buffer->readablebytes()));
+    }
+}
+
 // 直接将给定的非Buffer中的数据message发送给内核缓冲区
 void TcpConnection::SendInLoop(const char* message, int len){
     int remain = len;
     int send_size = 0;
     if (!channel_->IsWriting() && output_buffer_.readablebytes() == 0) {// 表示channel_第一次开始写数据或缓冲区没有待发数据
         send_size = static_cast<int>(::write(connfd_, message, len));
-        if (send_size >= 0) 
+        if (send_size >= 0) {
             remain -= send_size;// message没写完的字节数  此时内核缓冲区满了
+            if(remain == 0 && writeCompleteCallback_)// 写完了  调用写完成回调(也叫低水位回调)    
+                loop_->QueueOneFunc(std::bind(writeCompleteCallback_, shared_from_this()));
+        }
         else {
             if (errno != EWOULDBLOCK)
                 LOG_ERROR << "TcpConnection::Send write failed";
@@ -167,6 +188,9 @@ void TcpConnection::SendInLoop(const char* message, int len){
          * 把发送缓冲区outputBuffer_的内容全部发送完成
          **/
         if (remain > 0) {// message没写完的部分
+            int oldLen = output_buffer_.readablebytes();// 目前发送缓冲区剩余的待发送的数据的长度
+            if(oldLen + remain >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)// oldLen < highWaterMark_保证了只在上升沿触发一次
+                loop_->QueueOneFunc(highWaterMarkCallback_, shared_from_this(), oldLen+remain);
             output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)    不能在此处直接发送,因为之前output_buffer_可能有剩的数据,如果此处直接发送就会乱序
             if (!channel_->IsWriting()) 
                 channel_->EnableWriting(); // 一定要注册写事件,因为此时还没写完,所以还要继续写(继续通过触发可写事件回调TcpConnection::HandleWrite()进行写)

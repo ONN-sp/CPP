@@ -18,7 +18,7 @@ namespace tiny_muduo{
             // 接受新的连接 
             int Accept(Address*);
             // 接受新的连接 接受flags ::accept4
-            int Accept4(Address*)
+            int Accept4(Address*);
             // C/S中一方主动关闭,不会直接关闭读写操作,而是只关闭写操作,不关闭读操作   这样是为了收发数据的完整性
             void ShutDownWrite();
             // 设置套接字选项SO_KEEPALIVE,启用TCP长期连接

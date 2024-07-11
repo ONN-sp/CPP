@@ -3,6 +3,7 @@
 
 using namespace tiny_muduo;
 
+AtomicInt64 Timer::s_numCreated_;
 Timer::Timer(Timestamp expiration__, BasicFunc&& cb, double interval = 0.0)//下面这些初始化操作不涉及拷贝
             : expiration_(expiration__),// 设置定时器的过期时间(即到了这个时间就会调用回调函数callback_)
               callback_(std::move(cb)),// 设置定时器的回调函数  // 构造函数使用了 C++11 的默认参数和右值引用 (&&)

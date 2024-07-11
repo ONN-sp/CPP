@@ -6,6 +6,8 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h> // sockaddr_in
 #include <cassert>
+#include <unistd.h>
+#include <arpa/inet.h>
 
 using namespace tiny_muduo;
 
@@ -22,7 +24,7 @@ void Socket::BindAddress(const Address& addr, bool LookBackOnly){// 因为Addres
     struct sockaddr_in address;
     ::memset(&address, 0, sizeof(address)); //<=>bzero((char*)&address, sizeof(address)); 清空地址结构体
     address.sin_family = AF_INET; // 设置地址族为IPv4
-    address.sin_addr.s_addr = LookBackOnly ? htol(INADDR_LOOPBACK) : htonl(INADDR_ANY); // 绑定到任意地址或回环地址
+    address.sin_addr.s_addr = LookBackOnly ? htonl(INADDR_LOOPBACK) : htonl(INADDR_ANY); // 绑定到任意地址或回环地址
     address.sin_port = htons(static_cast<uint16_t>(addr.Port())); // 设置端口号
     int ret = ::bind(sockfd_, (struct sockaddr*)(&address), sizeof(address)); // 绑定套接字到地址
     assert(ret != -1); // 检查绑定是否成功
@@ -44,7 +46,7 @@ int Socket::Accept(Address* peeraddr){
     return connfd;
 }
 // 接受连接
-int Socket::Accept4(const Address& peeraddr){
+int Socket::Accept4(Address* peeraddr){
     struct sockaddr_in addr;
     socklen_t addr_len = sizeof(addr);
     int connfd = ::accept4(sockfd_, (struct sockaddr*)&addr, &addr_len, SOCK_NONBLOCK | SOCK_CLOEXEC);// 默认是阻塞的,这里设置非阻塞+关闭执行选项

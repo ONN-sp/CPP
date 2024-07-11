@@ -21,33 +21,43 @@ Channel::~Channel() {
 }
 
 //设置读回调函数(移动语义)
-void Channel::SetReadCallback(ReadCallback&& callback){
+void Channel::SetReadCallback(EventCallback&& callback){
     read_callback_ = std::move(callback);
 }
 
 //设置读回调函数(拷贝语义  参数传递)
-void Channel::SetReadCallback(const ReadCallback& callback){
+void Channel::SetReadCallback(const EventCallback& callback){
     read_callback_ = std::move(callback);
 }
 
 //设置写回调函数(移动语义)
-void Channel::SetWriteCallback(WriteCallback&& callback){
+void Channel::SetWriteCallback(EventCallback&& callback){
     write_callback_ = std::move(callback);
 }
 
 //设置写回调函数(拷贝语义)
-void Channel::SetWriteCallback(const WriteCallback& callback){
+void Channel::SetWriteCallback(const EventCallback& callback){
     write_callback_ = std::move(callback);
 }
 
 //设置错误回调函数(移动语义)
-void Channel::SetErrorCallback(ErrorCallback&& callback){
+void Channel::SetErrorCallback(EventCallback&& callback){
     error_callback_ = std::move(callback);
 }
 
 //设置错误回调函数(拷贝语义)
-void Channel::SetErrorCallback(const ErrorCallback& callback){
+void Channel::SetErrorCallback(const EventCallback& callback){
     error_callback_ = std::move(callback);
+}
+
+//设置错误关闭函数(移动语义)
+void Channel::SetCloseCallback(EventCallback&& callback){
+    close_callback_ = std::move(callback);
+}
+
+//设置错误关闭函数(拷贝语义)
+void Channel::SetCloseCallback(const EventCallback& callback){
+    close_callback_ = std::move(callback);
 }
 
 //将Channel绑定到某个对象A的生命周期上,避免使用时对象A已被销毁
@@ -140,7 +150,7 @@ bool Channel::IsReading() const {
 //处理事件
 void Channel::HandleEvent(){
     if (tied_){
-        std::shared_ptr<void> guard = tie_.lock();
+        std::shared_ptr<void> guard = tied_.lock();
         if (guard)
             HandleEventWithGuard();
         //如果不能提升到HandleEventWithGuard(),则不做任何处理,说明Channel的TcpConnection对象已经不存在了

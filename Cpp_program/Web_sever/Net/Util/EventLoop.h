@@ -6,7 +6,6 @@
 #include <functional>
 #include <memory>
 #include "../../Base/MutexLock.h"
-#include "Channel.h"
 
 namespace tiny_muduo{
 class Epoller;

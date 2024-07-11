@@ -6,6 +6,8 @@
 #include "Acceptor.h"
 #include "../../Base/Logging/Logging.h"
 #include <cassert>
+#include <memory>
+#include <climits>
 
 using namespace tiny_muduo;
 
@@ -13,8 +15,8 @@ TcpServer::TcpServer(EventLoop* loop, const Address& address, const std::string&
     : loop_(loop),
       next_conn_id(1),
       name_(name), 
-      threads_(std::make_unique<EventLoopThreadPool>(loop, name)),
-      acceptor_(std::make_shared<Acceptor>(loop, address, option == Option::kReusePort)),// Acceptor类构造函数需要给定是否重用端口的一个参数
+      threads_(std::make_shared<EventLoopThreadPool>(loop, name)),
+      acceptor_(std::make_unique<Acceptor>(loop, address, option == Option::kReusePort)),// Acceptor类构造函数需要给定是否重用端口的一个参数
       ip_port_(address.IpPortToString()),
       connection_callback_(),
       message_callback_(){ 
@@ -60,14 +62,14 @@ void TcpServer:: HandleNewConnection(int connfd, const Address& address){
     // 取一个子EventLoop来管理connfd对应的channel
     EventLoop* sub_loop = threads_->NextLoop();
     // 创建一个新的TcpConnection对象来处理新连接
-    TcpConnectionPtr ptr(std::make_shared<TcpConnection>(sub_loop, connfd, next_conn_id));
+    TcpConnectionPtr ptr(std::make_shared<TcpConnection>(sub_loop, connfd, next_conn_id, address));
     // 将新连接保持到哈希表中
     std::string connName = ip_port_ + std::to_string(connfd) + std::to_string(next_conn_id);// 一个TcpConnection名称=ip_port + 文件描述符值+该TcpConnection的ID(next_conn_id)
     connections_[connName] = ptr;
     // 设置连接的各种回调函数
     ptr->SetConnectionCallback(connection_callback_);
     ptr->SetMessageCallback(message_callback_);
-    ptr->Set(std::bind(&TcpServer::HandleClose, this, std::placeholders::_1));
+    ptr->SetCloseCallback(std::bind(&TcpServer::HandleClose, this, std::placeholders::_1));
     // 打印日志
     LOG_INFO << "TcpServer::HandleNewConnection - new connection " << "[" 
         << ip_port_ << '#' << next_conn_id << ']' << " from " 

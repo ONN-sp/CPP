@@ -5,6 +5,8 @@
 #include "../../Base/Callback.h"
 #include <unordered_map>
 #include <functional>
+#include <string>
+#include <utility>
 
 namespace tiny_muduo{
     class Address; 

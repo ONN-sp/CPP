@@ -9,19 +9,19 @@
 namespace tiny_muduo{
     class Address{
         public:
-            explicit Address(const std::string& port = "80")
+            explicit Address(const std::string& port)
                 : ip_("0.0.0.0"),
                   port_(std::stoi(port)){
                     if(port_<0 || port_>65535)
                         throw std::out_of_range("The port value in invalid");
                   }
-            explicit Address(int port = 80)
+            explicit Address(int port)
                 : ip_("0.0.0.0"),
                   port_(port){
                     if(port_<0 || port_>65535)
                         throw std::out_of_range("The port value in invalid");
                   }
-            Address(const std::string& ip, const std::string& port)
+            Address(const std::string& ip="127.0.0.1", const std::string& port="80")
                 : ip_(ip),
                   port_(std::stoi(port)){
                     if(port_<0 || port_>65535)

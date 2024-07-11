@@ -1,7 +1,8 @@
 #include <string>
-#include "../Util/Tcpserver.h"
+#include "../Net/Util/Tcpserver.h"
 #include "../Base/Logging/Logging.h"
-#include "../Util/EventLoop.h"
+#include "../Net/Util/EventLoop.h"
+#include "../Net/Util/Tcpconnection.h"
 #include "../Base/Address.h"
 
 using namespace tiny_muduo;
@@ -9,8 +10,8 @@ using namespace tiny_muduo;
 class EchoServer
 {
 public:
-    EchoServer(EventLoop *loop, const Address &addr, const std::string &name)
-        : server_(loop, addr, name)
+    EchoServer(EventLoop *loop, const Address &addr, const std::string &address)
+        : server_(loop, addr, address)
         , loop_(loop)
     {
         // 注册回调函数
@@ -18,7 +19,7 @@ public:
             std::bind(&EchoServer::onConnection, this, std::placeholders::_1));
         
         server_.SetMessageCallback(
-            std::bind(&EchoServer::onMessage, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+            std::bind(&EchoServer::onMessage, this, std::placeholders::_1, std::placeholders::_2));
 
         // 设置合适的subloop线程数量
         server_.SetThreadNums(3);
@@ -34,19 +35,20 @@ private:
     {
         if (conn->connected())
         {
-            LOG_INFO("Connection UP : %s", conn->peerAddress().toIpPort().c_str());
+            LOG_INFO << "Connection UP : " << conn->name();
         }
         else
         {
-            LOG_INFO("Connection DOWN : %s", conn->peerAddress().toIpPort().c_str());
+            LOG_INFO << "Connection DOWN : " << conn->name();
         }
     }
 
     // 可读写事件回调
-    void onMessage(const TcpConnectionPtr &conn, Buffer *buf, Timestamp time)
+    void onMessage(const TcpConnectionPtr &conn, Buffer *buf)
     {
-        std::string msg = buf->retrieveAllAsString();
-        conn->Send(msg);
+        std::string msg = buf->RetrieveAllAsString();
+        conn->Send(msg.c_str(), msg.size());
+        LOG_INFO << "Server recv message = " << msg;
         // conn->shutdown();   // 关闭写端 底层响应EPOLLHUP => 执行closeCallback_
     }
 
@@ -56,7 +58,7 @@ private:
 
 int main() {
     EventLoop loop;
-    Address addr(9999);
+    Address addr("127.0.0.1", "9999");
     EchoServer server(&loop, addr, "EchoServer");
     server.Start();
     loop.loop();

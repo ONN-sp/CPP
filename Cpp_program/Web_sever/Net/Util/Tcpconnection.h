@@ -28,6 +28,8 @@ namespace tiny_muduo{
             };
             TcpConnection(EventLoop*, int, int, const Address&); // TcpConnection name = ip_port+connfd+tcpconnection_id
             ~TcpConnection();
+            // 判断是否已连接
+            bool connected() const { return state_ == ConnectionState::kConnected; }
             // 设置连接建立时的回调 可以使用右值引用或常引用
             void SetConnectionCallback(const ConnectionCallback& cb) {connection_callback_ = cb;}
             void SetConnectionCallback(ConnectionCallback&& cb) {connection_callback_ = cb;}
@@ -72,7 +74,7 @@ namespace tiny_muduo{
             // 获取时间戳
             Timestamp timestamp() const {return timestamp_;}
             // 获取当前TcpConnection的名称
-            int name() const {ip_port_ + std::to_string(connfd_) + std::to_string(connection_id_);}
+            std::string name() const {return (ip_port_ + std::to_string(connfd_) + std::to_string(connection_id_));}
             // 获取当前TcpConnection的连接的ID
             int id() const {return connection_id_;}
             // 获取关联的事件循环loop
@@ -91,7 +93,7 @@ namespace tiny_muduo{
             Buffer output_buffer_; // 发送缓冲区
             HttpContent content_; // 用于处理HTTP请求的内容
             Timestamp timestamp_; // 记录连接的时间戳
-            size_t highWaterMark_;// 触发高水位回调函数的数据大小
+            int highWaterMark_;// 触发高水位回调函数的数据大小
             ConnectionCallback connection_callback_;  // 上层回调 连接建立和连接销毁的回调函数
             MessageCallback message_callback_;        // 上层回调 消息到达的回调函数
             CloseCallback close_callback_;            // 连接关闭的回调函数

@@ -1,3 +1,4 @@
+// 下面的回调都是上层回调  channel中的回调不在这定义
 #ifndef CALLBACK_H
 #define CALLBACK_H
 
@@ -10,10 +11,7 @@ namespace tiny_muduo{
     class Buffer;
     using ConnectionCallback = std::function<void(const TcpConnectionPtr&)>;
     using MessageCallback = std::function<void(const TcpConnectionPtr&, Buffer*)>;
-    using ReadCallback = std::function<void()>;
-    using WriteCallback = std::function<void()>;
     using CloseCallback = std::function<void(const TcpConnectionPtr&)>;
-    using ErrorCallback = std::function<void()>;
     using WriteCompleteCallback = std::function<void(const TcpConnectionPtr &)>;
     using HighWaterMarkCallback = std::function<void(const TcpConnectionPtr &, size_t)>;
 }

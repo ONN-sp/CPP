@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include "../../Base/NonCopyAble.h"
+#include <functional>
+#include <string>
 
 namespace tiny_muduo{
     class EventLoopThread;// 前向声明

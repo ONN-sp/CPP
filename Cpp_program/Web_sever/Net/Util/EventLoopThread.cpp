@@ -25,23 +25,23 @@ EventLoopThread::~EventLoopThread(){
 // 启动 EventLoop 并返回指向 EventLoop 的指针
 EventLoop* EventLoopThread::StartLoop(){
     thread_.StartThread();// 启动线程
-    EventLoop* loop = nullptr;
+    std::unique_ptr<EventLoop> loop(new EventLoop());
     {
         MutexLockGuard lock(mutex_);
         while(loop_==nullptr)// 不能是if !!!
-            cond_.wait();
-        loop = loop_;// 获取初始化后的 loop_
+            cond_.Wait();
+        loop = std::move(loop_);// 获取初始化后的 loop_
     }
-    return loop;
+    return loop.get();
 }
 // 线程函数，创建并运行 EventLoop
 void EventLoopThread::StartFunc(){
-    EventLoop loop;// 一个loop和一个线程绑定(thread_)
+    std::unique_ptr<EventLoop> loop(new EventLoop());// 一个loop和一个线程绑定(thread_)
     if(callback_)// 如果存在启动EventLoopThread伴随的回调函数就先回调(但是一般是没有的,只是一个空回调)
-        callback_(&loop);
+        callback_(loop.get());
     {
         MutexLockGuard lock(mutex_);
-        loop_ = &loop;
+        loop_ = std::move(loop);
         cond_.Notify();
     }
     loop_->loop();// 运行 EventLoop 的主循环

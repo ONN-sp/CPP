@@ -1,5 +1,5 @@
 #include "EventLoop.h"
-#include "CurrentThread.h"
+#include "../../Base/CurrentThread.h"
 #include "../../Base/Timestamp.h"
 #include "../Timer/TimerQueue.h"
 #include <cassert>
@@ -7,6 +7,8 @@
 #include <sys/eventfd.h>
 #include <iostream>
 #include "../Poller/Epoller.h"
+#include "../../Base/Logging/Logging.h"
+#include "Channel.h"
 
 using namespace tiny_muduo;
 
@@ -25,7 +27,7 @@ namespace {
 EventLoop::EventLoop()
         : running_(false),
           quit_(false),
-          tid_(CurrentThread::tid()),//获取当前线程ID
+          tid_(tid()),//获取当前线程ID
           epoller_(std::make_unique<Epoller>(this)),//创建Epoller对象,用于I/O复用
           wakeup_fd_(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),//创建 eventfd,用于线程间的唤醒
           wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)),//创建wakeup_fd_对应的Channel对象   
@@ -39,14 +41,15 @@ EventLoop::EventLoop()
           }
 
 EventLoop::~EventLoop() {
-    if (running_) running_ = false; // 停止事件循环
+    if (running_) 
+        running_ = false; // 停止事件循环
     wakeup_channel_->DisableAll(); // 禁用唤醒 Channel 的所有事件监听
     RemoveChannel(wakeup_channel_.get()); // 从 Epoller 中移除唤醒 Channel  智能指针的.get()方法
     ::close(wakeup_fd_); // 关闭唤醒的文件描述符
 }
 
 bool EventLoop::IsInThreadLoop(){// 判断当前EventLoop对象是否在自己所属的线程里   通过判断当前EventLoop所属的id与调用这个EventLoop中的函数的的线程id是不是相同的来进行识别
-    return CurrentThread::tid() == tid_; // 此处的CurrentThread::tid()表示当前调用IsInThreadLoop()的线程ID 
+    return tid() == tid_; // 此处的CurrentThread::tid()表示当前调用IsInThreadLoop()的线程ID 
 }
 
 void EventLoop::loop() {
@@ -113,7 +116,7 @@ void EventLoop::wakeup(){
     uint64_t one = 1;
     ssize_t n = ::write(wakeup_fd_, &one, sizeof(one));//唤醒是用wirte实现的,这样就不会让epoll_wait阻塞了
     if(n!= sizeof(one))
-        std::cout << "wakeup error" << std::endl;//TODO:modify?
+        LOG_ERROR << "wakeup error";
 }
 
 void EventLoop::UpdateChannel(Channel* channel){

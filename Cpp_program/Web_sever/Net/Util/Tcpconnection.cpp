@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include "../../Base/Address.h"
 #include <cerrno>
+#include <unistd.h>
 
 using namespace tiny_muduo;
 
@@ -24,14 +25,14 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
         channel_->SetErrorCallback(std::bind(&TcpConnection::HandleError, this));
         channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this)); // 这个channel_的关闭回调和服务端被动关闭调用HandleClose是两码事
         //  Tcp的KeepAlive用在这是最合理的,因为这里才是一个新的Tcp连接的起点  Acceptor中的bind listen是使用TCP协议,而不是一个真正的TCP连接的起点
-        TcpConnectionSocket_->SetSockoptKeepAlive(); 
+        TcpConnectionSocket_->SetSockoptKeepAlive(true); 
     }
 
 TcpConnection::~TcpConnection(){
     ::close(connfd_);
 }
 
-TcpConnection::ConnectionEstablished(){
+void TcpConnection::ConnectionEstablished(){
     state_ = ConnectionState::kConnected;
     channel_->Tie(shared_from_this());// 确保Tcpconnection的生命期比它里面定义的channel_的生命期长
     channel_->EnableReading();// 向epoller注册channel的可读事件   
@@ -60,14 +61,14 @@ int TcpConnection::GetError() const {
     socklen_t opt_len = static_cast<socklen_t>(sizeof(opt));
     // 调用getsockopt,获取套接字的选项值SO_ERROR
     // 调用失败返回值<0,然后返回当前线程的错误码errno   errno用于存储最近一次系统调用失败的错误码
-    if(::getsockopt(connfd_, SOL_SOCKET, SO_ERRO, &opt, &opt_len) < 0)
+    if(::getsockopt(connfd_, SOL_SOCKET, SO_ERROR, &opt, &opt_len) < 0)
         return errno;
     else    
         return opt;// 套接字的错误状态
 }
 // 错误回调函数
 void TcpConnection::HandleError() {
-  LOG_ERROR << "TcpConnection::HandleError" << " : " << ErrorToString(GetErrno());
+  LOG_ERROR << "TcpConnection::HandleError" << " : " << ErrorToString(GetError());
 }
 // 连接析构函数,释放资源
 void TcpConnection::ConnectionDestructor(){
@@ -101,7 +102,7 @@ void TcpConnection::forceClose()
 void TcpConnection::forceCloseInLoop()
 {
   if (state_ == ConnectionState::kConnected || state_ == ConnectionState::kDisconnecting)
-    handleClose();
+    HandleClose();
 }
 
 // 处理收到的消息
@@ -148,17 +149,17 @@ void TcpConnection::Send(const std::string& message){
 
 void TcpConnection::Send(const char* message, int len){
     if(state_ == ConnectionState::kConnected){
-        if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程
-            SendInLoop(buffer->Peek(), buffer->readablebytes());
+        if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程          
+            SendInLoop(message, len);
         else
             loop_->RunOneFunc(std::bind(&TcpConnection::SendInLoop, this, message, len));
     }
 }
 
-void TcpConnection::Send(Buffer* message){
+void TcpConnection::Send(Buffer* buffer){
     if(state_ == ConnectionState::kConnected){
         if(loop_->IsInThreadLoop())// 判断判断当前EventLoop对象是否在自己所属的线程里  如果是,则说明这是一个单reactor(loop(thread))的情况 用户调用conn->send时 loop_即为当前线程
-            SendInLoop(message, len);
+            SendInLoop(buffer->Peek(), buffer->readablebytes());
         else
             loop_->RunOneFunc(std::bind(&TcpConnection::SendInLoop, this, buffer->Peek(), buffer->readablebytes()));
     }
@@ -190,7 +191,7 @@ void TcpConnection::SendInLoop(const char* message, int len){
         if (remain > 0) {// message没写完的部分
             int oldLen = output_buffer_.readablebytes();// 目前发送缓冲区剩余的待发送的数据的长度
             if(oldLen + remain >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)// oldLen < highWaterMark_保证了只在上升沿触发一次
-                loop_->QueueOneFunc(highWaterMarkCallback_, shared_from_this(), oldLen+remain);
+                loop_->QueueOneFunc(std::bind(highWaterMarkCallback_, shared_from_this(), oldLen+remain));
             output_buffer_.Append(message + send_size, remain);// 将message没写完的部分直接添加到output_buffer_中(前面已写的部分没用output_buffer_)    不能在此处直接发送,因为之前output_buffer_可能有剩的数据,如果此处直接发送就会乱序
             if (!channel_->IsWriting()) 
                 channel_->EnableWriting(); // 一定要注册写事件,因为此时还没写完,所以还要继续写(继续通过触发可写事件回调TcpConnection::HandleWrite()进行写)

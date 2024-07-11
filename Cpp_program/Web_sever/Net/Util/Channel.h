@@ -4,8 +4,8 @@
 
 #include "../../Base/NonCopyAble.h"
 #include "EventLoop.h"
+#include <memory>
 #include <functional>
-#include "../../Base/Callback.h"
 
 //Channel理解为通道,封装了sockfd和其感兴趣的事件  如EPOLLIN(读)、EPOLLOUT(写)事件  还绑定了poller返回的具体事件
 namespace tiny_muduo{
@@ -17,6 +17,7 @@ namespace tiny_muduo{
     };
     class Channel : public NonCopyAble{
         public:
+        using EventCallback = std::function<void()>;
         Channel(EventLoop*, const int&);
         ~Channel();
         //根据recv_events_的值分别调用不同的处理事件
@@ -24,17 +25,19 @@ namespace tiny_muduo{
         //带有保护的处理事件
         void HandleEventWithGuard();
         //设置读回调函数(移动语义)
-        void SetReadCallback(ReadCallback&&);
+        void SetReadCallback(EventCallback&&);
         //设置读回调函数(拷贝语义  参数传递)
-        void SetReadCallback(const ReadCallback&);
+        void SetReadCallback(const EventCallback&);
         //设置写回调函数(移动语义)
-        void SetWriteCallback(WriteCallback&&);
+        void SetWriteCallback(EventCallback&&);
         //设置写回调函数(拷贝语义)
-        void SetWriteCallback(const WriteCallback&);
+        void SetWriteCallback(const EventCallback&);
         //设置错误回调函数(移动语义)
-        void SetErrorCallback(ErrorCallback&&);
+        void SetErrorCallback(EventCallback&&);
         //设置错误回调函数(移动语义)
-        void SetErrorCallback(const ErrorCallback&);
+        void SetErrorCallback(const EventCallback&);
+        void SetCloseCallback(EventCallback&&);
+        void SetCloseCallback(const EventCallback&);
         //将Channel绑定到某个对象的生命周期上,避免使用时对象已被销毁  延长某个对象的生命期
         void Tie(const std::shared_ptr<void>&);
         //启动读事件
@@ -76,10 +79,10 @@ namespace tiny_muduo{
         bool addedToLoop_;// 当前Channel是否加进loop_中
 
         ChannelState state_; // Channel 的状态
-        ReadCallback read_callback_; // 读事件的回调函数
-        WriteCallback write_callback_; // 写事件的回调函数
-        ErrorCallback error_callback_; // 错误事件的回调函数
-        CloseCallback close_callback_;// 关闭事件的回调函数  处理文件描述符关闭事件
+        EventCallback read_callback_; // 读事件的回调函数
+        EventCallback write_callback_; // 写事件的回调函数
+        EventCallback error_callback_; // 错误事件的回调函数
+        EventCallback close_callback_;// 关闭事件的回调函数  处理文件描述符关闭事件
     };
 }
 

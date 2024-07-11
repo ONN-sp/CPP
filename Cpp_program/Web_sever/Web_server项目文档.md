@@ -278,6 +278,7 @@
 12. <mark>`Channel::HandleEvent`处理的是`channel`对应文件描述符的读、写、关闭、错误四种回调;而`EventLoop::doPendingFunctors()`解决的是上层回调(非文件描述符的回调)(将上层回调放到所属的`loop`中的任务队列中执行,可以保证线程安全性),如`MessageCallback   ConnectionCallback  TcpServer::HandleCloseInLoop  TcpConnection::ConnectionEstablished`等等</mark>
 13. `Channel::HandleEvent()`四种回调函数是在上层的`TcpConnection`的构造函数中注册的
 14. </mark>本项目采用的是`muduo`设计回调的思想,即`Channel`控制最底层的四种回调:错误、关闭、读、写,这几种回调是通过文件描述符触发的,然后在这几种底层回调函数的内部一般是会进一步调用上层回调(`MessageCallback ConnectionCallback CloseCallback`,需要特别注意的是这个`TcpConnection::close_callback_`不是它拥有的`channel_`的回调,`channel_`的回调函数是`HandleClose`,这个`close_callback_`是在`HandleClose`中进一步调用的上层回调)</mark>
+15. 本项目和`muduo`中的 `Callback.h`中的回调函数是供上层应用程序使用的(上层回调),而不是`Channel.h`中的的回调函数定义
 # Poller
 1. 这是一个基类,因为在muduo中同时支持`poll()`和`epoll()`.本项目只用了`epoll()`,所以只有`epoller`继承了`Poller`,继承后需要重写纯虚函数
 2. `Poller`是I/O多路复用的封装,它是`EventLoop`的组成,与`EventLoop`的生命期相同,为`EventLoop`提供`poll()`方法.`poll()`方法是`Poller`的核心功能,它调用`epoll_wait()`获得当前就绪事件,然后注册一个`Channel`与该就绪事件的`fd`绑定(将`Channel`对象放在`epoll_event`中的用户数据区,这样可以实现文件描述符和`Channel`的一一对应.当`epoll`返回事件时,我们可以通过 `epoll_event`的`data.ptr`字段快速访问到对应的`Channel`对象,而不需要额外的查找操作),然后将该`Channel`填充到`active_channels`
@@ -337,6 +338,22 @@
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
 3. 尽管`ThreadPool`是一个通用组件,但在本项目和`Muduo`中并没有直接使用这个线程池,而是更多地依赖于`EventLoopThreadPool` 来处理`I/O`事件和分发任务.`Muduo`的设计哲学之一是每个连接都在一个固定的`EventLoop`中处理,避免多线程直接操作连接数据,从而简化了并发编程
 4. <mark>一个`EventLoopThreadPool`->一群`EventLoopThread`对象=>每一个`EventLoopThread`绑定一个`Thread`对象和一个`EventLoop`对象(一个`Thread`<=>一个`EventLoop`<=>一个`Reactor`)</mark>
+## 所遇问题
+1. `std::move`的问题:
+   ```C++
+   auto thread = std::make_unique<EventLoopThread>(cf, name_);
+   threads_.emplace_back(std::move(thread));
+   loops_.emplace_back(thread->StartLoop());
+   // !!! 此时会报错  Segmentation fault   因为std::move把thread移动后,thread指针就变得无效了,它已经被转移到threads_容器了,因此thread->StartLoop()就会报错
+   // 修改方法一:
+   auto thread = std::make_unique<EventLoopThread>(cf, name_);
+   threads_.emplace_back(std::move(thread));
+   loops_.emplace_back(threads_.back()->StartLoop());
+   // 修改方法二:
+   EventLoopThread* thread = new EventLoopThread(cf, name_);
+   threads_.emplace_back(std::unique_ptr<EventLoopThread>(thread));
+   loops_.emplace_back(thread->StartLoop());
+   ```
 # CurrentThread
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的.`__thread`可以用来修饰那些带有全局性且值可能变,但是又不值得用全局变量保护的变量
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数

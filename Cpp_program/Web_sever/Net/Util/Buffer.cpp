@@ -38,6 +38,7 @@ int Buffer::ReadFd(int fd){
         writeIndex_ = static_cast<int>(buffer_.size());// 将写入索引指到缓冲区末尾
         Append(extrabuf, readn-writeable);// 将剩余的数据追加到临时缓冲区extrabuf中
     }
+    return readn;
 }
 // 获取缓冲区起始位置的指针
 char* Buffer::begin(){

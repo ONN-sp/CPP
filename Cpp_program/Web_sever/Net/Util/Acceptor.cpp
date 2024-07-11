@@ -5,6 +5,9 @@
 #include "Channel.h"
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/tcp.h>
+#include <unistd.h>
 
 using namespace tiny_muduo;
 
@@ -21,7 +24,7 @@ Acceptor::Acceptor(EventLoop* loop, const Address& address, bool reuseport)
 
 Acceptor::~Acceptor(){
     channel_->DisableAll();// 关闭Channel上的所有事件
-    loop_->Remove(channel_.get());// 从EventLoop中移除Channel
+    loop_->RemoveChannel(channel_.get());// 从EventLoop中移除Channel
     ::close(id_lefd_);// 关闭监听套接字
 }
 
@@ -39,7 +42,7 @@ void Acceptor::handleRead(){
             ::close(id_lefd_);// 先关闭之前创建的空闲文件描述符 此时就有一个新的文件描述符可以用了(因此一定可以再次成功调用accept,只有成功调用后(成功调用后,文件描述符又耗尽了),此时操作系统就会自动会在内部关闭一些不再需要的文件描述符)
             id_lefd_ = ::accept(acceptSocket_->fd(), NULL, NULL);// 重新尝试通过::accept()接受一个连接,以让操作系统释放一些不再使用的文件描述符(当文件描述符耗尽时,再次调用会让它自动释放不用的文件描述符)
             ::close(id_lefd_);// 此时id_lefd_是重新建立连接的通信文件描述符,此时需要立即关闭重新接受的文件描述符.这样做的目的是确保不会因为文件描述符泄露(没close就会泄露)而导致资源浪费或系统限制
-            id_lefd_ = ::open(::open("/dev/null", O_RDONLY | O_CLOEXEC));
+            id_lefd_ = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
         }
         return;
     }

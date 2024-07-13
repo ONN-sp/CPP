@@ -29,11 +29,14 @@ int Buffer::ReadFd(int fd){
     // 利用Buffer+extrabuf    此时一次最多只能读128k-1字节(但是还是会读完)(因为Buffer的writeable<sizeof(extrabuf)才会使用栈缓冲区   当writeable=sizeof(extrabuf),此时为可读的最大长度  Buffer=64kB-1;extrabuf=64KB)
     const int iovcnt = (writeable < static_cast<int>(sizeof(extrabuf)) ? 2:1);
     // 指向分散读的操作,将数据从fd读入iv中的缓冲区
-    int readn = static_cast<int>(::readv(fd, iv, iovcnt));// readv系统调用是一个分散读取操作,它允许将数据从一个文件描述符一次性地读取到多个缓冲区中
-    if(readn < 0)
+    const int readn = static_cast<int>(::readv(fd, iv, iovcnt));// readv系统调用是一个分散读取操作,它允许将数据从一个文件描述符一次性地读取到多个缓冲区中
+    if(readn < 0){
         LOG_ERROR << "Buffer::ReadFd readv failed";
-    else if(readn <= writeable)// 读取的数据量<=缓冲区Buffer可写入的数据量,此时就可以直接写入
+	}
+    else if(readn <= writeable)
+	{
         writeIndex_ += readn; 
+	}
     else{// 读取的数据量>缓冲区可写入的字节数
         writeIndex_ = static_cast<int>(buffer_.size());// 将写入索引指到缓冲区末尾
         Append(extrabuf, readn-writeable);// 将剩余的数据追加到临时缓冲区extrabuf中
@@ -75,15 +78,14 @@ void Buffer::Append(const char* message){
 }
 // 追加指定长度的字符串到缓冲区
 void Buffer::Append(const char* message, int len){
-    bool ResizeOrUnresize = MakeSureEnoughStorage(len);
-    if(ResizeOrUnresize){// 确保缓冲区有足够的存储空间存储len长的char
+    bool UnresizeOrResize = MakeSureEnoughStorage(len);
+    if(UnresizeOrResize){// 确保缓冲区有足够的存储空间存储len长的char
         std::copy(message, message+len, beginWrite());// 将message复制到beginWrite()位置
         writeIndex_ += len;
     }
     else{
         writeIndex_ += len;// 1000+408
-        writeIndex_ -= readIndex_;// 1408-58
-        // muduo中此种情况未把readIndex回到初始位置8,以下为自己修正的功能
+        writeIndex_ -= readIndex_;// 1408-58  muduo中此种情况未把readIndex回到初始位置8,以下为自己修正的功能
         readIndex_ = kCheapPrepend;// 将readIndex_返回到前面,以保持prependable等于kCheapPrepend
         writeIndex_ += readIndex_;// 1350+8=1358
     }
@@ -94,8 +96,8 @@ void Buffer::Append(const std::string& message){
 }
 // 从缓冲区中提取指定长度的数据  实际上就是一个移动readIndex_的过程(因为从缓冲区提取了数据,直接改变的就是readIndex_),不会关心具体的内容
 void Buffer::Retrieve(int len){
-    assert(readablebytes() >= len);
-    if(len+readIndex_ < writeIndex_)
+    // assert(readablebytes() >= len);
+    if(len < readablebytes())
         readIndex_ += len;
     else // 此时说明提取完数据了,那么要把readIndex_ writeIndex_复位
         RetrieveAll();
@@ -113,15 +115,13 @@ void Buffer::RetrieveAll(){
 }
 // 从缓冲区中提取指定长度的数据,并返回一个std::string
 std::string Buffer::RetrieveAsString(int len){
-    std::string ret = std::move(PeekAsString(len));// 将读缓冲区的数据移到ret中
+    std::string ret(Peek(), len);// 将读缓冲区的数据移到ret中
     Retrieve(len);// 提取出来了就要复位len长
     return ret;
 }
 // 从缓冲区中提取所有的数据,并返回一个std::string
 std::string Buffer::RetrieveAllAsString(){
-    std::string ret = std::move(PeekAllAsString());// 将读缓冲区的数据移到ret中
-    RetrieveAll();
-    return ret;
+    return RetrieveAsString(readablebytes());
 }
 // 获取当前读位置的指针(这是beginRead()的为了上层公开调用的封装)  readIndex_
 const char* Buffer::Peek() const {
@@ -130,14 +130,6 @@ const char* Buffer::Peek() const {
 // 获取当前读位置的指针(这是beginRead()的为了上层公开调用的封装)  readIndex_
 char* Buffer::Peek() {
     return beginRead();
-}
-// 将读缓冲区指定长度中的数据转换为std::string
-std::string Buffer::PeekAsString(int len){
-    return std::string(beginRead(), beginRead()+len);
-}
-// 将读缓冲区中所有数据转换为std::string
-std::string Buffer::PeekAllAsString(){
-    return std::string(beginRead(), beginRead());
 }
 // 获取可读字节数 readable
 int Buffer::readablebytes() const {

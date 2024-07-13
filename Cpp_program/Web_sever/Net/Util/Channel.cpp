@@ -1,6 +1,7 @@
 #include "Channel.h"
 #include <sys/poll.h>
 #include <sys/epoll.h>
+#include "../../Base/Logging/Logging.h"
 #include <iostream>
 #include <cassert>
 
@@ -150,7 +151,7 @@ bool Channel::IsReading() const {
 //处理事件
 void Channel::HandleEvent(){
     if (tied_){
-        std::shared_ptr<void> guard = tied_.lock();
+        std::shared_ptr<void> guard = tie_.lock();
         if (guard)
             HandleEventWithGuard();
         //如果不能提升到HandleEventWithGuard(),则不做任何处理,说明Channel的TcpConnection对象已经不存在了
@@ -161,11 +162,12 @@ void Channel::HandleEvent(){
 
 //带有保护机制的事件处理   下面四种回调函数是在TcpConnection的构造函数中注册的
 void Channel::HandleEventWithGuard(){
+    LOG_INFO << "active channel handleEvent revents: " << recv_events_;
     if((recv_events_ & POLLHUP) && !(recv_events_ & POLLIN))// POLLHUP表示挂起(挂断)事件,表示事件被挂起或关闭(挂起和关闭时都要调用close_callback_)
         if(close_callback_)
             close_callback_();
     if (recv_events_ & POLLNVAL) 
-        std::cout << "Channel::HandleEventWithGuard POLLNVAL";//TODO:modify?
+        LOG_ERROR << "Channel::HandleEventWithGuard POLLNVAL";
     if (recv_events_ & (EPOLLERR | POLLNVAL))  //错误事件
         if (error_callback_) 
             error_callback_();       

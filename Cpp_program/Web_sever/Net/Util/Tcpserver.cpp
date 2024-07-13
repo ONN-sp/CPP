@@ -29,7 +29,7 @@ TcpServer::~TcpServer(){
         TcpConnectionPtr ptr(item.second);
         item.second.reset();// 把原始的智能指针复位 后续用ptr代替操作 当ptr出了其作用域 即可释放智能指针指向的对象
         // Listen到连接请求,就会去调用HandleNewConnection()
-        ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));// 将每个连接的销毁操作放入其所属的EventLoop中(放到了pendingFunctors_中)
+        ptr->getLoop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));// 将每个连接的销毁操作放入其所属的EventLoop中(放到了pendingFunctors_中)
     }
 }
 // 设置线程数量  其实就是EventLoopThreadPool中SetThreadNums的上层封装
@@ -54,7 +54,7 @@ void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     connections_.erase(ptr->name());
     LOG_INFO << "TcpServer::HandleCloseInLoop - remove connection " << "["  
            << ip_port_ << '#' << ptr->id() << ']';
-    EventLoop* loop = ptr->loop();// 获取TcpConnection对象所属的loop
+    EventLoop* loop = ptr->getLoop();// 获取TcpConnection对象所属的loop
     loop->QueueOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));// 这里必须要放在Loop里,如果直接执行就可能出现TcpConnection的被析构了(它所拥有的channel_也会析构),但此时可能channel_回调的事件并没结束,导致channel_无引用定义
 }
 

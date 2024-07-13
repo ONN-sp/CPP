@@ -30,7 +30,7 @@ class EventLoop : public NonCopyAble{
         //EventLoop方法=>Poller的方法
         void UpdateChannel(Channel*);
         void RemoveChannel(Channel*);
-        bool hasChannel(Channel* channel);
+        bool hasChannel(Channel*);
 
         void loop();//开启事件循环
         void QueueOneFunc(BasicFunc);//将一个任务添加到任务队列中

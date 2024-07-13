@@ -9,6 +9,7 @@
 #include "../Poller/Epoller.h"
 #include "../../Base/Logging/Logging.h"
 #include "Channel.h"
+#include <sstream>
 
 using namespace tiny_muduo;
 
@@ -34,8 +35,9 @@ EventLoop::EventLoop()
           timer_queue_(std::make_unique<TimerQueue>(this)),// 创建TimerQueue,用于管理定时器
           calling_functors_(false)//初始化当前loop没有需要执行的回调函数
           {
+              LOG_DEBUG << "EventLoop created " << this << " in thread " << tid_;
             //设置唤醒Channel的读回调函数为HandleRead
-            wakeup_channel_->SetReadCallback([this]{this->HandleRead();});//wakeup是用wirte实现唤醒的,所以是读回调函数
+            wakeup_channel_->SetReadCallback(std::bind(&EventLoop::HandleRead, this));//wakeup是用wirte实现唤醒的,所以是读回调函数
             //启用唤醒Channel的读事件监听
             wakeup_channel_->EnableReading();
           }
@@ -56,6 +58,10 @@ void EventLoop::loop() {
     assert(IsInThreadLoop()); // 确保当前线程是事件循环所在的线程
     running_ = true; // 标志事件循环开始运行
     quit_ = false;// 是否退出loop
+    std::stringstream ss;
+    ss << this;
+    std::string thisStr = ss.str();// 将当前对象this指针转换为字符串LOG_INFO输出
+    LOG_INFO << "EventLoop " << thisStr << " start looping";// 输出this指针,表示查看当前对象的地址
     while (!quit_) {
         active_channels_.clear(); // 清空活跃 Channel 列表
         epoller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
@@ -63,6 +69,7 @@ void EventLoop::loop() {
             channel->HandleEvent(); // Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
         doPendingFunctors(); // 处理待回调函数列表中的任务 
     }
+    LOG_INFO << "EventLoop " << thisStr << " stop looping";
     running_ = false; // 事件循环结束
 }
 
@@ -76,9 +83,8 @@ void EventLoop::quit(){
 void EventLoop::HandleRead() {
     uint64_t read_one_byte = 1;
     ssize_t read_size = ::read(wakeup_fd_, &read_one_byte, sizeof(read_one_byte));
-    (void) read_size; // 防止编译器警告未使用的变量
-    assert(read_size == sizeof(read_one_byte)); // 确保读取的字节数正确
-    return;
+    if(read_size!=sizeof(read_one_byte)) 
+        LOG_ERROR << "EventLoop::handleRead() reads " << read_size << " bytes instead of 8";
 }
 
 void EventLoop::QueueOneFunc(BasicFunc func) {

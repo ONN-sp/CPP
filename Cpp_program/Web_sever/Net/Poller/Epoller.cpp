@@ -19,7 +19,7 @@ Epoller::Epoller(EventLoop* loop)
       epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
       events_(kDefaultEvents) {
   if (epollfd_ == -1) {
-    std::cout << "Epoller::Epoller epoll_create1 failed"; //TDOO:modify?
+    LOG_ERROR << "Epoller::Epoller epoll_create1 failed";
   }
 }
 
@@ -33,14 +33,17 @@ Timestamp Epoller::Poll(int timeoutMs, Channels& active_channels) {
   // 填充活跃的 Channel 到 active_channels 容器
   Timestamp now(Timestamp::Now());
   int saveErrno = errno;
-  if(eventnums>0)
+  if(eventnums>0){
+    LOG_DEBUG << eventnums << "events happend";
     FillActiveChannels(eventnums, active_channels);
-  else if(eventnums==0)
-    std::cout << "timeout" << std::endl;//TODO:modify?
-  else{
+  }
+  else if(eventnums==0){
+    LOG_INFO << "timeout";
+  }
+  else if(eventnums<0){
     if(saveErrno != EINTR){
         errno = saveErrno;
-        std::cout << "Epoller::poll" << std::endl;//TODO:modify?
+        LOG_ERROR << "Epoller::poll error";
     }
   }
   return now;
@@ -68,6 +71,7 @@ void Epoller::RemoveChannel(Channel* channel) {
   int fd = channel->fd();
   auto state = channel->state();
   assert(state == ChannelState::kDeleted || state == ChannelState::kAdded);
+  LOG_INFO << "func=" << __FUNCTION__ << "=> " << "fd=" << fd;
   // 如果 Channel 处于已添加状态，则将其从 epoll 实例中删除
   if (state == ChannelState::kAdded) {// 从epoll树上中删除,只能是kAdded状态
     Update(EPOLL_CTL_DEL, channel);
@@ -82,6 +86,7 @@ void Epoller::UpdateChannel(Channel* channel) {
   int events = channel->events();//获取Channel当前感兴趣的事件
   auto state = channel->state(); 
   int fd = channel->fd();
+  LOG_INFO << "func=" << __FUNCTION__ << "=> " << "fd=" << fd << "events=" << events;// __FUNCTION__用于获取当前函数的名称
   // 如果 Channel 是新的或者已经被标记为删除的
   if (state == ChannelState::kNew || state == ChannelState::kDeleted) {
     if (state == ChannelState::kNew) {     
@@ -122,6 +127,6 @@ void Epoller::Update(int operation, Channel* channel){
   event.data.ptr = static_cast<void*>(channel);
   // 调用 epoll_ctl 执行操作，如果失败则记录错误
   if (epoll_ctl(epollfd_, operation, channel->fd(), &event) < 0) {
-    std::cout << "Epoller::UpdateChannel epoll_ctl failed";//TDDO:modify? 
+    LOG_ERROR << "Epoller::UpdateChannel epoll_ctl failed";
   }
 }

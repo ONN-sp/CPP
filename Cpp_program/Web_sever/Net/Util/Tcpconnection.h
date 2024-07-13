@@ -78,7 +78,7 @@ namespace tiny_muduo{
             // 获取当前TcpConnection的连接的ID
             int id() const {return connection_id_;}
             // 获取关联的事件循环loop
-            EventLoop* loop() const { return loop_;}
+            EventLoop* getLoop() const { return loop_;}
             // 获取HTTP内容
             HttpContent* GetHttpContent() {return &content_;}
         private:

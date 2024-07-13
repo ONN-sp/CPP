@@ -22,7 +22,7 @@ const char* ErrorToString(int err){// 错误码->字符串
 
 // 默认的日志输出函数：输出到标准输出
 static void DefaultOutput(const char* data, int len) {
-    fwrite(data, sizeof(char), len, stdout); // 将数据写到标准输出
+    fwrite(data, sizeof(char), len, stdout); // 默认将数据写到标准输出  而不是直接输出到文件
 }
 
 // 默认的刷新函数：刷新标准输出

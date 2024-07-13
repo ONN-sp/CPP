@@ -45,8 +45,6 @@ namespace tiny_muduo{
             std::string RetrieveAllAsString();// 从缓冲区中提取所有的数据,并返回一个std::string
             const char* Peek() const;// 获取当前读位置的指针  readIndex_
             char* Peek();// 获取当前读位置的指针  
-            std::string PeekAsString(int);// 将读缓冲区指定长度中的数据转换为std::string
-            std::string PeekAllAsString();// 将读缓冲区中所有数据转换为std::string
             int readablebytes() const;// 获取可读字节数 readable
             int writeablebytes() const;// 获取可写字节数 writable
             int prependablebytes() const;// 获取可预留字节数  prependable

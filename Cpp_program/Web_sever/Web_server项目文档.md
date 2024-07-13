@@ -354,6 +354,8 @@
    threads_.emplace_back(std::unique_ptr<EventLoopThread>(thread));
    loops_.emplace_back(thread->StartLoop());
    ```
+2. `EventLoopThread`中遇到了一个调试`Bug`=>`std::move`的胡乱使用:
+   ![](wakeup_error.png)
 # CurrentThread
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的.`__thread`可以用来修饰那些带有全局性且值可能变,但是又不值得用全局变量保护的变量
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
@@ -449,6 +451,8 @@
    //LOG_INFO是一个宏，展开后为：muduo::Logger(__FILE__, __LINE__).stream() << "AAA";构造了一个匿名对象Logger，在这个对象构造的时候其实已经写入了文件名和行号.匿名对象调用.stream()函数拿到一个LogStream对象，由这个LogStream对象重载<<将“AAA”写入LogStream的数据成员FixBuffer对象的data_缓冲区内.匿名对象在这条语句执行完毕以后会被销毁，因此会调用~muduo::Logger()函数将日志消息输出至目的地(fflush)(标准输出或者磁盘的日志文件)
    ```
 6. 日志流程(非异步):`Logger`->`Implment`->`LogStream`->`operator << (即stream_ <<  写入的是GeneralTemplate对象,其实就是调用的是logstream的Append方法)`->`LogStream的FixBuffer内`->`g_output`(这是`logging.cpp`的`Logger::OutputFunc g_output`)->`g_flush`(这是`logging.cpp`的`Logger::FlushFunc g_flush`)
+7. `g_output`的执行是在`Logger::Implement::~Implement()`中
+8. 利用`LOG_DEBUG LOG_INFO LOG_WARN LOG_ERROR LOG_FATAL`直接输出日志时,对于本项目,没有设定`LogFile`对象的都不会输出到本地文件中(`Asynclogging`在`ThreadFunc`中是新建`LogFile`对象的),而是直接输出到屏幕,因为默认设置的日志`logstream`默认输出的是屏幕`fwrite(data, sizeof(char), len, stdout); fflush(stdout);`
 # asynclogging
 1. 一个日志库大体分为前端和后端.前端是供应用程序使用的接口,并生成日志消息(前端是业务线程产生一条条的日志消息);后端则负责把日志消息写到目的地(后端是一个日志线程,将日志消息写入文件,日志线程只有一个)
 2. <mark>前面的`logstream logfile logging`还是停留在单线程的日志考虑中,即还没涉及到前端和后端线程,`asynclogging`将它们整合形成了多线程异步日志库</mark>
@@ -671,6 +675,8 @@
 8. 当新连接一建立(`Acceptor::handlRead()`了),`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
 9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
 10. </mark>本项目采用的是`muduo`设计回调的思想,即`Channel`控制最底层的四种回调:错误、关闭、读、写,这几种回调是通过文件描述符触发的,然后在这几种底层回调函数的内部一般是会进一步调用上层回调(`MessageCallback ConnectionCallback CloseCallback`,需要特别注意的是这个`TcpConnection::close_callback_`不是它拥有的`channel_`的回调,`channel_`的回调函数是`HandleClose`,这个`close_callback_`是在`HandleClose`中进一步调用的上层回调)</mark>
+11. 测试程序结果:
+    ![](TcpServer_test测试程序.png)
 # TcpConnection
 1. `TcpConnection`有2个`Buffer`:`input buffer`,`output buffer`:
    * `input buffer`:`TcpConnection`会从`socket`(内核缓冲区)读取数据,然后写入`input buffer`(用户缓冲区)(实际是由`Buffer::readFd()`完成);客户代码在`onMessage`回调中,从`input buffer`读取数据

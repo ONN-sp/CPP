@@ -33,8 +33,8 @@ void Socket::BindAddress(const Address& addr, bool LookBackOnly){// 因为Addres
 // 使监听文件描述符进入监听状态
 void Socket::Listen(){
     int ret = ::listen(sockfd_, SOMAXCONN); // 开始监听
-    assert(ret != -1);
-    (void)ret;// 防止编译器警告变量未使用
+    if(ret == -1)
+        LOG_ERROR << "listen sockfd " << sockfd_ << " fail";
 }
 // 接受连接
 int Socket::Accept(Address* peeraddr){

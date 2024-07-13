@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include "../../Base/Logging/Logging.h"
 
 using namespace tiny_muduo;
 
@@ -100,5 +101,5 @@ void TimerQueue::ReadTimerfd(){
     uint64_t read_byte;
     ssize_t readn = ::read(timerfd_, &read_byte, sizeof(read_byte));
     if(readn!=sizeof(read_byte))
-        std::cout << "TimerQueue::ReadTimerFd read_size < 0" << std::endl;//TODO:modify?
+        LOG_ERROR << "TimerQueue::ReadTimerFd read_size < 0";
 }

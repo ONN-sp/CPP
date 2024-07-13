@@ -22,18 +22,20 @@ EventLoopThread::~EventLoopThread(){
         thread_.Join();// 等待线程结束
     }
 }
+
 // 启动 EventLoop 并返回指向 EventLoop 的指针
 EventLoop* EventLoopThread::StartLoop(){
     thread_.StartThread();// 启动线程
-    std::unique_ptr<EventLoop> loop(new EventLoop());
+    EventLoop *loop = nullptr;
     {
         MutexLockGuard lock(mutex_);
         while(loop_==nullptr)// 不能是if !!!
             cond_.Wait();
-        loop = std::move(loop_);// 获取初始化后的 loop_
+        loop = loop_.get();// !!!std::move(loop_)把哥们害惨了   获取初始化后的 loop_   不能std::move(loop_),因为这样可能会造成loop_被无法左值引用了,而让StartFunc中的loop_相对于被析构了  
     }
-    return loop.get();
+    return loop;
 }
+
 // 线程函数，创建并运行 EventLoop
 void EventLoopThread::StartFunc(){
     std::unique_ptr<EventLoop> loop(new EventLoop());// 一个loop和一个线程绑定(thread_)

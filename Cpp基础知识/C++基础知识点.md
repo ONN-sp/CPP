@@ -1049,7 +1049,52 @@ void Swap(AnyType &a, AnyType &b);
    }
    //threads是一个元素为std::thread的数组,因此这个lambda函数进来会调用thread的构造函数默认构造一个thread变量,而这个thread线程的入口函数就是这个lambda表达式
    ```
-6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>(`std::move`见`多线程&线程池.md`)
+6. <span style="color:red;">匿名函数表达式中捕获的对象必须是可复制或可移动的,然而`std::packaged_task`对象本身是不可复制或移动的,但它所包装的任务函数理论上移动是安全的,因此我们可以通过`std::move`将`std::packaged_task`对象转换为可移动</span>(`std::move`也可见`多线程&线程池.md`)
+# std::move
+1. `std::move`是`C++11`引入的一个标准库函数,用于将对象转换为右值引用.右值引用允许我们在不拷贝对象的情况下移动其资源,从而提高程序的性能.在`C++`中,左值是指可以取地址的持久对象,而右值是指短暂的、无法取地址的值.通常情况下,当对象被传递时,会发生拷贝操作,这会涉及到分配新的内存和拷贝数据.而移动语义则允许对象的资源(如内存、文件句柄等)被“偷走”,而不需要拷贝.`std::move`的主要用途是显式地将一个左值(如一个局部变量)转换为右值,从而可以调用移动构造函数或移动赋值运算符,而不是拷贝构造函数或拷贝赋值运算符
+2. <mark>当一个类对象被`std::move`之后,它的资源所有权被转移到另一个对象,而原对象仍然存在.原对象将会在其作用域结束时被正常析构,但此时它的资源(如内存、文件句柄等)可能已经被转移给了另一个对象,所以它可能处于一种有效但未定义状态</mark>
+3. 在`C++`中,如果一个类没有显式定义移动构造函数,且该类有用户定义的拷贝构造函数,则当你尝试移动对象时（如通过 std::move),拷贝构造函数会被调用.这是因为编译器无法生成默认的移动构造函数(因为自定义了构造函数,那么此时的移动构造函数的默认生成就被禁用了)
+4. 拷贝构造和移动构造:
+   ```C++
+   1. 拷贝构造:拷贝构造函数是一种特殊的构造函数，用于创建一个新对象，其内容与另一个同类对象相同(拷贝构造函数进行深拷贝，即复制对象的所有内容)
+   Myclass(const Myclass& obj);
+   2. 移动构造:移动构造函数用于从一个临时对象（右值引用）中“窃取”资源（例如指针、动态分配的内存等），而不是创建新资源的拷贝(移动构造函数将资源从一个对象转移到另一个对象，避免了不必要的资源复制和释放，因此更高效)
+   Myclass(Myclass&& obj);
+   // 移动构造函数将资源从一个对象转移到另一个对象，避免了不必要的资源复制和释放，因此更高效
+   // 使用移动构造函数时，常用于临时对象的转移和避免不必要的资源复制时
+   ```
+5. <mark>在`C++`中,如果没有显式定义拷贝构造函数和移动构造函数,编译器会默认生成移动构造函数和拷贝构造函数(保证不报错),但是如果显式定义了移动构造和拷贝构造函数,就会直接调用它们</mark>:
+   ```C++
+   class Myclass{
+    public:
+        Myclass(int value): value_(value){
+            std::cout << 66 << std::endl;
+        }
+        Myclass(const Myclass& obj){
+            std::cout << 77 << std::endl;
+        }
+    private:
+        int value_;
+    };
+    int main(){
+        std::vector<Myclass> vec;
+        Myclass obj(42);
+        vec.emplace_back(obj);// 显式调用Myclass(const Myclass& obj)
+        return 0;
+    }
+    // =>66 77
+    ```
+6. <mark>`emplace_back`和`push_back`参数为对象时的情况:</mark>
+   * `push_back`将调用该对象的拷贝构造函数或移动构造函数(参数为一个右值引用(`std::move`)就调用移动构造函数)   `push_back`不能直接接受参数列表
+   * `emplace_back`:对于参数是一个对象,`emplace_back`和`push_back`一样.但`emplace_back`的设计初衷是:可以直接接受构造函数的参数列表,而不是对象本身,因此可以直接利用参数列表去调用对应的原始构造函数(非拷贝构造和移动构造),此时就不需要调用拷贝构造或移动构造
+   ```C++
+   struct Myclass {
+    int value;
+    Myclass(int v) : value(v) {}
+    };
+    std::vector<Myclass> vec;
+    vec.emplace_back(42);  // 直接在容器中构造 Myclass 对象，调用 Myclass(int)
+   ```
 # 命名空间
 1. 变量对程序而言可见的范围被称为作用域
 2. 组织编写程序的策略:
@@ -1432,6 +1477,28 @@ void Swap(AnyType &a, AnyType &b);
         std::cout << "In functionB" << std::endl;
     }
     ```
+18. `C++`的`private`私有变量不能在类的外部被直接访问,只能通过该对象的方法来访问或修改,如:
+    ```C++
+    class MyClass {
+        private:
+            int privateVar;
+        public:
+            void setPrivateVar(int val) {
+                privateVar = val;
+            }
+            int getPrivateVar() {
+                return privateVar;
+            }
+        };
+        int main() {
+            MyClass obj;
+            // obj.privateVar = 10; // 错误，不能直接访问私有变量
+            obj.setPrivateVar(10); // 正确，通过公共方法访问私有变量
+            int val = obj.getPrivateVar(); // 正确，通过公共方法获取私有变量的值
+            return 0;
+        }
+    ```
+
 # 类模板
 1. 
 ```C++
@@ -1778,7 +1845,40 @@ int main() {
     }
     //此时运行结束根本没有释放内存,因为当我们执行useTrap函数时，注意，是没有结束此函数，boy和girl指针其实是被两个智能指针托管的，所以他们的引用计数是2.useTrap函数结束后，函数中定义的智能指针被清掉，boy和girl指针的引用计数减1，还剩下1，对象中的智能指针还是托管他们的，所以函数结束后没有将boy和gilr指针释放的原因就是于此
     ```
-8. 构建`shared_ptr`也可以使用`make_shared`初始化对象,这样分配的内存效率更高.`make_shared`函数的主要功能是在动态内存中分配一个对象并初始化它,返回指向此对象的`shared_ptr`:
+8. 智能指针是一个类模板,所以`std::unique_ptr<EventLoop> loo_=std::unique_ptr<EventLoop>(loop)`(`loop`为裸指针)这种做法是错的,类对象直接赋值,其实是调用`std::unique_ptr<EventLoop>`类的构造函数,其参数为`std::unique_ptr<EventLoop>`对象,即一个拷贝构造,但这在`std::unique_ptr`中是禁止了的:
+   ```C++
+   1. unique_ptr禁止了拷贝构造 拷贝赋值
+   int main(){
+    std::unique_ptr<Myclass> a;
+    std::unique_ptr<Myclass> b; 
+    std::unique_ptr<Myclass> c(a);// 拷贝构造 ×
+    b = a;// 拷贝赋值 ×
+   }
+   2. shared_ptr可以拷贝构造
+   int main(){
+    std::shared_ptr<Myclass> a;
+    std::shared_ptr<Myclass> b; 
+    std::shared_ptr<Myclass> c(a);// 拷贝构造 √
+    b = a;// 拷贝赋值 √
+   }
+   ```
+9. 拷贝构造和拷贝赋值:
+    ```C++
+    1.创建一个新的对象,并使用一个已有对象来初始化它.通常是在声明变量时发生,如:
+     std::shared_ptr<Myclass> a(2);
+
+     std::shared_ptr<Myclass> b(a); 或 
+     std::shared_ptr<Myclass> b = a;
+    2. 将一个已有对象的值赋给另一个已有对象.通常是在赋值操作中发生,如:
+     std::shared_ptr<Myclass> a(2);
+     std::shared_ptr<Myclass> b;
+     b = a;
+
+     std::shared_ptr<EventLoop> loo_;                 // 声明一个空的 shared_ptr
+     loo_ = std::shared_ptr<EventLoop>(loop);         // 这并不是传统意义上的强制类型转换，而是使用 std::shared_ptr 的构造函数来接管原始指针 loop 的所有权。它是对象的所有权从一个原始指针转移到一个智能指针的过程，而不是类型之间的转换
+    ```
+10. <mark>`loo_ = std::shared_ptr<EventLoop>(loop); `:(`loop`是一个裸指针)这并不是强制类型转换,而是使用`std::shared_ptr`的构造函数创建一个新的`std::shared_ptr`对象,并将其赋值给`loo_`.这是通过智能指针的构造函数进行对象的管理和所有权转移,而不是进行类型之间的转换,这只是智能所有权的转移</mark>
+11. 构建`shared_ptr`也可以使用`make_shared`初始化对象,这样分配的内存效率更高.`make_shared`函数的主要功能是在动态内存中分配一个对象并初始化它,返回指向此对象的`shared_ptr`:
     ```C++
     用法:
     make_shared<T>(构造T类型对象需要的参数列表,即初始化)
@@ -1790,10 +1890,10 @@ int main() {
     };
     std::shared_ptr<MyClass> ptr3 = std::make_shared<MyClass>(MyClass(42));
     ```
-9. `make_shared`相比直接使用`new`来创建`shared_ptr`的优点:
+12. `make_shared`相比直接使用`new`来创建`shared_ptr`的优点:
    * 更高效:`make_shared`只需要一次动态分配内存,它同时创建了`shared_ptr`和(`new`的)对象本身,而直接使用`new`则需要两次分配(一次为对象,一次为共享指针控制块)
    * 异常安全:`make_shared`能够保证分配动态内存时的异常安全性,因为对象和共享指针控制块是一起分配的,这样可以避免分配对象成功但分配共享指针控制块失败的情况
-10. `weak_ptr`是`c++11`引入的一种智能指针,它设计用于解决`shared_ptr`的循环引用问题.`weak_ptr`只可以从一个`shared_ptr`或另一个`weak_ptr`对象构造,它的构造和析构不会引起引用记数的增加或减少(因此可以解决循环引用问题):
+12. `weak_ptr`是`c++11`引入的一种智能指针,它设计用于解决`shared_ptr`的循环引用问题.`weak_ptr`只可以从一个`shared_ptr`或另一个`weak_ptr`对象构造,它的构造和析构不会引起引用记数的增加或减少(因此可以解决循环引用问题):
     ```C++
     1.
     shared_ptr<Boy> spBoy(new Boy());
@@ -1816,9 +1916,9 @@ int main() {
     // 使用完之后，再将共享指针置NULL即可
     sp_girl = NULL;
     ```
-11. `weak_ptr`允许你观察由`shared_ptr`管理的对象,但是它不会增加对象的引用计数.当你需要访问`weak_ptr`指向的对象时,你必须先将`weak_ptr`转换为`shared_ptr`,如果`weak_ptr`指向的对象已经被释放,转换操作会失败.`weak_ptr`一般用于处理中间过程
-12. 对于`shared_ptr  auto_ptr  unique_ptr`它们的成员方法都是一样的,`* ->`运算符也都是重载了的
-13. 智能指针托管的内存的释放时间:
+13. `weak_ptr`允许你观察由`shared_ptr`管理的对象,但是它不会增加对象的引用计数.当你需要访问`weak_ptr`指向的对象时,你必须先将`weak_ptr`转换为`shared_ptr`,如果`weak_ptr`指向的对象已经被释放,转换操作会失败.`weak_ptr`一般用于处理中间过程
+14. 对于`shared_ptr  auto_ptr  unique_ptr`它们的成员方法都是一样的,`* ->`运算符也都是重载了的
+15. 智能指针托管的内存的释放时间:
     * 对于`shared_ptr`,每当创建一个`shared_ptr`指向某个资源时,引用计数会增加;当`shared_ptr`被销毁时,引用计数会减少.只有当引用计数变为零时,动态内存才会被释放
     * 对于`unique_ptr`(`auto_ptr`一样),它独占所有权,因此在其被销毁时(作用域),它管理的动态内存会被释放
     * 对于`weak_ptr`,它不增加引用计数,只是用来观察`shared_ptr`管理的资源.当没有任何`shared_ptr`指向资源时,`weak_ptr`将失效,但并不影响资源的生命周期
@@ -1984,6 +2084,24 @@ int main() {
     };
     int Example::staticValue; //外部初始化  不给值,就是初始化为0
     ```
+5. <mark>`C++`中,非静态成员变量属于类的每个实例.每当你创建一个类的实例时,编译器会为该实例的所有非静态成员变量分配内存。这意味着每个类的实例都有自己独立的一份非静态成员变量.在类的头文件中声明非静态成员变量时,编译器只需要知道它们的类型和名字,以便在创建类实例时分配适当的内存.非静态成员变量的内存分配是在类的构造函数中隐式完成的,因此不需要在类定义之外进行定义.然而,静态成员变量属于整个类,而不是类的某个实例.所有类的实例共享同一个静态成员变量.由于静态成员变量在类的所有实例中是共享的,因此它们的存储是独立于类的任何实例的.声明静态成员变量只是告诉编译器这个类有一个这样的静态成员,但不为它分配内存或初始化它.你必须在类定义之外定义静态成员变量,以便为其分配内存并提供初始值(如果静态成员变量不在类之外定义就会报错未定义):</mark>
+    ```C++
+    // .h
+    class Timer {
+        public:
+            Timer() : expiration_(0), interval_(0), repeat_(false), sequence_(s_numCreated_.incrementAndGet()) {}
+        private:
+            Timestamp expiration_; // 非静态成员变量
+            double interval_;      // 非静态成员变量
+            bool repeat_;          // 非静态成员变量
+            const int64_t sequence_; // 非静态成员变量
+            static AtomicInt64 s_numCreated_; // 静态成员变量
+        };
+    // .cpp
+    AtomicInt64 Timer::s_numCreated_;
+    ```
+    静态成员只需要在类外一个地方定义就行,因为其它实例是共享的
+
 # 内联函数
 1. 内联函数是一种特殊的函数,其特点是在每个调用点上直接展开函数体,而不是像普通函数一样进行函数调用.这样做的好处是可以减少函数调用的开销,特别是对于函数体较小、频繁调用的情况,可以提升程序的执行效率
 2. 内联函数通常在函数定义处声明为`inline`:

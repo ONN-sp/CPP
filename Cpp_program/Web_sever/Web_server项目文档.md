@@ -65,6 +65,7 @@
 15. 本项目最重要的就是搞清楚一层一层网络的回调函数的调用和传递
 16. `channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));`:对于调用`std::bind`绑定类的成员函数时,传递`this`指针是必要的,因为成员函数需要一个对象实例来调用
 17. 调用线程和所属线程要分清楚,这两者往往涉及到线程安全的问题
+18. 本项目如果报错:`Segmentation fault`,那么很有可能的一种原因是:当前访问对象已经被释放了,具体来说当前对象从属于一个上层对象,该上层对象被析构了,那么可能当前对象也被析构了,这就是后面所说的对象生命周期问题
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出
@@ -338,6 +339,7 @@
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
 3. 尽管`ThreadPool`是一个通用组件,但在本项目和`Muduo`中并没有直接使用这个线程池,而是更多地依赖于`EventLoopThreadPool` 来处理`I/O`事件和分发任务.`Muduo`的设计哲学之一是每个连接都在一个固定的`EventLoop`中处理,避免多线程直接操作连接数据,从而简化了并发编程
 4. <mark>一个`EventLoopThreadPool`->一群`EventLoopThread`对象=>每一个`EventLoopThread`绑定一个`Thread`对象和一个`EventLoop`对象(一个`Thread`<=>一个`EventLoop`<=>一个`Reactor`)</mark>
+5. <mark>`std::unique_ptr<EventLoopThread>(thread)`:这并不是传统意义上的强制类型转换,而是使用`std::unique_ptr`的构造函数来接管原始指针`thread`的所有权.它是对象的所有权从一个原始指针转移到一个智能指针的过程,而不是类型之间的转换</mark>
 ## 所遇问题
 1. `std::move`的问题:
    ```C++
@@ -707,7 +709,7 @@
    ```
    服务端被动关闭的一个函数调用流程:
    ![](被动关闭函数调用.png)
-17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位谁回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
+17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

@@ -103,7 +103,7 @@ void Buffer::Retrieve(int len){
         RetrieveAll();
 }
 // 提取直到指定位置的数据
-void Buffer::RetrieveUnitilIndex(const char* index){
+void Buffer::RetrieveUntilIndex(const char* index){
     assert(index <= beginWrite());
     readIndex_ += static_cast<int>(index-beginRead());
 }

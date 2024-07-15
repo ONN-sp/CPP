@@ -37,7 +37,7 @@ namespace tiny_muduo{
             void Append(const char*, int);// 追加指定长度的字符串到缓冲区
             void Append(const std::string&);// 追加std::string格式到缓冲区
             void Retrieve(int);// 从缓冲区中提取指定长度的数据
-            void RetrieveUnitilIndex(const char*);// 提取直到指定位置的数据
+            void RetrieveUntilIndex(const char*);// 提取直到指定位置的数据
             void RetrieveAll();// 提取缓冲区所有数据
             int Size(){return buffer_.size();}// 返回此时Buffer的已存储的数据量
             int Capacity(){return buffer_.capacity();}// 返回当前缓冲区的总存储容量,即缓冲区可以容纳的最大字节数  没有超过这个容量,就不会重新分配内存

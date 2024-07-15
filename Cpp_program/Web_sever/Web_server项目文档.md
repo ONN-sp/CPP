@@ -710,6 +710,13 @@
    服务端被动关闭的一个函数调用流程:
    ![](被动关闭函数调用.png)
 17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
+# HTTP
+## HttpContent
+1. 本项目和`muduo`一样,只解析了`Http`请求报文中的请求行和头部字段两部分,而主体(消息体)(`body`)没有考虑.消息体的处理通常是在具体应用逻辑中实现的,例如处理`POST`请求时读取并处理请求体的数据.`muduo`的设计是尽量简单、高效，避免过多的复杂功能集成
+2. `HttpContent`是解析`Http`请求报文的上层封装,具体的解析动作是在`HttpRequest`中完成的.`HttpContent`负责解析收到的数据,逐步将其解析成一个完整的`HttpRequest`对象.在解析过程中,`HttpContent`会根据接收到的数据更新解析状态,直到整个请求被解析完成(即`HttpcContent`的完整输出就是一个`HttpRequest`对象)
+3. `HttpContent`与`HttpRequest`的区别:
+   * `HttpRequest`是对完整`HTTP`请求的表示,包含了请求的所有信息(方法、路径、头部字段、请求体等)
+   * `HttpContend`是解析`HTTP`请求过程中的上下文,维护解析状态,并在解析完成后生成`HttpRequest`对象
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

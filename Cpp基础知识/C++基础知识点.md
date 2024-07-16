@@ -1875,7 +1875,7 @@ int main() {
      b = a;
 
      std::shared_ptr<EventLoop> loo_;                 // 声明一个空的 shared_ptr
-     loo_ = std::shared_ptr<EventLoop>(loop);         // 这并不是传统意义上的强制类型转换，而是使用 std::shared_ptr 的构造函数来接管原始指针 loop 的所有权。它是对象的所有权从一个原始指针转移到一个智能指针的过程，而不是类型之间的转换
+     loo_ = std::shared_ptr<EventLoop>(loop);         // 这并不是传统意义上的强制类型转换,而是使用 std::shared_ptr 的构造函数来接管原始指针 loop 的所有权.它是对象的所有权从一个原始指针转移到一个智能指针的过程,而不是类型之间的转换
     ```
 10. <mark>`loo_ = std::shared_ptr<EventLoop>(loop); `:(`loop`是一个裸指针)这并不是强制类型转换,而是使用`std::shared_ptr`的构造函数创建一个新的`std::shared_ptr`对象,并将其赋值给`loo_`.这是通过智能指针的构造函数进行对象的管理和所有权转移,而不是进行类型之间的转换,这只是智能所有权的转移</mark>
 11. 构建`shared_ptr`也可以使用`make_shared`初始化对象,这样分配的内存效率更高.`make_shared`函数的主要功能是在动态内存中分配一个对象并初始化它,返回指向此对象的`shared_ptr`:

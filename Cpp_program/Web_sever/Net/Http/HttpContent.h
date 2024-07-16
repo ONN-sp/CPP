@@ -7,7 +7,7 @@
 #include "HttpRequestParseState.h"
 
 namespace tiny_muduo{
-    class HttpContent{// 解析HTTP请求的内容
+    class HttpContent : public NonCopyAble{// 解析HTTP请求的内容
         public:
             HttpContent();
             ~HttpContent();

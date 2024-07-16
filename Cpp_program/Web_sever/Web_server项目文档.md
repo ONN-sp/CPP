@@ -711,12 +711,34 @@
    ![](被动关闭函数调用.png)
 17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
 # HTTP
+1. 调用流程:
+   * `HttpServer`创建并启动服务器:
+      -  `HttpServer`对象被创建,并在指定的端口上监听
+      -  设置一个`HTTP`请求处理回调函数`onRequest`(解析完成时回调)
+   * 接受连接:  
+      -  当有新的客户端连接时,`HttpServer`创建一个新的`TcpConnection`对象处理连接
+      -  在`TcpConnection`内部维护一个`HttpContend`对象,用于解析`HTTP`请求
+   * 读取并解析请求:
+      - 客户端发送请求数据,`TcpConnection`读取数据并传递给`HttpContend`
+      - `HttpContend`逐步解析数据,解析完成时生成一个`HttpRequest`对象
+   * 处理请求:
+      -  解析完成后,`HttpServer`调用用户定义的回调函数`onRequest`,并传递`HttpRequest`和`HttResponse`对象
+      -  回调函数处理请求并填充`HttpResponse`对象
+   * 发生响应:
+      -  `HttpResponse`被序列化并通过`TcpConnection`发送回客户端     
 ## HttpContent
 1. 本项目和`muduo`一样,只解析了`Http`请求报文中的请求行和头部字段两部分,而主体(消息体)(`body`)没有考虑.消息体的处理通常是在具体应用逻辑中实现的,例如处理`POST`请求时读取并处理请求体的数据.`muduo`的设计是尽量简单、高效，避免过多的复杂功能集成
 2. `HttpContent`是解析`Http`请求报文的上层封装,具体的解析动作是在`HttpRequest`中完成的.`HttpContent`负责解析收到的数据,逐步将其解析成一个完整的`HttpRequest`对象.在解析过程中,`HttpContent`会根据接收到的数据更新解析状态,直到整个请求被解析完成(即`HttpcContent`的完整输出就是一个`HttpRequest`对象)
 3. `HttpContent`与`HttpRequest`的区别:
    * `HttpRequest`是对完整`HTTP`请求的表示,包含了请求的所有信息(方法、路径、头部字段、请求体等)
    * `HttpContend`是解析`HTTP`请求过程中的上下文,维护解析状态,并在解析完成后生成`HttpRequest`对象
+## HttpRequest
+1. `HttpRequest`类的几个成员变量`Method method_; Version version_; std::string path_; std::string query_; std::map<std::string, std::string> headers_;`就构成了一个完整的`Http`请求报文(不考虑`Body`)
+## HttpResponse
+
+## HttpServer
+1. 本项目引入了一个`muduo`没有的,即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭
+2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt

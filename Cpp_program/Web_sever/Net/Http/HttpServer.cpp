@@ -1,15 +1,15 @@
 #include "HttpServer.h"
-#include "../Base/Logging/Logging.h
+#include "../../Base/Logging/Logging.h"
 
 using namespace tiny_muduo;
 
-HttpServer::HttpServer(EventLoop* loop, const Address& address, bool auto_close_idleconnection
+HttpServer::HttpServer(EventLoop* loop, const Address& address, bool auto_close_idleconnection)
     : loop_(loop),
       server_(std::make_unique<TcpServer>(loop, address, "HttpServer")),
       auto_close_idleconnection_(auto_close_idleconnection){
         // 把HttpServer的ConnectionCallback  MessageCallback传给对应的TcpServer(相对于在TcpServer上再封装一层)
-        server_.SetConnectionCallback(std::bind(&HttpServer::ConnectionCallback, this, std::placeholders::_1));
-        server_.SetMessageCallback(std::bind(&HttpServer::MessageCallback, this, std::placeholders::_1, std::placeholders::_2));
+        server_->SetConnectionCallback(std::bind(&HttpServer::ConnectionCallback, this, std::placeholders::_1));
+        server_->SetMessageCallback(std::bind(&HttpServer::MessageCallback, this, std::placeholders::_1, std::placeholders::_2));
         SetHttpResponseCallback(std::bind(&HttpServer::HttpDefaultCallback, this, std::placeholders::_1, std::placeholders::_2));
         LOG_INFO << "HttpServer listening on " << address.IpPortToString();
       }
@@ -33,9 +33,9 @@ void HttpServer::HandleIdleConnection(std::weak_ptr<TcpConnection>& connection){
 }
 
 // 连接回调函数,如果启用了自动关闭空闲连接,则安排空闲超时检查
-void HttpServer::ConnectionCallback(const TcpConnectionPtr&){
+void HttpServer::ConnectionCallback(const TcpConnectionPtr& connection){
     if(auto_close_idleconnection_)
-        loop_->RunAfter(kIdleConnectionTimeOuts, std::bind(&HttpServer::HandleIdleConnection, this, std::weak_ptr<TcpConnection>(connection)));9
+        loop_->RunAfter(kIdleConnectionTimeOuts, std::bind(&HttpServer::HandleIdleConnection, this, std::weak_ptr<TcpConnection>(connection)));
 }
 // 有
 void HttpServer::MessageCallback(const TcpConnectionPtr& connection, Buffer* buffer){
@@ -56,7 +56,7 @@ void HttpServer::MessageCallback(const TcpConnectionPtr& connection, Buffer* buf
  // 处理HTTP请求
 void HttpServer::DealWithRequest(const HttpRequest& request, const TcpConnectionPtr& connection){
     std::string connection_state = std::move(request.GetHeader("Connection"));// 查找头部字段Connection对应的value,即连接状态
-    bool close = (connection_state=="Close" || (request.version()==kHttp10&&connection_state!="Keep-Alive"));// 确定是否需要关闭连接
+    bool close = (connection_state=="Close" || (request.version()==Version::kHttp10&&connection_state!="Keep-Alive"));// 确定是否需要关闭连接
     HttpResponse response(close);// close决定了这个给客户端的响应告诉对方是否关闭连接
     response_callback_(request, response);// 执行响应回调
     Buffer buffer;

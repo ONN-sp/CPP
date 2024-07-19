@@ -66,6 +66,8 @@
 16. `channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));`:对于调用`std::bind`绑定类的成员函数时,传递`this`指针是必要的,因为成员函数需要一个对象实例来调用
 17. 调用线程和所属线程要分清楚,这两者往往涉及到线程安全的问题
 18. 本项目如果报错:`Segmentation fault`,那么很有可能的一种原因是:当前访问对象已经被释放了,具体来说当前对象从属于一个上层对象,该上层对象被析构了,那么可能当前对象也被析构了,这就是后面所说的对象生命周期问题
+# argc argv
+1. `int main(int argc, char* argv[])`:
 # Muduo库的学习
 1. `C++`中可能出现的内存问题:
    * 缓冲区溢出

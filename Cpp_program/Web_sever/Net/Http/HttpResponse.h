@@ -2,7 +2,7 @@
 #define HTTPRESPONSE_H
 
 #include "HttpRequest.h"
-#include "Buffer.h"
+#include "../Util/Buffer.h"
 #include "../../Base/NonCopyAble.h"
 
 namespace tiny_muduo{

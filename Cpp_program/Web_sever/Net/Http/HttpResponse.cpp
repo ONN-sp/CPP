@@ -15,7 +15,7 @@ HttpResponse::~HttpResponse(){}
 void HttpResponse::AppendToBuffer(Buffer* buffer){
     char buf[32] = {0};
     // 格式化状态行并附加到缓冲区
-    snprintf(buf, sizeof(buf), "%s %d ", http_version_.c_str(), status_code_);
+    snprintf(buf, sizeof(buf), "%s %d ", http_version_.c_str(), static_cast<int>(status_code_));
     buffer->Append(buf);
     buffer->Append(status_message_);
     buffer->Append(kCRLF);

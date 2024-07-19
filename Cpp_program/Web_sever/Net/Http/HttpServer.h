@@ -3,12 +3,12 @@
 
 #include "HttpRequest.h"
 #include "HttpResponse.h"
-#include "Buffer.h"
+#include "../Util/Buffer.h"
 #include <functional>
 #include <memory>
 #include "../../Base/NonCopyAble.h"
 #include "../Util/EventLoop.h"
-#include "../Base/Address.h"
+#include "../../Base/Address.h"
 #include "../Util/Tcpserver.h"
 #include "../Util/Tcpconnection.h"
 
@@ -39,7 +39,7 @@ namespace tiny_muduo{
         private:
             EventLoop* loop_;
             std::unique_ptr<TcpServer> server_;
-            bool auto_close_idleconnection;// 是否自动关闭空闲连接的标志
+            bool auto_close_idleconnection_;// 是否自动关闭空闲连接的标志
             HttpResponseCallback response_callback_;
     };
 }

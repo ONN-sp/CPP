@@ -12,7 +12,7 @@ namespace tiny_muduo {
     class EventLoop;
     class Poller : public NonCopyAble {
     public:
-        using Channels = std::vector<std::shared_ptr<Channel>>;
+        using Channels = std::vector<Channel*>;
         Poller(EventLoop*);
         virtual ~Poller() = default;
         //给所有I/O复用(因为可能用select poll epoll)保留统一的接口

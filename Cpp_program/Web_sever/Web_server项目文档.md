@@ -336,6 +336,18 @@
     * 读写的时候不必等候触发`EAGAIN`(表示缓冲区是否满(满对应写操作)),可以节省系统调用次数,降低延迟
 16. <mark>本项目基于`muduo`设计的核心思想:每个`EventLoop`运行在一个单独的线程中,并且所有与该`EventLoop`相关的操作都应该在这个线程中执行(因此把上层的所有回调函数都放到了其所属的`EventLoop`的任务队列中去了(如:`TcpServer`中的`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`等等)).这个设计理念旨在保证线程安全性和系统的一致性,同时简化了并发编程的复杂性</mark>
 17. 本项目和`muduo`通过使用`EventLoop`的`QueueInLoop`或`RunOneFunc`方法来将任务安全地调度到目标线程的`EventLoop`中执行,这种方法可以避免直接在多个线程中并发执行代码的风险.但是如果任务涉及到访问或修改多个线程共享的数据,即使这些任务是在 `EventLoop`的单线程中执行,也需要注意线程安全的问题
+## 所遇问题
+1. 智能指针的问题:
+   ```C++
+   using Channels = std::vector<std::shared_ptr<Channel>>;
+   Channels active_channels_
+   // 此时会在执行中报逻辑错误   因为智能指针的vector在clear()时如果所有std::shared_ptr对象被移除,那么对应的Channel对象就会被自动析构(此时在Channel析构时,它仍然被认为是活跃的,即还在loop循环中)
+   // 修改方法
+   using Channels = std::vector<Channel*>;
+   Channels active_channels_
+   // 普通指针的vector数组在clear时不会出现析构Channel对象的可能
+   ```
+   ![](智能指针问题.png)
 # EventLoopThread&EventLoopThreadLoop
 1. 为了更直接的表示`one loop per thread`,我们建立了`EventLoopThread`,`thread_(std::bind(&EventLoopThread::StartFunc, this), name)`:体现了一个`thread`与一个`loop`绑定
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
@@ -348,7 +360,7 @@
    auto thread = std::make_unique<EventLoopThread>(cf, name_);
    threads_.emplace_back(std::move(thread));
    loops_.emplace_back(thread->StartLoop());
-   // !!! 此时会报错  Segmentation fault   因为std::move把thread移动后,thread指针就变得无效了,它已经被转移到threads_容器了,因此thread->StartLoop()就会报错
+   // !!! 此时会报逻辑错误  Segmentation fault   因为std::move把thread移动后,thread指针就变得无效了,它已经被转移到threads_容器了,因此thread->StartLoop()就会报错
    // 修改方法一:
    auto thread = std::make_unique<EventLoopThread>(cf, name_);
    threads_.emplace_back(std::move(thread));
@@ -359,6 +371,20 @@
    loops_.emplace_back(thread->StartLoop());
    ```
 2. `EventLoopThread`中遇到了一个调试`Bug`=>`std::move`的胡乱使用:
+   ```C++
+   EventLoop* EventLoopThread::StartLoop(){
+    thread_.StartThread();// 启动线程
+    std::unique_ptr<EventLoop> loop(new EventLoop());
+    {
+        MutexLockGuard lock(mutex_);
+        while(loop_==nullptr)// 不能是if !!!
+            cond_.Wait();
+        loop = std::move(loop_);// 获取初始化后的 loop_
+    }
+    return loop.get();
+   }
+   // 不能std::move(loop_),因为这样会造成loop_被无法左值引用了,而让StartFunc中的loop_相对于被析构了  
+   ```
    ![](wakeup_error.png)
 # CurrentThread
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的.`__thread`可以用来修饰那些带有全局性且值可能变,但是又不值得用全局变量保护的变量
@@ -741,6 +767,8 @@
 ## HttpServer
 1. 本项目引入了一个`muduo`没有的,即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
+3. 测试结果:
+   ![](HttpServer测试结果.png)
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -805,6 +833,9 @@
    ```
    `target_link_libraries`不需要显示指定库的位置,因为`CMake`会自动查找并链接目标所需的库,它默认会搜索几个标准的库搜索路径,如:`/usr/lib    /usr/local/lib`等
 7. <mark>为了合理实现可以相互调用静态库的方法写`CMakeLists.txt`,(前提假设:下层不能调用上层,上层可以调用下层,相同层之间可能会相互调用)我们必须相同层次的目录不能单独生成静态库,即想象成网络通信时,就是相同层不要单独构建一个库,需要把相同层的源文件构建在同一个库中.如果把相同层构建为两个不同的库,这可能是完成不了的,比如:`Timer`目录文件会调用`Util`中的文件,而`Util`文件也会调用`Timer`文件,所以此时就不知道怎么构建库了,因此对于相同层我们应该构建在一个库中.本项目,我们假定了三层,一层为底层`webserver_base`(包括`./Base/Logging`和`Base`)库,第二层为网络层`webserver_net`库(包括`Poller Timer Util`),第三层为应用层`webserver_http`(`Http`)</mark>
+# 所遇问题
+1. 链接静态库的顺序出错`HttpServer_test.cpp`:`target_link_libraries(HttpServer_test webserver_net webserver_base)`(`webserver_net`要在`webserver_base`前面):
+   ![](静态库链接顺序出错.png)
 # Shell脚本
 1. 可以将`cmake`的构建过程用`Shell`脚本给出,如:
    ```bash

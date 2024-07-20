@@ -58,7 +58,7 @@ void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     loop->QueueOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));// 这里必须要放在Loop里,如果直接执行就可能出现TcpConnection的被析构了(它所拥有的channel_也会析构),但此时可能channel_回调的事件并没结束,导致channel_无引用定义
 }
 
-void TcpServer:: HandleNewConnection(int connfd, const Address& address){
+void TcpServer::HandleNewConnection(int connfd, const Address& address){
     // 取一个子EventLoop来管理connfd对应的channel
     EventLoop* sub_loop = threads_->NextLoop();
     // 创建一个新的TcpConnection对象来处理新连接

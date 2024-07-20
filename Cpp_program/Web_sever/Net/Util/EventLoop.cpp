@@ -65,7 +65,7 @@ void EventLoop::loop() {
     while (!quit_) {
         active_channels_.clear(); // 清空活跃 Channel 列表
         epoller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
-        for (const auto& channel : active_channels_)
+        for (Channel* channel : active_channels_)
             channel->HandleEvent(); // Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
         doPendingFunctors(); // 处理待回调函数列表中的任务 
     }

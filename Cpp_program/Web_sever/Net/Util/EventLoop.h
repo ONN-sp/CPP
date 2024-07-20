@@ -15,7 +15,7 @@ class Channel;
 class EventLoop : public NonCopyAble{
     public:
         using BasicFunc = std::function<void()>;
-        using Channels = std::vector<std::shared_ptr<Channel>>;
+        using Channels = std::vector<Channel*>;// !!!调了一天  BUG  不能用智能指针作为元素  不然会出现智能指针指向的Channel对象被析构
         using ToDoList = std::vector<BasicFunc>;
 
         EventLoop();

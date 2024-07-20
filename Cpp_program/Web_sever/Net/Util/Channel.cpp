@@ -28,7 +28,7 @@ void Channel::SetReadCallback(EventCallback&& callback){
 
 //设置读回调函数(拷贝语义  参数传递)
 void Channel::SetReadCallback(const EventCallback& callback){
-    read_callback_ = std::move(callback);
+    read_callback_ = callback;
 }
 
 //设置写回调函数(移动语义)
@@ -38,7 +38,7 @@ void Channel::SetWriteCallback(EventCallback&& callback){
 
 //设置写回调函数(拷贝语义)
 void Channel::SetWriteCallback(const EventCallback& callback){
-    write_callback_ = std::move(callback);
+    write_callback_ = callback;
 }
 
 //设置错误回调函数(移动语义)
@@ -48,7 +48,7 @@ void Channel::SetErrorCallback(EventCallback&& callback){
 
 //设置错误回调函数(拷贝语义)
 void Channel::SetErrorCallback(const EventCallback& callback){
-    error_callback_ = std::move(callback);
+    error_callback_ = callback;
 }
 
 //设置错误关闭函数(移动语义)
@@ -58,7 +58,7 @@ void Channel::SetCloseCallback(EventCallback&& callback){
 
 //设置错误关闭函数(拷贝语义)
 void Channel::SetCloseCallback(const EventCallback& callback){
-    close_callback_ = std::move(callback);
+    close_callback_ = callback;
 }
 
 //将Channel绑定到某个对象A的生命周期上,避免使用时对象A已被销毁
@@ -80,7 +80,7 @@ void Channel::EnableReading(){
 
 //启用写事件
 void Channel::EnableWriting(){
-    events_ |= (EPOLLIN|EPOLLPRI);
+    events_ |= EPOLLOUT;
     Update();
 }
 
@@ -163,7 +163,7 @@ void Channel::HandleEvent(){
 //带有保护机制的事件处理   下面四种回调函数是在TcpConnection的构造函数中注册的
 void Channel::HandleEventWithGuard(){
     LOG_INFO << "active channel handleEvent revents: " << recv_events_;
-    if((recv_events_ & POLLHUP) && !(recv_events_ & POLLIN))// POLLHUP表示挂起(挂断)事件,表示事件被挂起或关闭(挂起和关闭时都要调用close_callback_)
+    if((recv_events_ & EPOLLHUP) && !(recv_events_ & EPOLLIN))// POLLHUP表示挂起(挂断)事件,表示事件被挂起或关闭(挂起和关闭时都要调用close_callback_)
         if(close_callback_)
             close_callback_();
     if (recv_events_ & POLLNVAL) 

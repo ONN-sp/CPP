@@ -29,7 +29,7 @@ EventLoop::EventLoop()
         : running_(false),
           quit_(false),
           tid_(tid()),//获取当前线程ID
-          epoller_(std::make_unique<Epoller>(this)),//创建Epoller对象,用于I/O复用
+          poller_(Poller::newDefaultPoller(this)),//创建Epoller对象,用于I/O复用   基类指针(运行时多态)
           wakeup_fd_(::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)),//创建 eventfd,用于线程间的唤醒
           wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)),//创建wakeup_fd_对应的Channel对象   
           timer_queue_(std::make_unique<TimerQueue>(this)),// 创建TimerQueue,用于管理定时器
@@ -64,7 +64,7 @@ void EventLoop::loop() {
     LOG_INFO << "EventLoop " << thisStr << " start looping";// 输出this指针,表示查看当前对象的地址
     while (!quit_) {
         active_channels_.clear(); // 清空活跃 Channel 列表
-        epoller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
+        poller_->Poll(KPollTimeMs, active_channels_); // 调用 Epoller 的 Poll 函数获取活跃的 Channel 列表
         for (Channel* channel : active_channels_)
             channel->HandleEvent(); // Poller监听哪些Channel发生了事件,然后上报给EventLoop,EventLoop再通知channel处理相应的事件
         doPendingFunctors(); // 处理待回调函数列表中的任务 
@@ -126,15 +126,15 @@ void EventLoop::wakeup(){
 }
 
 void EventLoop::UpdateChannel(Channel* channel){
-    epoller_->UpdateChannel(channel);
+    poller_->UpdateChannel(channel);
 }
 
 void EventLoop::RemoveChannel(Channel* channel){
-    epoller_->RemoveChannel(channel);
+    poller_->RemoveChannel(channel);
 }
 
 bool EventLoop::hasChannel(Channel* channel){
-    return epoller_->hasChannel(channel);
+    return poller_->hasChannel(channel);
 }
 // 将指定的定时器(包括对应的定时回调函数)加入当前EventLoop(即当到了指定的时间timestamp时,就会调用相应的回调函数cb)  并且只执行一次interval=0.0
 void EventLoop::RunAt(Timestamp timestamp, BasicFunc&& cb) {

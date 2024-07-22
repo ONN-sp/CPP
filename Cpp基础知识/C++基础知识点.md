@@ -1280,11 +1280,11 @@ void Swap(AnyType &a, AnyType &b);
       obj.printValue(); // 输出: myInt: 42
       return 0;
    }
-   2. 初始化列表初始化:
+   2. 初始化器列表方法初始化:
    #include <iostream>
    class MyClass {
    public:
-      // 使用成员初始化列表初始化成员变量
+      // 使用成员初始化器列表语法初始化成员变量
       MyClass(int value) : myInt(value) {}
       void printValue() {
          std::cout << "myInt: " << myInt << std::endl;
@@ -1551,8 +1551,48 @@ int main() {
     return 0;
 }
 ```
-# nullptr
-1. 在`C++`中,`nullptr`表示空指针常量,即空指针,可以用于任何指针类型的初始化、比较和赋值操作.`nullptr`取代了传统的`NULL`或`0`来表示空指针,具有更好的类型安全性和可读性.在链表中有时为了方便解题可以将空指针想做`head`的前一个节点,这样有时可以将`head`节点与其它节点使用相同的迭代公式(见`leetcode 206翻转链表`).总的来说,`nullptr`提供了一种更安全和更明确的方式来处理空指针,避免了与整数0的混淆
+# 类继承
+1. 从一个类派生出另一个类时,原始类称为基类,继承类称为派生类   
+2. 使用公有派生`public`,基类的`public`成员将称为派生类的`public`成员;基类的`private`成员也将称为派生类的一部分,但只能通过基类的公有和保护方法访问
+   ![](markdown图像集/类继承.png)
+3. 创建派生类对象时,程序首先要调用基类构造函数(如果没有显式调用,那么程序会使用默认的基类构造函数),然后再调用派生类构造函数.基类构造函数复制初始化继承的数据成员;派生类构造函数主要用于初始化新增的数据成员.派生类的构造函数总是调用一个基类构造函数,可以使用初始化器语法指明要使用的基类构造函数,否则将使用默认的基类构造函数:
+    ```C++
+    class Epoller : public Poller // Epoller继承Poller
+        ...
+    Epoller::Epoller(EventLoop* loop)
+    : Poller(loop),// 初始化器语法调用基类构造函数
+      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
+      events_(kDefaultEvents){}
+    ```
+4. 派生类和基类的特殊关系:
+   * 派生类对象可以使用基类的非私有方法
+   * 基类指针/引用可以在不进行显式类型转换的情况下指向/引用派生类对象(基类指针:一个类型为基类的指向/引用派生类对象的指针/引用)
+    ```C++
+    class RatedPlayer : TableTennisPlayer
+        ...
+    TableTennisPlayer& rt = RatedPlayer(...);// 基类引用
+    TableTennisPlayer* pt = new RatedPlayer(...);// 基类指针
+    // 不能将基类对象和地址赋给派生类引用指针
+    RatedPlayer& rr = TableTennisPlayer(...);// ×
+    RatedPlayer* pr = new TableTennisPlayer(...);// ×
+    ```
+    <mark>基类指针/引用只能用于调用基类方法</mark>
+5. 基类有虚函数(方法),派生类也一定有虚函数(方法)(即使派生类中是基类虚方法的定义实现,这个实现的方法也是虚方法)
+6. 如果派生类没有重新定义函数,那么将使用该函数的基类版本
+# 静态联编和动态联编
+1. 将源代码中的函数调用解释为执行特定的函数代码块被称为函数名联编.在编译过程中进行联编被称为静态联编;在程序运行时选择正确的虚方法的代码,这被称为动态联编
+2. 通常,`C++`不允许直接将一种类型的地址赋给另一种类型的指针,也不允许一种类型的引用指向另一种类型.但是,<mark>在类继承中,指向基类的引用或指针可以引用派生类对象,而不必显式类型转换,这被称为向上强制转换</mark>(基类没有虚函数也可以向上强制转换,这和有没有虚函数没关系).向上强制转换是可传递的,如果`Base`派生出`A`类,`A`类又派生出`B`类,则`Base`指针或引用可以引用`Base`、`A`、`B`对象.如果不使用显式类型转换,向下强制转换是不允许的
+   ![](leetcode图像集/向上强制转换.png)
+3. 类继承中为什么需要向上强制转换?
+   * 运行时多态:使用基类指针或引用可以实现运行时多态.多态性允许我们使用基类指针或引用来调用派生类对象的虚函数,从而实现运行时的动态绑定
+   * 接口的统一
+   * 代码重用
+4. 编译器对非虚方法使用静态链表联编,对虚方法使用动态联编
+5. <mark>为什么需要动态联编?=>在大多数情况下,动态联编很好,因为它让程序能够选择为特定类型设计的方法,实现灵活和可扩展的设计</mark>
+6. 动态联编需要一些额外的处理开销,而静态联编的效率更高.因此,仅在程序设计中确实需要虚函数时,编译器才使用动态联编的方法,而默认是静态联编
+6. <mark>虚函数工作原理:通常,编译器处理虚函数的方法是:给每个对象添加一个隐藏成员.隐藏成员中保存了一个指向函数地址数组的指针.这种数组称为虚函数表.虚函数表中存储了为类对象进行声明的虚函数的地址.例如,基类对象包含一个指针,该指针指向基类中所有虚函数的地址表.派生类对象将包含一个指向独立地址表的指针.如果派生类提供了虚函数的新定义,该虚函数表将保存新函数的地址;如果派生类没有重新定义虚函数,该虚函数表将保存函数原始版本的地址.如果派生类定义了新的虚函数,则该函数的地址也将被添加到虚函数表中.注意,无论类中包含的虚函数是1个还是10个,都只需要在对象中添加1个地址成员(指向这个虚函数表),只是表的大小不同而已</mark>:
+   ![](leetcode图像集/虚函数工作原理.png)
+7. 从上图可知,如果派生类重载了基类的虚函数,派生类会有自己的虚函数表,表中包含派生类重载的虚函数的地址(派生类中对于基类虚函数的实现的这个函数本质还是一个虚函数,还是会在虚函数表中);如果派生类没有重载某个基类的虚函数,派生类的虚函数表中对应的条目会指向基类的虚函数实现
 # 虚函数
 1. 虚函数是`C++`实现多态性的一种机制,通过使用虚函数,可以在派生类中重新定义基类中的函数
 2. 虚函数定义使用`virtual`关键字
@@ -1568,6 +1608,33 @@ int main() {
     };
    ```
 8. <mark>如果一个类中只包含纯虚函数,那么这个类就是抽象类,不能被直接实例化(类似`java`的`interface`),而只能用作基类.派生类必须实现基类中的所有纯虚函数,否则它们也会成为抽象类</mark>
+9. <mark>在基类方法的声明中使用关键字`virtual`可使该方法在基类以及所有的派生类(包括派生类的派生的类)都是虚的(派生类中对基类虚方法的实现方法也是虚的)</mark>
+10. <mark>构造函数不能是虚函数,析构函数应当是虚函数,除非类不用做基类</mark>
+11. <mark>基类中常会声明一个虚析构函数:如果析构函数不是虚的,则将只调用对应于指针类型(基类类型)的析构函数(即调用基类的析构函数).这意味着只有`Poller`的析构函数被调用,即使指针指向的是一个`Epoller`对象.如果析构函数是虚的,将调用相应对象类型的
+析构函数.因此,如果指针指向的是`Epoller`对象,将调用`Epoller`的析构函数,然后自动调用基类的析构函数.因此,使用虚析构函数可以确保正确的析构函数序列被调用</mark>:
+    ```C++
+    class Epoller : public Poller // Epoller继承Poller
+        ...
+    Epoller::Epoller(EventLoop* loop)
+    : Poller(loop),// 初始化器语法调用基类构造函数
+      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
+      events_(kDefaultEvents){}
+    ```
+# 多态
+1. 多态允许相同的操作在不同的对象上表现出不同的行为,分为:静态多态(编译时多态)和动态多态(运行时多态);静态多态通过函数重载和模板实现,动态多态通过继承和虚函数实现
+## 运行时多态
+1. 运行时多态是通过继承和虚函数实现的.基类定义一个接口(虚函数),派生类实现具体的功能,调用时,具体调用哪个函数是在运行时确定的    运行时多态的派生类具体实现方法的调用一般是通过基类指针/引用来实现的
+2. 如果要在派生类中重新定义基类的方法,通常将基类方法声明为虚的.这样,程序将根据对象类型而不是引用或指针的类型来选择方法版本
+3. 对于基类的虚函数:程序将根据基类引用或指针指向的对象的类型(即指针指向的具体是哪个派生类对象)来选择基类的虚方法的具体实现的方法.如果不使用`virtual`,那么程序是根据引用类型或指针类型直接执行对应的方法的(即这就是普通类方法的调用执行)
+4. <mark>运行时多态的调用:</mark>
+   * 定义基类并声明虚函数`class Poller`
+   * 派生类继承基类并重写虚函数`class Epoller : public Poller`
+   * 使用基类指针或引用指向派生类对象`std::unique_ptr<Poller> poller_;  poller_(new Epoller(this))`
+5. <mark>`C++`为什么需要运行时多态(动态多态)?</mark>
+   * 运行时多态允许程序在运行时根据对象的实际类型调用相应方法,而不是编译时决定,这样可以使代码更加灵活和通用
+   * 接口的统一和抽象:通过定义一个基类接口,并在派生类中实现这些接口,可以将具体实现与接口分离,这使得代码更具可扩展性和可维护性
+   * 代码的重用和扩展:运行时多态使得可以通过继承和虚函数来扩展已有的代码,而无需修改现有代码.新的实现直接通过继承基类和`override`虚函数就行
+   * 实现细节的隐藏:运行时多态允许对象的具体实现对客户端代码保持隐藏
 # final 
 1. `C++`中,`final`关键字通常用于类的继承和虚函数的声明,它的作用是阻止派生类对基类中的虚函数进行重写,或者防止派生类再次派出新的子类(不想哪个类或者虚函数被重写就把`final`写在哪):
    ```C++
@@ -1613,6 +1680,8 @@ int main() {
     };
     ```
     总的来说,`override`关键字用于标识派生类中的函数是对基类中的虚函数的覆盖,从而提高代码的清晰度和可维护性
+# nullptr
+1. 在`C++`中,`nullptr`表示空指针常量,即空指针,可以用于任何指针类型的初始化、比较和赋值操作.`nullptr`取代了传统的`NULL`或`0`来表示空指针,具有更好的类型安全性和可读性.在链表中有时为了方便解题可以将空指针想做`head`的前一个节点,这样有时可以将`head`节点与其它节点使用相同的迭代公式(见`leetcode 206翻转链表`).总的来说,`nullptr`提供了一种更安全和更明确的方式来处理空指针,避免了与整数0的混淆
 # 递归
 1. 递归法=递推+回溯,其中终止条件`return`是递推的结束/回溯的开始,需要注意的是递归的后续回溯过程不是终止条件的`return`,而是函数正常结束的`return`;终止条件(基本情况)只会访问一次
 2. 递推时要执行的语句在递归函数前面,回溯时要执行的语句在递归函数后面
@@ -1869,7 +1938,7 @@ int main() {
 
      std::shared_ptr<Myclass> b(a); 或 
      std::shared_ptr<Myclass> b = a;
-    2. 将一个已有对象的值赋给另一个已有对象.通常是在赋值操作中发生,如:
+    1. 将一个已有对象的值赋给另一个已有对象.通常是在赋值操作中发生,如:
      std::shared_ptr<Myclass> a(2);
      std::shared_ptr<Myclass> b;
      b = a;
@@ -1893,7 +1962,7 @@ int main() {
 12. `make_shared`相比直接使用`new`来创建`shared_ptr`的优点:
    * 更高效:`make_shared`只需要一次动态分配内存,它同时创建了`shared_ptr`和(`new`的)对象本身,而直接使用`new`则需要两次分配(一次为对象,一次为共享指针控制块)
    * 异常安全:`make_shared`能够保证分配动态内存时的异常安全性,因为对象和共享指针控制块是一起分配的,这样可以避免分配对象成功但分配共享指针控制块失败的情况
-12. `weak_ptr`是`c++11`引入的一种智能指针,它设计用于解决`shared_ptr`的循环引用问题.`weak_ptr`只可以从一个`shared_ptr`或另一个`weak_ptr`对象构造,它的构造和析构不会引起引用记数的增加或减少(因此可以解决循环引用问题):
+13. `weak_ptr`是`c++11`引入的一种智能指针,它设计用于解决`shared_ptr`的循环引用问题.`weak_ptr`只可以从一个`shared_ptr`或另一个`weak_ptr`对象构造,它的构造和析构不会引起引用记数的增加或减少(因此可以解决循环引用问题):
     ```C++
     1.
     shared_ptr<Boy> spBoy(new Boy());
@@ -1916,9 +1985,9 @@ int main() {
     // 使用完之后，再将共享指针置NULL即可
     sp_girl = NULL;
     ```
-13. `weak_ptr`允许你观察由`shared_ptr`管理的对象,但是它不会增加对象的引用计数.当你需要访问`weak_ptr`指向的对象时,你必须先将`weak_ptr`转换为`shared_ptr`,如果`weak_ptr`指向的对象已经被释放,转换操作会失败.`weak_ptr`一般用于处理中间过程
-14. 对于`shared_ptr  auto_ptr  unique_ptr`它们的成员方法都是一样的,`* ->`运算符也都是重载了的
-15. 智能指针托管的内存的释放时间:
+14. `weak_ptr`允许你观察由`shared_ptr`管理的对象,但是它不会增加对象的引用计数.当你需要访问`weak_ptr`指向的对象时,你必须先将`weak_ptr`转换为`shared_ptr`,如果`weak_ptr`指向的对象已经被释放,转换操作会失败.`weak_ptr`一般用于处理中间过程
+15. 对于`shared_ptr  auto_ptr  unique_ptr`它们的成员方法都是一样的,`* ->`运算符也都是重载了的
+16. 智能指针托管的内存的释放时间:
     * 对于`shared_ptr`,每当创建一个`shared_ptr`指向某个资源时,引用计数会增加;当`shared_ptr`被销毁时,引用计数会减少.只有当引用计数变为零时,动态内存才会被释放
     * 对于`unique_ptr`(`auto_ptr`一样),它独占所有权,因此在其被销毁时(作用域),它管理的动态内存会被释放
     * 对于`weak_ptr`,它不增加引用计数,只是用来观察`shared_ptr`管理的资源.当没有任何`shared_ptr`指向资源时,`weak_ptr`将失效,但并不影响资源的生命周期
@@ -2112,10 +2181,103 @@ int main() {
    ```
 3. <span style="color:red;">在`C++`中,内联函数在类的外部还是不能通过类名和作用域解析运算符`::`来进行调用</span>
 4. <mark>想要在其它类中直接利用该类名+域解析符调用该类的成员函数,必须将该成员函数设为`static`</mark>
-# static_cast
-1. `static_cast<...>`:`C++`中的强制类型转换,`C`和`C++`强制类型转换的区别:
+# C++的强制类型转换
+## static_cast
+1. `static_cast`不能用于在不同类型的指针之间的转换,也不能用于整型和指针之间的相互转换,当然也不能用于不同类型的引用之间的转换,它只能用于风险低的转换,如整型和浮点型、字符型之间的相互转换:
+    ```C++
+    class A
+    {
+    public:
+        operator int() { return 1; }
+        operator char*() { return NULL; }
+    };
+    int main()
+    {
+        A a;
+        int n;
+        char* p = "New Dragon Inn";
+        n = static_cast <int> (3.14);  // n 的值变为 3
+        n = static_cast <int> (a);  //调用 a.operator int，n 的值变为 1
+        p = static_cast <char*> (a);  //调用 a.operator char*，p 的值变为 NULL
+        n = static_cast <int> (p);  //编译错误，static_cast不能将指针转换成整型
+        p = static_cast <char*> (n);  //编译错误，static_cast 不能将整型转换成指针
+        return 0;
+    }
+    ```
+2. `static_cast<...>`:`C++`中的强制类型转换,`C`和`C++`强制类型转换的区别:
    * `int value = (int)someVariable;`:`C`中的强制类型转换,这种使用更方便,但他在编译期间的类型检测不如`C++`严格,可能会导致一些类型不安全的问题
    * `int value = static_cast<int>(someVariable);`:`C++`中的强制类型转换,`static_cast`在编译期间进行严格的类型检查,只允许进行类型安全的转换.它会拒绝任何不安全的转换操作,从而提高了代码的安全性
+## reinterpret_cast
+1. `reinterpret_cast`用于进行各种不同类型的指针之间、不同类型的引用之间以及指针和能容纳指针的整数类型之间的转换.转换时,实际执行的是逐个比特复制的操作(这种转换是不安全的,使用时要非常小心):
+    ```C++
+    int main() {
+        int i = 65;
+        char* c = reinterpret_cast<char*>(&i);
+        std::cout << *c << std::endl;  // 输出 'A'，因为65的ASCII码是'A'
+        return 0;
+    }
+    ```
+## const_cast
+1. `const_cast`用于进行去除变量的`const`属性的一个转换:
+    ```C++
+    void print(const int* x) {
+        int* nonConstX = const_cast<int*>(x);
+        *nonConstX = 10;  // 修改 const 对象   
+    }
+    int main() {
+        const int i = 5;
+        print(&i);// i变成非const了
+        return 0;
+    }
+    ```
+## dynamic_cast
+1. `dynamic_cast`用于将多态基类的指针或引用(多态基类指针是一个指向派生类对象的基类类型的指针)强制转换为其派生类的指针或引用,而且能检查转换的安全性(与`reinterpret_cast`不同).对于不安全的指针转换,转换结果直接返回`NULL`指针
+    ```C++
+    class Base { 
+    public:
+        virtual ~Base() {}
+    };
+    class Derived : public Base {
+    public:
+        void derivedFunction() { std::cout << "Derived function called\n"; }
+    };
+    int main() {
+        Base* basePtr = new Derived;// basePtr是一个基类指针  指向派生类Derived对象的一个基类类型(Base类型)的指针
+        Derived* derivedPtr = dynamic_cast<Derived*>(basePtr);
+        if (derivedPtr) {
+            derivedPtr->derivedFunction();  // 安全地调用 Derived 类的成员函数
+        } else {
+            std::cout << "dynamic_cast failed\n";
+        }
+        delete basePtr;
+        return 0;
+    }
+    ```
+# 优先队列
+1. 优先队列是一种堆一般为二叉堆.堆是一颗完全二叉树,树中每个结点的值都不小于(或不大于)其左右孩子的值.父节点大于等于左右孩子就是大顶堆(`priority_queue`默认是大顶堆),反之为小顶堆.大顶堆/小顶堆的实现就可以直接用`priority_quyeue`
+2. `std::priority_queue`是`C++`标准库的一个容器适配器,它提供了一个优先级队列的实现,其中的元素按照一定的优先级进行排序.默认情况,它使用的是`std::less`作为比较函数(`less`此时的`.top()`为最大值->大顶堆(顶为最大值)),因此队列中的元素会按照降序进行排列
+3. 在`C++`中,可以通过几种方式自定义比较函数:
+   ```C++
+   1. 使用函数指针
+   bool compare(int a, int b) {
+      return a > b; // 最大堆
+   }
+   std::priority_queue<int, std::vector<int>, decltype(&compare)> pq(&compare);
+   //也可以不用取地址符,因为函数名在大多数时候就是函数指针
+   std::priority_queue<int, std::vector<int>, decltype(compare)> pq(compare);
+   2. 使用函数对象
+   struct Compare {//写成class Compare类也行
+      bool operator()(int a, int b) {
+         return a > b; // 最大堆
+      }
+   };
+   std::priority_queue<int, std::vector<int>, Compare> pq;
+   3. 使用匿名函数
+   auto cmp = [](const std::pair<int, int> &l, const std::pair<int, int> &r) {
+      return l.second < r.second;
+   };
+   std::priority_queue<std::pair<int, int>, std::vector<std::pair<int, int> >, decltype(cmp)> pq(cmp);
+   ```
 
 
 

@@ -73,10 +73,11 @@ namespace tiny_muduo{
             void UpdateTimestamp(Timestamp now){ timestamp_ = now;}
             // 获取时间戳
             Timestamp timestamp() const {return timestamp_;}
-            // 获取当前TcpConnection的名称
+            // 获取当前TcpConnection的名称  !!! 不能用它来作为key
             std::string name() const {return (ip_port_ + std::to_string(connfd_) + std::to_string(connection_id_));}
             // 获取当前TcpConnection的连接的ID
             int id() const {return connection_id_;}
+            int fd() const {return connfd_;}
             // 获取关联的事件循环loop
             EventLoop* getLoop() const { return loop_;}
             // 获取HTTP内容
@@ -87,7 +88,6 @@ namespace tiny_muduo{
             int connfd_; // 当前连接的文件描述符
             int connection_id_; // 当前连接的ID
             ConnectionState state_; // 连接状态
-            std::unique_ptr<Socket> TcpConnectionSocket_;
             std::unique_ptr<Channel> channel_;
             Buffer input_buffer_; // 接收缓冲区
             Buffer output_buffer_; // 发送缓冲区

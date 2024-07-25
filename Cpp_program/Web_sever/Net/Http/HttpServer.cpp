@@ -5,7 +5,7 @@
 
 using namespace tiny_muduo;
 
-HttpServer::HttpServer(EventLoop* loop, const Address& address, bool auto_close_idleconnection)
+HttpServer::HttpServer(EventLoop* loop, const Address& address, bool auto_close_idleconnection, const std::string http_version)
     : loop_(loop),
       server_(std::make_unique<TcpServer>(loop, address, "HttpServer")),
       auto_close_idleconnection_(auto_close_idleconnection){
@@ -47,7 +47,7 @@ void HttpServer::MessageCallback(const TcpConnectionPtr& connection, Buffer* buf
         if(connection->IsShutdown())
             return;
         if(!content->ParseContent(buffer)){// 解析失败
-            connection->Send("400 Bad Request\r\n\r\n");// 两个换行符是表示只发送响应头,后面的头部信息和Body都没有
+            connection->Send(http_version_ + " 400 Bad Request\r\n\r\n");// 两个换行符是表示只发送响应头,后面的头部信息和Body都没有
             connection->Shutdown();
         }
         if(content->GetCompleteRequest()){// 完整解析成功

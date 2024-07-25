@@ -57,9 +57,9 @@ bool HttpRequest::ParseRequestLine(const char* start, const char* end){// 从指
         return false;
     }
     // 根据最后一个字符&&倒数第二个字符设置HTTP版本
-    if((*(end-2)=='2')&&(*(end-1)=='0'))
+    if((*(end-3)=='2')&&(*(end-1)=='0'))// !!! -3,不是-2
         version_ = Version::kHttp20;
-    else if((*(end-2)=='1')&&(*(end-1)=='0'))
+    else if((*(end-3)=='1')&&(*(end-1)=='0'))
         version_ = Version::kHttp10;
     else
         version_ = Version::kHttp11;

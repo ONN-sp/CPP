@@ -17,7 +17,7 @@ namespace tiny_muduo{
     class HttpServer : public NonCopyAble{
         public:
             using HttpResponseCallback = std::function<void(const HttpRequest&, HttpResponse&)>;
-            HttpServer(EventLoop*, const Address&, bool auto_close_idleconnection = false);
+            HttpServer(EventLoop*, const Address&, bool auto_close_idleconnection = false, const std::string http_version = "HTTP/1.1");
             ~HttpServer();
             void Start() { server_->Start();}// 调用TcpServer::Start启动服务器
             // HTTP默认回调函数
@@ -41,6 +41,7 @@ namespace tiny_muduo{
             std::unique_ptr<TcpServer> server_;
             bool auto_close_idleconnection_;// 是否自动关闭空闲连接的标志
             HttpResponseCallback response_callback_;
+            std::string http_version_;// HTTP版本 字符串表示
     };
 }
 

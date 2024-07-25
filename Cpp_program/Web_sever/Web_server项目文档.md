@@ -1,4 +1,5 @@
-1. `getopt()`:这是一个C标准库函数,用于解析命令行参数,如:`./your_program_name -t 8 -p 8080 -l /var/log/webserver.log`:此时会启动服务器,使用8个线程(`-t 8`),监听端口号为8080(`-p 8080`),并将日志输出到`/var/log/webserver.log`
+1. 本项目特别感谢`Love 6`和`chen shuo`大佬的经验分享
+2. `getopt()`:这是一个C标准库函数,用于解析命令行参数,如:`./your_program_name -t 8 -p 8080 -l /var/log/webserver.log`:此时会启动服务器,使用8个线程(`-t 8`),监听端口号为8080(`-p 8080`),并将日志输出到`/var/log/webserver.log`
    ```C++
    int getopt(int argc, char* argv[], const char* optstring);
    //argc:命令行参数的数量,包括程序名称在内
@@ -6,8 +7,8 @@
    //optstring:一个包含所有有效选项字符的字符串.每个字符代表一个选项,如果后面跟着一个冒号":",则表示该选项需要一个参数.如,字符串"t:l:p"表示有三个选项,分别是't' 'l' 'p',其中't' 'p'后面需要一个参数
    //getopt()当所有选项解析完毕时,返回-1
    ```
-2. 对于`optarg`,它是一个全局变量,用于存储当前`getopt()`解析到的选项的参数值.如:如果你的命令行参数是`-t 8`,当程序解析到`-t`选项时,`optarg`将被设置为`8`
-3. <mark>`int main(int argc, char* argv[])`:程序入口点,其中:</mark>
+3. 对于`optarg`,它是一个全局变量,用于存储当前`getopt()`解析到的选项的参数值.如:如果你的命令行参数是`-t 8`,当程序解析到`-t`选项时,`optarg`将被设置为`8`
+4. <mark>`int main(int argc, char* argv[])`:程序入口点,其中:</mark>
    * `argc`:一个整数,表示传递给程序的命令行参数的数量,它至少为1,因为命令行第一个参数永远是程序的名称(通常是可执行文件的路径)   `argc`不用手动传入,命令行手动传入的是`argv[1]`及后面的参数,`argc`会自动被设置
    * `argv`:一个指向字符指针数组的指针,表示传递给程序的实际命令行参数.`argv[0]`是指向程序名称的字符串,`argv[1]`到`argv[argc-1]`包含了传递给程序的其它参数,如:
    ```C++
@@ -19,17 +20,17 @@
     ```
     `argc argv`是由操作系统在调用程序时根据给定的参数自动生成的参数.当在命令行中运行一个程序时,操作系统会自动将命令行参数传递给该程序
    * `C`中规定了`argc argv`的类型必须是`int char*`,`C`语言中规定了`main`函数的参数类型,虽然没有规定一定是`argc argv`这两个名称,但一般都是用这两个
-4. `C++`的接口设计中,`= 0`用于声明纯虚函数
-5. `static_cast<...>`:`C++`中的强制类型转换
-6. `::eventfd`:
+5. `C++`的接口设计中,`= 0`用于声明纯虚函数
+6. `static_cast<...>`:`C++`中的强制类型转换
+7. `::eventfd`:
    ```C++
    int eventfd(unsigned int initval, int flags);//创建一个指定控制标志的eventfd对象,并返回一个文件描述符
    //initval:初始计数器值
    //flags:控制标志,如EFD_NONBLOCK：非阻塞模式;EFD_CLOEXEC：在 exec 系统调用时自动关闭这个文件描述符
    ```
-7. 回调函数的调用是上层来调的(如:`Tcpserver`等)
-8. <mark>`muduo  web_server`的具体的`recv send accept`函数的调用是在回调函数内部,回调函数是被是否有对应就绪事件而触发的(最终是在`Channel`中的`HandleEvent`触发的,根据现在的就绪事件类型触发相应的回调函数),而不是先在外部调用`recv send accept`后触发回调函数(如先调用`recv`再触发对应的`Readcallback`).`wakeup_channel_->SetReadCallback([this]{this->HandleRead();})`:`read`函数在`HandleRead()`内部</mark>
-9. 本项目中对于基本组件(`mutex condition thread`等)都不是直接在需要使用的地方调用标准库封装好的API,而是先自己将它们的创建、使用等方法封装成一个`RAII`对象,再在其他地方进行调用
+8. 回调函数的调用是上层来调的(如:`Tcpserver`等)
+9. <mark>`muduo  web_server`的具体的`recv send accept`函数的调用是在回调函数内部,回调函数是被是否有对应就绪事件而触发的(最终是在`Channel`中的`HandleEvent`触发的,根据现在的就绪事件类型触发相应的回调函数),而不是先在外部调用`recv send accept`后触发回调函数(如先调用`recv`再触发对应的`Readcallback`).`wakeup_channel_->SetReadCallback([this]{this->HandleRead();})`:`read`函数在`HandleRead()`内部</mark>
+10. 本项目中对于基本组件(`mutex condition thread`等)都不是直接在需要使用的地方调用标准库封装好的API,而是先自己将它们的创建、使用等方法封装成一个`RAII`对象,再在其他地方进行调用
 10. 本项目有两个3秒的应用地方:
     * 3秒后业务线程的前端缓冲区队列会和日志线程的后端缓冲区队列进行交换(`buffersToWrite.swap(buffers_);`)
     * 3秒后`Logfile`就会把写入`FixedBuffer`中的日志信息写入到本地文件`::fflush(fp_)`
@@ -770,7 +771,7 @@
 ## HttpResponse
 1. 服务端收到客户端请求后先存放于`Buffer`中,之后解析成`HttpRequest`对象,再创建一个`HttpResponse`对象并调用`AppendToBuffer`格式化到`Buffer`中,回复给客户端
 ## HttpServer
-1. <mark>本项目引入了一个`muduo`没有的,即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭</mark>
+1. <mark>本项目引入了一个`muduo`没有的(`muduo`中其实是更完美的一个踢掉空闲连接的处理),即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭</mark>
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
 3. 测试结果:
    ![](HttpServer测试结果.png)
@@ -938,9 +939,9 @@
    * 监视: `print(p)`  输出一个变量的值
    * 查看函数调用栈: 系统栈会存储函数之间的调用信息、调用顺序   `backtrace(bt)`
    * 查看源码:  `list`  一次只会显示10行
-2. `gdb`操作的日志功能:  `set logging on`:它会开启一个`gdb`的日志功能,把`gdb`中操作过程的每一个调试步骤会记录到`gdb.txt`中,并保存在当前目录下
-3. 在`gdb`里面(进入`gdb`后),可以通过`shell+命令行指令`来调用终端命令,如:`shell ls`
-4. `watchpoint`:观察变量是否变化(`info watchpoints`来查看设置的观察点)(发生变化了`gdb`就会主动输出`Old value`和`New value`来表示变量变化了)    观察点用于监视某个变量或内存位置的值是否发生变化.与断点不同,观察点不依赖于特定的代码行或函数,而是依赖于数据的变化
+3. `gdb`操作的日志功能:  `set logging on`:它会开启一个`gdb`的日志功能,把`gdb`中操作过程的每一个调试步骤会记录到`gdb.txt`中,并保存在当前目录下
+4. 在`gdb`里面(进入`gdb`后),可以通过`shell+命令行指令`来调用终端命令,如:`shell ls`
+5. `watchpoint`:观察变量是否变化(`info watchpoints`来查看设置的观察点)(发生变化了`gdb`就会主动输出`Old value`和`New value`来表示变量变化了)    观察点用于监视某个变量或内存位置的值是否发生变化.与断点不同,观察点不依赖于特定的代码行或函数,而是依赖于数据的变化
    ![](watchpoint.png)
 5. `core file`(核心文件)是当程序发送崩溃时,操作系统将程序的内存映像和一些诊断信息写入到一个文件中,这个文件就是`core file`,常用于调试,但它的文件常常很大,因此默认是禁用了的(不会默认生成),可以通过`ulimit -a`查看:
    ![](core_file.png)
@@ -965,7 +966,77 @@
 9. <mark>调试正在运行的程序:在`Linux/Unix`系统中,可以使用`&`符号将命令放到后台运行(常是一个死循环),如:`./test.exe.&`</mark>,此时终端会返回一个类似`[1] 574`,其中`[1]`是作业号(标识在当前`shell`会话中运行的后台作业.每个作业在启动时都会被分配一个唯一的作业号,该作业号仅在当前`shell`会话中有效),`574`是进程ID,此时拿到了进程ID就可以利用`gdb`调试这个正在运行的程序了(<mark>需要注意的是:后台运行程序后,一定要终止它`kill %作业号`或者`kill 进程号`.否则对于`&`,就算终端退出,这个后台程序也会一直运行</mark>)
     * `gdb -p pid`, 如:`gdb -p 574`,此时就进入这个正在运行的程序的调试阶段了
     * 后续就可以使用之前的那些调试命令了,`step nexty print`等等
-# 压测 !!!
+# 压测
+1. `Bug 1`:`0 succeed 0 failed`
+   ![](0_succeed_0_failed.png)
+   因为`HttpRequest.cpp`判断版本出错:
+   ```C++
+   // 错误版本
+   if((*(end-2)=='2')&&(*(end-1)=='0'))
+        version_ = Version::kHttp20;
+   else if((*(end-2)=='1')&&(*(end-1)=='0'))
+        version_ = Version::kHttp10;
+   else
+        version_ = Version::kHttp11;
+   return true;
+   // 修正版本  HTTP/1.1中间还有一个.
+   if((*(end-3)=='2')&&(*(end-1)=='0'))
+        version_ = Version::kHttp20;
+   else if((*(end-3)=='1')&&(*(end-1)=='0'))
+        version_ = Version::kHttp10;
+   else
+        version_ = Version::kHttp11;
+   return true;
+   ```
+2. `Bug 2`:一进来就`segmentation fault`.原因:
+   ```C++
+   // 错误版本
+   std::string connName = ipport_ + std::to_string(connfd) + std::to_string(next_connection_id_);
+   connections_[connName] = ptr;
+   // 修正版本
+   connections_[connfd] = ptr;// 直接用文件描述符作为key
+   ```
+   `connName`是通过字符串拼接方式,如果其中一项包好了无效或未初始化的数据,就会导致段错误
+3. `Bug 3`:运行一段时间后`segmentation fault`.
+   ![](segmentation_fault.png)
+   原因:
+   ```C++
+   // 错误版本 TcpConnection中设置Keep-Alive
+   TcpConnectionSocket_->SetSockoptKeepAlive(true);
+   // 修正版本 放在Acceptor中设置
+   channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));
+   ```
+4. 压测的线程`CPU`占用情况:
+   * Love 6's WebServer
+      ![](Love_6_cpu.png)
+   * Drew Jun's WevServer
+       ![](Drew_Jun_cpu.png)
+5. 压测的结果  10000并发  1000并发
+   * 长连接(`keep alive`)
+      ![](1000并发_长连接.png)
+      ![](10000并发_长连接.png)
+      10000并发长连接有`failed`(还未解决),初步猜测是文件描述符设置不了65535那么大(电脑不行)(测了`Love 6`的代码也有`failed`)
+   * 短连接
+      ![](1000并发_短连接.png)
+      ![](10000并发_短连接.png)
+# 好用的工具
+1. `top`:观察`cpu`、内存等占用率
+2. `netcat(nc)`
+3. `gdb`
+4. `webbench`:一个简单且常用的网页服务器性能测试工具,用于测量网站的并发访问性能
+   ```s
+   webbench -c 1000 -t 30 http://127.0.0.1:9999/
+   // 本项目用的是Linya大佬(https://github.com/linyacool/WebBench)优化的Webbench工具(加入了长连接 keep-alive)  多了一个-k命令
+    webbench -c 1000 -t 30 -k -2 http://127.0.0.1:9999/
+   ```
+5. `pidof`:查找正在运行的进程的进程`ID`
+   ```C++
+   pidof 进程名 // 进程名就是程序的名字,如: pidof HttpServer_test
+6. `lsof`:列出当前系统中指定进程的打开的文件描述符
+   ```C++
+   1. lsof -p 进程pid
+   2. lsof -i :[端口号]   lsof -i [协议](lsof -i TCP)    lsof -u lijianjun// 列出用户lijianjun正在使用的所有文件描述符
+7. `strace`
 
 
 

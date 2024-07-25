@@ -50,8 +50,8 @@ void TcpServer::HandleClose(const TcpConnectionPtr& ptr){
 // HandleCloseInLoop不是channel中的关闭回调,它是HandleClose()这个channel关闭回调里的回调函数  这是一个上层回调
 void TcpServer::HandleCloseInLoop(const TcpConnectionPtr& ptr){
     // 确保要关闭的连接在哈希表中
-    assert(connections_.find(ptr->name())!=connections_.end());
-    connections_.erase(ptr->name());
+    assert(connections_.find(ptr->fd())!=connections_.end());
+    connections_.erase(ptr->fd());
     LOG_INFO << "TcpServer::HandleCloseInLoop - remove connection " << "["  
            << ip_port_ << '#' << ptr->id() << ']';
     EventLoop* loop = ptr->getLoop();// 获取TcpConnection对象所属的loop
@@ -63,9 +63,12 @@ void TcpServer::HandleNewConnection(int connfd, const Address& address){
     EventLoop* sub_loop = threads_->NextLoop();
     // 创建一个新的TcpConnection对象来处理新连接
     TcpConnectionPtr ptr(std::make_shared<TcpConnection>(sub_loop, connfd, next_conn_id, address));
-    // 将新连接保持到哈希表中
-    std::string connName = ip_port_ + std::to_string(connfd) + std::to_string(next_conn_id);// 一个TcpConnection名称=ip_port + 文件描述符值+该TcpConnection的ID(next_conn_id)
-    connections_[connName] = ptr;
+
+    // 将新连接保持到哈希表中  这是错的   !!! 不能用字符串的组合作为key,因为可能中间出现空内存  导致segment fault
+    // std::string connName = ip_port_ + std::to_string(connfd) + std::to_string(next_conn_id);// 一个TcpConnection名称=ip_port + 文件描述符值+该TcpConnection的ID(next_conn_id)
+    // connections_[connName] = ptr;
+
+    connections_[connfd] = ptr;
     // 设置连接的各种回调函数
     ptr->SetConnectionCallback(connection_callback_);
     ptr->SetMessageCallback(message_callback_);

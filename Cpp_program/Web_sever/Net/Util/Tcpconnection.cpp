@@ -16,7 +16,6 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
       connection_id_(id),
       state_(ConnectionState::kConnecting),
       ip_port_(address.IpPortToString()),// 为了构造当前TcpConnection的名称
-      TcpConnectionSocket_(std::make_unique<Socket>(connfd)),// connfd是一个已连接的文件描述符
       channel_(std::make_unique<Channel>(loop, connfd)),// TcpConnection是在Tcpserver::HandleNewConnection中新建的,此时的connfd_是accept(已连接)之后的文件描述符
       highWaterMark_(64 * 1024 * 1024){
         // 下面几行就注册了Channel::HandleEventWithGuard中的四种回调函数
@@ -24,8 +23,6 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
         channel_->SetWriteCallback(std::bind(&TcpConnection::HandleWrite, this));
         channel_->SetErrorCallback(std::bind(&TcpConnection::HandleError, this));
         channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this)); // 这个channel_的关闭回调和服务端被动关闭调用HandleClose是两码事
-        //  Tcp的KeepAlive用在这是最合理的,因为这里才是一个新的Tcp连接的起点  Acceptor中的bind listen是使用TCP协议,而不是一个真正的TCP连接的起点
-        TcpConnectionSocket_->SetSockoptKeepAlive(true); 
     }
 
 TcpConnection::~TcpConnection(){
@@ -41,7 +38,7 @@ void TcpConnection::ConnectionEstablished(){
 
 void TcpConnection::Shutdown(){
     if(state_ == ConnectionState::kConnected){// 确保关闭前处于已连接
-        state_ = ConnectionState::kDisconnected;
+        state_ = ConnectionState::kDisconnecting;
         loop_->RunOneFunc(std::bind(&TcpConnection::ShutdownInLoop, this)); // 为什么要放入到所属的Loop中执行?  如果 TcpConnection::shutdown 函数直接在当前调用线程中执行关闭操作，而这个线程可能不是 TcpConnection 所属的 EventLoop 线程，就会导致线程安全问题
     }
 }

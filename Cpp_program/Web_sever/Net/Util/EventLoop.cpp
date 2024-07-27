@@ -13,7 +13,7 @@
 
 using namespace tiny_muduo;
 
-namespace {
+namespace {// 这个静态对象会在main()函数执行之前被初始化
     //在服务器端向已经关闭的客户端socket写数据时,如果不处理SIGPIPE信号,服务器可能会因为信号导致异常终止
     //通常情况下,服务器希望继续运行而不因为客户端关闭连接而终止,因此需要忽略或者处理 SIGPIPE 信号
     class IgnoreSigPipe{// 定义一个类 IgnoreSigPipe,用于忽略 SIGPIPE 信号

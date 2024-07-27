@@ -344,6 +344,7 @@
     * 读写的时候不必等候触发`EAGAIN`(表示缓冲区是否满(满对应写操作)),可以节省系统调用次数,降低延迟
 16. <mark>本项目基于`muduo`设计的核心思想:每个`EventLoop`运行在一个单独的线程中,并且所有与该`EventLoop`相关的操作都应该在这个线程中执行(因此把上层的所有回调函数都放到了其所属的`EventLoop`的任务队列中去了(如:`TcpServer`中的`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`等等)).这个设计理念旨在保证线程安全性和系统的一致性,同时简化了并发编程的复杂性</mark>
 17. 本项目和`muduo`通过使用`EventLoop`的`QueueInLoop`或`RunOneFunc`方法来将任务安全地调度到目标线程的`EventLoop`中执行,这种方法可以避免直接在多个线程中并发执行代码的风险.但是如果任务涉及到访问或修改多个线程共享的数据,即使这些任务是在 `EventLoop`的单线程中执行,也需要注意线程安全的问题
+18. <mark>`IgnoreSigPipe`类:在服务器端向已经关闭的客户端`socket`写数据时,如果不处理`SIGPIPE`信号,服务器可能会因为信号导致异常终止.通常情况下,服务器希望继续运行而不因为客户端关闭连接而终止,因此需要忽略或者处理`SIGPIPE`信号,即我们不希望出现退出程序的保护(这个类的初始化会在`main()`函数之前自动完成,因为它是一个全局变量)</mark>
 ## 所遇问题
 1. 智能指针的问题:
    ```C++
@@ -795,7 +796,7 @@
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
 3. 测试结果:
    ![](HttpServer测试结果.png)
-4. <mark>`HttpServer`中有主动关闭(踢掉空闲时间的情况等等),主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠`TcpConnection`中的的被动关闭方式`handleClose()`,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据,因此要用`shutdown`</mark>
+4. <mark>`HttpServer`中有主动关闭(踢掉空闲时间的情况等等),主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠`TcpConnection`中的的被动关闭方式`handleClose()`,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据,因此要用`shutdown`</mark>  服务端主动关闭连接(`shutdown()`),然后会再进行一轮的`read`,当`read_size==0`,就会调用`handleClose()`
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -987,6 +988,10 @@
 10. <mark>调试正在运行的程序:在`Linux/Unix`系统中,可以使用`&`符号将命令放到后台运行(常是一个死循环),如:`./test.exe.&`</mark>,此时终端会返回一个类似`[1] 574`,其中`[1]`是作业号(标识在当前`shell`会话中运行的后台作业.每个作业在启动时都会被分配一个唯一的作业号,该作业号仅在当前`shell`会话中有效),`574`是进程ID,此时拿到了进程ID就可以利用`gdb`调试这个正在运行的程序了(<mark>需要注意的是:后台运行程序后,一定要终止它`kill %作业号`或者`kill 进程号`.否则对于`&`,就算终端退出,这个后台程序也会一直运行</mark>)
     * `gdb -p pid`, 如:`gdb -p 574`,此时就进入这个正在运行的程序的调试阶段了
     * 后续就可以使用之前的那些调试命令了,`step nexty print`等等
+## 所遇问题
+1. `gdb`调试中出现`Broken pipe`错误(这个错误是看`Love 6`博客的,我自己并没有测试,没有测试一端关闭套接字,另一端继续发送数据出现的`Broken pipe`这种情况). 此时就算程序已经编译了`IgnoreSigPipe`,也会在`gdb`中报`broken pipe`错误,但是不用`gdb`就不会报错,原因:
+   * 进程出现`Broken pipe`错误时,会将该信号发送给系统,系统收到信号后会反过来再发给进程来叫停进程(此时用`IgnoreSigPipe`就不会停止进程),当用`gdb`调试时,收到系统发的信号的并不是进程,而是让`gdb`给半路拦截下来了,当`gdb`收到信号后默认处理方式是暂停程序,将错误打印出来.这样一来我们的进程实际上并没有收到信号的情况下就被叫停了(此时`IgnoreSigPipe`就没用了),所以在程序里面不管怎样处理信号都是做无用功.在`gdb`中处理的方法:输入命令`handle SIGPIPE nostop`
+   ![](Love6_Broken_pipe.png)
 # 压测
 1. `Bug 1`:`0 succeed 0 failed`
    ![](0_succeed_0_failed.png)

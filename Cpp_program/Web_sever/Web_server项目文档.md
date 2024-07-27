@@ -84,6 +84,12 @@
 5. `muduo`日志库是`C++ stream`风格,这样用起来更自然,不必费心保持格式字符串和参数类型的一致性,可以随用随写,而且是类型安全的
 6. `muduo`广泛使用`RAII`这一方法来管理资源的生命周期 
 7. `muduo`的`TcpClient`类没有高水位回调的主要原因是设计上的考虑.`TcpClient`作为客户端连接的封装,通常由应用程序控制数据的发送,而服务端(`TcpServer`)则需要处理更多的客户端连接和更复杂的流量控制
+8. `muduo`中的踢掉空闲连接方法:
+   * `timing wheel`循环队列:8个桶组成的循环队列.第一个桶放1秒后将要超时的连接,第2个桶类似.每个连接一收到数据就把它放到第8个桶(即它此时还有7秒才超时),然在每秒的`timer`里把第1个桶(上一秒表示还有一秒超时的桶)的连接断开,这可能有多个连接(利用的是`unordered_set`)
+   ![](timing_wheel_1.png)
+   ![](timing_wheel_2.png)
+   在具体实现中使用的是引用计数的办法(`shared_ptr`),如果连接刷新,就把它`insert()`进循环队列最后`.back()`,`unordered_set`会自动去重,即完成了刷新.当引用计数降为0,则会调用析构函数断开连接(这里是主动优雅的用`shutdown()`断开).更详细的代码实现见`https://github.com/chenshuo/muduo/blob/master/examples/idleconnection/echo.cc`
+   * 另一个思路是用链表排序的方法:使用链表将`TcpConnection`串起来.`TcpConnnection`每次收到消息就把自己移到链表末尾,这样链表是按接收时间先后排序的.再用一个定时器定期从链表前端查找并踢掉超时的连接,详见`https://github.com/chenshuo/muduo/blob/master/examples/idleconnection/sortedlist.cc`
 # 定时器
 1. 计算机中的时钟不是理想的计时器,它可能会漂移或跳变
 2. `Linux`的获取当前时间的函数:
@@ -268,7 +274,7 @@
 # Channel
 1. 活跃的`Channel`<=>这个`Channel`绑定的文件描述符有就绪事件
 2. 一个`Channel`<=>一个文件描述符
-3. 每个`Channel`对象自始至终只负责一个文件描述符的I/O事件的分发,但它不拥有这个文件描述符,也不会在析构时关闭这个文件描述符.每个`Channel`对象自始至终只属于一个`EventLoop`
+3. 每个`Channel`对象自始至终只负责一个文件描述符的I/O事件的分发,但它不拥有这个文件描述符,也不会在析构时关闭这个文件描述符(一个连接的文件描述符真正的关闭是在对应的`TcpConnection`的析构函数中被删除的(利用了`RAII`)).每个`Channel`对象自始至终只属于一个`EventLoop`
 4. 假设`epoll`中监听到有4个文件描述符有事件发生,那么我们就把这4个文件描述符所对应的`Channel`称为活跃的
 5. 底层向上的调用关系:`Channel::Update()`->`EventLoop::UpdateChannel()`->`Poller::UpdateChannel()`->`epoller::UpdateChannel()`
 6. 当`Channel`被标记为`kDeleted`,通常意味着已经执行了`epoll_ctl`的`EPOLL_CTL_DEL`操作.`kDeleted`意味着该`Channel`已经从`epoll`树上删除了
@@ -442,7 +448,7 @@
 2. <mark>`logstream`类使用了自定义的`FixedBuffer`类,通过预先分配的固定大小的缓冲区来存储日志数据(注意:`logstream.cpp logstream.h`并没有给出日志输出到哪个本地文件啥的,只是到一个预先分配的缓冲区里了),这样可以减少频繁的动态内存分配,提高性能</mark>
 3. `logStream`类里面有一个`Buffer`(`Buffer = FixedBuffer<kSmallSize>`)成员(就是`FixedBuffer`类的,不是`tiny_muduo::Buffer`类).该类主要负责将要记录的日志内容放到这个`Buffer`里面.包括字符串,整型、`double`类型(整型和`double`要先将之转换成字符型(`FormatInteger`和`snprintf(buf, sizeof(buf), "%g", num)`),再放到`buffer`里面).该类对这些类型都重载了`<<`操作符.这个`logStream`类不做具体的IO操作(`::recv ::send`)
 4. <mark>`Buffer = FixedBuffer<kSmallSize>`定义的`Buffer`相当高效,因为它是利用`memcpy()`复制数据的,而`gcc`编译器会直接将`memcpy()`展开为内联代码,提高了执行效率</mark>
-5. <mark>`gcc`内置函数不是`C`标准定义的,而是由编译器自定义的.内置函数(`memcpy() strrchr()`等)都是`inline`的</mark>
+5. <mark>`gcc`内置函数不是`C`标准定义的,而是由编译器自定义的.内置函数(`memcpy() strrchr()`等)都是`inline`的.内联代码都是较高效的</mark>
 6. 流对象的形象理解:想象水流通过一根管道,水代表数据,管道代表流对象.数据在管道中流动,无论水的来源(例如水龙头、湖泊还是去向(例如水槽、河流),你都可以通过管道来运输水.在`C++`中,`std::cin`就像从键盘输入的管道,而`std::cout`就像输出到控制台的管道.对于`logstream`中的流对象,就是输出到`Buffer = FixedBuffer<kSmallSize>`这样的`buffer`中的管道
 ## logfile
 1. `logfile`类是`webserver`日志库后端的实际管理者,主要负责日志的滚动
@@ -495,7 +501,7 @@
 7. 业务线程的缓冲区队列和日志线程的缓冲区队列的交换有两种条件,`if (buffers_.empty())`:为空就说明没写满的;不为空说明有写满的
    * 超时(3秒)
    * 业务线程写满了一个或多个`buffer`
-   当条件满足时,先将当前缓冲`current_`移入`buffers_`,并离开将空闲的`newBuffer_current`移为当前缓冲(`current_ = std::move(newBuffer_current);`).接下来将`buffers_`与`buffersToWrite`交换(`buffersToWrite.swap(buffers_);`).最后用`newBuffer_next`代替`next_`(如果`next_`为空,说明当前没有备用缓冲区可以使用,需要从预留的`newBuffer_next`中获取一个新的缓冲区来充当`next_`),这样前端始终有一个预备的`buffer`可供调配.最终`buffersToWrite`内的`buffer`重新填充`newBuffer_current newBuffer_next`,这样下一次执行的时候还有两个空闲的`buffer`可用于替换前端的当前缓冲和备用缓冲
+   当条件满足时,先将当前缓冲`current_`移入`buffers_`,并离开将空闲的`newBuffer_current`移为当前缓冲(`current_ = std::move(newBuffer_current);`).接下来将`buffers_`与`buffersToWrite`交换(`buffersToWrite.swap(buffers_);`).(如果`next_`被用了,及空了)最后用`newBuffer_next`代替`next_`(如果`next_`为空,说明当前没有备用缓冲区可以使用,需要从预留的`newBuffer_next`中获取一个新的缓冲区来充当`next_`),这样前端始终有一个预备的`buffer`可供调配.最终`buffersToWrite`内的`buffer`重新填充`newBuffer_current newBuffer_next`,这样下一次执行的时候还有两个空闲的`buffer`可用于替换前端的当前缓冲和备用缓冲
 8. 四个缓冲区其实都是在`asynclogging`中创建的,只是前端缓冲区`current_  next_`是在业务线程中被写入的(即`void AsyncLogging::Append`在前端线程中被调用),而缓冲区交换、日志消息向文件的写入等过程都是在后端实现的.`logfile asynclogging`通常被归在后端日志线程中(但并不是说`asynclogging`的所有成员函数只会在日志线程中被调用,如前端业务线程会调用其中的`Append`,来向缓冲区写入日志信息),即负责收集日志信息和写入日志信息;`logstream logging`通常被归在前端的业务线程中,主要用于准备业务线程中的日志消息,并将其传递给`asynclogging`
 9. `logstream logfile logging asynclogging`四个文件的工作协同关系:业务线程调用`logging`的宏(如`LOG_INFO`)->构造一个`Logger::Implment`,获得一个`logstream`流->向`logstream`流写入一个`GeneralTemplate`对象->调用`asynclogging`的`Append`方法(其实就是`logstream`的`Append`方法)写入到前端线程的缓冲区->调用后端日志线程的`ThreadFunc`,`AsyncFlush`写入本地文件
 10. <mark>在`asynclogging`中,不管是前端缓冲区的`current_ next_`,还是后端缓冲区的`newBuffer_current newBuffer_next`,它们都没有拷贝,而是简单的指针交换`std::move`实现,不会带来多大开销</mark>
@@ -732,14 +738,28 @@
     `channel_`中注册了当前`TcpConnection`对象的回调事件.如果在回调事件处理过程中,拥有`channel_`的高层对象(对应的`TcpConnection`)被销毁了,这就会导致`channel_`指向的对象变得无效或指向非法内存(空悬指针),因此我们应该延长该`TcpConnection`对象的生命周期,使之比其拥有的`channel_`长,所以要调用`channel_->Tie(shared_from_this());` 
     ![](生命对象管理问题.png) 
 15. `TcpConnection`中的`channel_`设置的`channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this));`的关闭回调和服务端被动关闭调用`HandleClose`是两码事
-16. 本项目只有一种关闭连接的方式:被动关闭,即对方先关闭连接,本地`raed()`返回0,触发关闭逻辑(注意:这个被动关闭不是通过`channel_`的关闭回调来关闭的,`channel_`的关闭回调是在文件描述符挂起(挂断)时才会被调用的,不是这儿说的被动关闭).被动关闭触发的是`channel_`的可读事件(因为对方发起关闭会发生标识符):
+16. <mark>本项目的`TCP`连接只有一种关闭连接的方式:被动关闭(`HttpServer`中有主动关闭,主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠这儿的被动关闭方式,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据),即对方先关闭连接,本地`read()`返回0,触发关闭逻辑(注意:这个被动关闭不是通过`channel_`的关闭回调来关闭的,`channel_`的关闭回调是在文件描述符挂起(挂断)时才会被调用的,不是这儿说的被动关闭).被动关闭触发的是`channel_`的可读事件(因为对方发起关闭发送标识符):</mark>
    ```C++
    else if(read_size == 0)// 客户端断开  这种是被动关闭,即对方关闭  服务端通过读取数据为0来判断对方关闭了
-        HandleClose();
+        HandleClose();// 为什么这不采用shutdown()   因为shutdown()不是真正的完全关闭,此时资源还没有被关闭(只关闭了写端),因此写成shutdown()就会造成资源未释放
    ```
    服务端被动关闭的一个函数调用流程:
    ![](被动关闭函数调用.png)
-17. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
+17. <mark>本项目和`muduo`的被动关闭过程是完全直接关闭连接,清理相关的资源,不是`shutdown()`的半关闭(此时服务器不会调用`shutdown()`方法)</mark>
+18. 被动关闭过程->`TCP`的四次挥手过程(因此是优雅的)
+19. 对于主动关闭连接:
+    * `shutdown()`就提供了一种优雅的关闭方法,此时服务器不再发送数据,但仍然可能接收数据(半关闭)
+    * `forceClose()`:强制直接关闭,用得不多
+20. <mark>即使本项目和`muduo`中在被动关闭中没有调用`shutdown()`,但是它还是被认为是一种优雅的关闭连接的方法(优雅关闭:确保所有数据在连接关闭前都能正确处理,避免直接`Close`而丢失双方仍未发出或接受的数据),因为在处理被动关闭时,遵循了`TCP`协议中规范的连接终止流程(四次挥手),并确保了资源的安全释放和数据的完整性</mark>
+   ```C++
+   // 被动关闭
+   else if(read_size == 0)
+        HandleClose();
+   // 通过检测 read_size == 0 来处理连接的关闭,是对 TCP 四次挥手过程的简化实现    当read_size==0时,表示服务器收到了客户端的FIN包.这意味着客户端已经进入FIN_WAIT1状态
+   // 实际上这个被动关闭是经历了一个TCP的四次挥手的过程  因此是优雅的,确保了双方数据不会丢失
+   ```
+21. 非阻塞网络编程的发送数据比读取数据困难很多:如果还发送数据的速度高于接收数据的速度,会造成数据在本地内存的堆积,本项目的解决办法是"高水位回调"`HighWaterMarkCallback`和"低水位回调"`WriteCompleteCallback`.`WriteCompleteCallback`在写完成时(即发送缓冲区清空)时被调用,`HighWaterMarkCallback`在输出缓冲(发送缓冲区数据量+`Send()`中没发送玩的数据量)的长度超过用户指定的大小,就会触发回调,它只在上升沿触发一次(`oldLen < highWaterMark_`保证了只触发一次).需要注意的是:`HighWaterMarkCallback`和`WriteCompleteCallback`是用户自定义传入的,如果没有定义的话就不会有高低水位的处理    常见的一种自定义做法是:假设`Server`发给`Client`数据流(反过来一样),为防止`Server`发过来的数据撑爆`Client`的输出缓冲区,一种做法是在`Client`的`HighWaterMarkCallback`中停止读取`Server`的数据,而在`Client`的`WriteCompleteCallback`中恢复读取`Server`的数据(`Server`和`Client`应该各自有一对`HighWaterMarkCallback WriteCompleteCallback`)
+22. `TcpConnection`中的`shutdown()`和`handleClose()`是不一样的,`shutdown()`是只关闭写端;而`handleClose()`是真正的对连接的完全关闭(即关闭套接字、解除文件描述符、缓冲区的等资源的占用)    一个连接的文件描述符真正的关闭是在对应的`TcpConnection`的析构函数中被删除的(利用了`RAII`机理)
 # HTTP
 1. 调用流程:
    * `HttpServer`创建并启动服务器:
@@ -775,6 +795,7 @@
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
 3. 测试结果:
    ![](HttpServer测试结果.png)
+4. <mark>`HttpServer`中有主动关闭(踢掉空闲时间的情况等等),主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠`TcpConnection`中的的被动关闭方式`handleClose()`,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据,因此要用`shutdown`</mark>
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
    ```txt
@@ -943,12 +964,12 @@
 4. 在`gdb`里面(进入`gdb`后),可以通过`shell+命令行指令`来调用终端命令,如:`shell ls`
 5. `watchpoint`:观察变量是否变化(`info watchpoints`来查看设置的观察点)(发生变化了`gdb`就会主动输出`Old value`和`New value`来表示变量变化了)    观察点用于监视某个变量或内存位置的值是否发生变化.与断点不同,观察点不依赖于特定的代码行或函数,而是依赖于数据的变化
    ![](watchpoint.png)
-5. `core file`(核心文件)是当程序发送崩溃时,操作系统将程序的内存映像和一些诊断信息写入到一个文件中,这个文件就是`core file`,常用于调试,但它的文件常常很大,因此默认是禁用了的(不会默认生成),可以通过`ulimit -a`查看:
+6. <mark>`core dump`(核心转储)是当程序发送崩溃时,操作系统将程序的内存映像和一些诊断信息写入到一个文件中,这个文件就是`core dump`,常用于调试,但它的文件常常很大,因此默认是禁用了的(不会默认生成),可以通过`ulimit -a`查看:</mark>
    ![](core_file.png)
    `ulimit -c unlimited`: 打开权限,生成`core file`.
-   `gdb ./test core`:程序崩溃并生成核心文件`core`,并使用`gdb`分析核心文件
+   分析核心转储文件通常需要调试工具,如`gdb`,`gdb ./test core`:程序崩溃并生成核心文件`core`,并使用`gdb`分析核心文件
    ![](core_file2.png)
-6. 对于带参数的函数可以直接用`run arg1 arg2`,如:
+7. 对于带参数的函数可以直接用`run arg1 arg2`,如:
    ```C++
    int main(int argc, char* argv[]){
       std::cout << argc << std::endl;
@@ -961,9 +982,9 @@
     3. run 1 2 3
    // 输出4,因为此时argc=4(argv[0]为./test.exe,argv[1]为1,argv[2]为2,argv[3]为3) 
    ``` 
-7. <span style="color:red;">在使用`gdb`调试的时候,编译程序时一定要用`-g`,否则将在`gdb`调试过程中看不见程序的函数名、变量名,而看到的是运行时的内存地址.当把`-g`加上后,并成功编译目标代码后,就能在调试过程直接看到函数名、变量名</span>
-8. <mark>更详细的`gdb`指令可见`https://www.gy328.com/ref/docs/gdb.html`</mark>
-9. <mark>调试正在运行的程序:在`Linux/Unix`系统中,可以使用`&`符号将命令放到后台运行(常是一个死循环),如:`./test.exe.&`</mark>,此时终端会返回一个类似`[1] 574`,其中`[1]`是作业号(标识在当前`shell`会话中运行的后台作业.每个作业在启动时都会被分配一个唯一的作业号,该作业号仅在当前`shell`会话中有效),`574`是进程ID,此时拿到了进程ID就可以利用`gdb`调试这个正在运行的程序了(<mark>需要注意的是:后台运行程序后,一定要终止它`kill %作业号`或者`kill 进程号`.否则对于`&`,就算终端退出,这个后台程序也会一直运行</mark>)
+8. <span style="color:red;">在使用`gdb`调试的时候,编译程序时一定要用`-g`,否则将在`gdb`调试过程中看不见程序的函数名、变量名,而看到的是运行时的内存地址.当把`-g`加上后,并成功编译目标代码后,就能在调试过程直接看到函数名、变量名</span>
+9. <mark>更详细的`gdb`指令可见`https://www.gy328.com/ref/docs/gdb.html`</mark>
+10. <mark>调试正在运行的程序:在`Linux/Unix`系统中,可以使用`&`符号将命令放到后台运行(常是一个死循环),如:`./test.exe.&`</mark>,此时终端会返回一个类似`[1] 574`,其中`[1]`是作业号(标识在当前`shell`会话中运行的后台作业.每个作业在启动时都会被分配一个唯一的作业号,该作业号仅在当前`shell`会话中有效),`574`是进程ID,此时拿到了进程ID就可以利用`gdb`调试这个正在运行的程序了(<mark>需要注意的是:后台运行程序后,一定要终止它`kill %作业号`或者`kill 进程号`.否则对于`&`,就算终端退出,这个后台程序也会一直运行</mark>)
     * `gdb -p pid`, 如:`gdb -p 574`,此时就进入这个正在运行的程序的调试阶段了
     * 后续就可以使用之前的那些调试命令了,`step nexty print`等等
 # 压测
@@ -1021,8 +1042,18 @@
       ![](10000并发_短连接.png)
 # 好用的工具
 1. `top`:观察`cpu`、内存等占用率
-2. `netcat(nc)`
-3. `gdb`
+   * 直接`top`命令显示的`cpu`占有率是相对于一个逻辑核心而言.在多核系统中,总的`cpu`占有率可以超过100%.例如,如果系统有 4个核心,一个进程使用了每个核心的50%的时间,那么`top`中显示的`cpu`占用率可能会接近200%
+   * `top`后+`shift H`切换到显示线程模式.这个模式下,`top`会显示每个线程的资源使用情况
+   * `htop`:比`top`提供了更友好的用户界面
+   * `top`默认3秒刷新,`top -d 1`:1秒刷新一次
+2. `netcat(nc)`:主要被用来快速构建网络连接.它可以以服务器方式运行,监听某个端口并接收客户连接,因此它可用来调试客户端程序.它也可以客户端方式运行,向服务器发起连接并接收数据,因此可用来调试服务器程序
+   ```s
+   1. nc IP Port => nc 127.0.0.1 9999
+   2. nc -l -p 端口 // 监听本地机器上的指定端口
+   3. echo "Hello" | nc 127.0.0.1 9999// 在终端直接输入数据并发送到服务器
+   ```
+   ![](nc测试.png)
+3. `gdb`:见前面
 4. `webbench`:一个简单且常用的网页服务器性能测试工具,用于测量网站的并发访问性能
    ```s
    webbench -c 1000 -t 30 http://127.0.0.1:9999/
@@ -1031,12 +1062,20 @@
    ```
 5. `pidof`:查找正在运行的进程的进程`ID`
    ```C++
-   pidof 进程名 // 进程名就是程序的名字,如: pidof HttpServer_test
+   pidof 进程名 // 进程名就是程序的名字.进程名常常是可执行文件的名字,如: pidof HttpServer_test
 6. `lsof`:列出当前系统中指定进程的打开的文件描述符
    ```C++
    1. lsof -p 进程pid
    2. lsof -i :[端口号]   lsof -i [协议](lsof -i TCP)    lsof -u lijianjun// 列出用户lijianjun正在使用的所有文件描述符
-7. `strace`
+7. `strace`:这是一个用于跟踪系统调用的工具,它可以显示一个程序在运行时调用的系统调用和接收到的信号(要看代码运行轨迹就用它)
+   ```s
+   1. strace -p 进程ID// 附加到一个已经在运行的进程上，并显示该进程的系统调用信息
+   2. strace -p 进程ID -o 跟踪文件要保存的地址//    strace -p 451 -p strace_file// 就会在当前目录下生成一个跟踪文件server_file
+   3. strace 程序名 程序参数// 跟踪一个并同时启动该程序,此时会实时输出到终端.不过滤(grep)的话默认输出的信息是很详细的   strace ./HttpServer_test 9999
+   4. strace -c -p 进程ID -o 跟踪文件要保存的地址// 记录系统调用次数、消耗时间
+   ```
+   ![](strace结果.png)
+   ![](strace调用次数结果.png)
 
 
 

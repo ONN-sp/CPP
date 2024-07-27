@@ -35,11 +35,11 @@ private:
     {
         if (conn->connected())
         {
-            LOG_INFO << "Connection UP : " << conn->name();
+            LOG_INFO << "Connection UP : " << conn->fd();
         }
         else
         {
-            LOG_INFO << "Connection DOWN : " << conn->name();
+            LOG_INFO << "Connection DOWN : " << conn->fd();
         }
     }
 

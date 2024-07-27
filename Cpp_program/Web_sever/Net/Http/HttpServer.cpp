@@ -28,7 +28,7 @@ void HttpServer::HandleIdleConnection(std::weak_ptr<TcpConnection>& connection){
     TcpConnectionPtr conn(connection.lock());// 从weak_ptr创建一个shared_ptr获取TCP连接的共享指针
     if(conn){
         if(Timestamp::AddTime(conn->timestamp(), kIdleConnectionTimeOuts) < Timestamp::Now())
-            conn->Shutdown();// 超过空闲超时时间,就关闭连接
+            conn->Shutdown();// 超过空闲超时时间,服务端就主动半关闭连接(优雅的半关闭)
         else// 重新安排一个超时检查   即HandleIdleConnection()在8秒后被再次执行 
             loop_->RunAfter(kIdleConnectionTimeOuts, std::move(std::bind(&HttpServer::HandleIdleConnection, this, connection)));
     }
@@ -65,5 +65,5 @@ void HttpServer::DealWithRequest(const HttpRequest& request, const TcpConnection
     response.AppendToBuffer(&buffer);// 将响应添加到缓冲区  response->Buffer
     connection->Send(&buffer);// Buffer->TcpConnection(将数据发送)->fd对应的内核缓冲区->客户端
     if(response.CloseConnection())
-        connection->Shutdown();
+        connection->Shutdown();// 这里也是服务端的主动关闭连接  所以要优雅的用半关闭
 }

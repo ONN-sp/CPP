@@ -1,4 +1,5 @@
 #include "HttpContent.h"
+#include "../Util/Buffer.h"
 #include <algorithm>
 
 using namespace tiny_muduo;

@@ -8,6 +8,7 @@
 #include <memory>
 #include <unistd.h>
 #include "../Util/Channel.h"
+#include "../../Base/Timestamp.h"
 #include "../Util/EventLoop.h"
 #include <cerrno>
 #include "../../Base/Logging/Logging.h"

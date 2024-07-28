@@ -16,7 +16,7 @@ inline int tid() {
         CacheTid();
     return t_cachedTid;
 }
-inline const char* tid2string() { 
+inline const char* tid2string() { // 仅在非常短小且频繁调用的函数中使用
     return t_formattedTid; 
 } 
 inline int tidstringlength() { 

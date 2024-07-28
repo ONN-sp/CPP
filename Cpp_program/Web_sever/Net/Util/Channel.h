@@ -3,7 +3,6 @@
 #define CHANNEL_H
 
 #include "../../Base/NonCopyAble.h"
-#include "EventLoop.h"
 #include <memory>
 #include <functional>
 
@@ -15,6 +14,7 @@ namespace tiny_muduo{
         kAdded,//Channel已添加  Channel 已经被添加到 epoll 实例中,并正在监控其感兴趣的事件
         kDeleted//Channel已删除  Channel 已经从 epoll 实例的监控列表(即epoll树)中删除了
     };
+    class EventLoop;
     class Channel : public NonCopyAble{
         public:
         using EventCallback = std::function<void()>;

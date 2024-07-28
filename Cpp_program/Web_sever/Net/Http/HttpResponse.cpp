@@ -1,4 +1,5 @@
 #include "HttpResponse.h"
+#include "../Util/Buffer.h"
 
 using namespace tiny_muduo;
 

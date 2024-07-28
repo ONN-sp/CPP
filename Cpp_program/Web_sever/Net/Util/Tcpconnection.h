@@ -88,7 +88,9 @@ namespace tiny_muduo{
             int connfd_; // 当前连接的文件描述符
             int connection_id_; // 当前连接的ID
             ConnectionState state_; // 连接状态
+
             std::unique_ptr<Channel> channel_;
+            std::unique_ptr<Socket> TcpConnectionSocket_;
             Buffer input_buffer_; // 接收缓冲区
             Buffer output_buffer_; // 发送缓冲区
             HttpContent content_; // 用于处理HTTP请求的内容

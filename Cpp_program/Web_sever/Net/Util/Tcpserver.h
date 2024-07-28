@@ -38,7 +38,7 @@ namespace tiny_muduo{
             inline void HandleCloseInLoop(const TcpConnectionPtr&);// 将连接销毁操作放入其所属的EventLoop中
             inline void HandleNewConnection(int, const Address&);// 处理新连接
         private:
-            using ConnectionMap = std::unordered_map<std::string, TcpConnectionPtr>;// 存储活跃连接的映射,键为TcpConnectionPtr指针对应的TcpConnection对象的名称,值为TcpConnection智能指针
+            using ConnectionMap = std::unordered_map<int, TcpConnectionPtr>;// 存储活跃连接的映射,键为TcpConnectionPtr指针对应的TcpConnection对象的名称,值为TcpConnection智能指针
             EventLoop* loop_;// 其实传入的就是main()中的主loop
             int next_conn_id;// 下一个连接的ID:用于生成新的连接ID(成功连接一个就+1)  一个TcpConnection对应一个ID
             std::unique_ptr<Acceptor> acceptor_;// 不用shared_ptr,是为了确保只有Tcpserver控制Acceptor的生命周期(确保Acceptor只会在Tcpserver的析构函数中被释放),即只有他独占,没有其它地方共享,所以设计为unique_ptr

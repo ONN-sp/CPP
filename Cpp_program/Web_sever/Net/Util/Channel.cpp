@@ -2,6 +2,7 @@
 #include <sys/poll.h>
 #include <sys/epoll.h>
 #include "../../Base/Logging/Logging.h"
+#include "EventLoop.h"
 #include <iostream>
 #include <cassert>
 

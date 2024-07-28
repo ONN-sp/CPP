@@ -1,9 +1,8 @@
 #ifndef HTTPRESPONSE_H
 #define HTTPRESPONSE_H
 
-#include "HttpRequest.h"
-#include "../Util/Buffer.h"
 #include "../../Base/NonCopyAble.h"
+#include <string>
 
 namespace tiny_muduo{
     enum class HttpStatusCode{// HTTP请求后回复的状态码
@@ -14,6 +13,7 @@ namespace tiny_muduo{
         k404NotFound = 404,
         k500InternalServerErrno = 500
     };
+    class Buffer;
     class HttpResponse : public NonCopyAble{
         public:
             HttpResponse(bool, const std::string& server_name = "Drew Jun", const std::string& http_version = "HTTP/1.1");

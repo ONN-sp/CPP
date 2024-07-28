@@ -1,19 +1,20 @@
 #ifndef HTTPSERVER_H
 #define HTTPSERVER_H
 
-#include "HttpRequest.h"
-#include "HttpResponse.h"
-#include "../Util/Buffer.h"
 #include <functional>
 #include <memory>
 #include "../../Base/NonCopyAble.h"
-#include "../Util/EventLoop.h"
-#include "../../Base/Address.h"
-#include "../Util/Tcpserver.h"
 #include "../Util/Tcpconnection.h"
+#include "../Util/Tcpserver.h"
+#include <string>
 
 namespace tiny_muduo{
     static const double kIdleConnectionTimeOuts = 8.0;// 表示空闲连接的超时时间为8秒
+    class HttpRequest;
+    class HttpResponse;
+    class Buffer;
+    class EventLoop;
+    class Address;
     class HttpServer : public NonCopyAble{
         public:
             using HttpResponseCallback = std::function<void(const HttpRequest&, HttpResponse&)>;

@@ -15,6 +15,7 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
       connfd_(connfd),
       connection_id_(id),
       state_(ConnectionState::kConnecting),
+      TcpConnectionSocket_(std::make_unique<Socket>(connfd)),
       ip_port_(address.IpPortToString()),// 为了构造当前TcpConnection的名称
       channel_(std::make_unique<Channel>(loop, connfd)),// TcpConnection是在Tcpserver::HandleNewConnection中新建的,此时的connfd_是accept(已连接)之后的文件描述符
       highWaterMark_(64 * 1024 * 1024){
@@ -23,10 +24,11 @@ TcpConnection::TcpConnection(EventLoop* loop, int connfd, int id, const Address&
         channel_->SetWriteCallback(std::bind(&TcpConnection::HandleWrite, this));
         channel_->SetErrorCallback(std::bind(&TcpConnection::HandleError, this));
         channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this)); // 这个channel_的关闭回调和服务端被动关闭调用HandleClose是两码事
+        TcpConnectionSocket_->SetSockoptKeepAlive(true);
     }
 
 TcpConnection::~TcpConnection(){
-    ::close(connfd_);
+    // 不能在这里close(connfd)->造成segmentation fault  因为已经在socket中被销毁了
 }
 
 void TcpConnection::ConnectionEstablished(){

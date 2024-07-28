@@ -2,6 +2,7 @@
 #include "../../Base/CurrentThread.h"
 #include "../../Base/Timestamp.h"
 #include "../Timer/TimerQueue.h"
+#include "../../Base/TimerId.h"   // 因为调用了TimerQueue::AddTimer()  但是TimerQueue.h中只有TimerId的前向声明  因此这里必须包含这个头文件
 #include <cassert>
 #include <signal.h>
 #include <sys/eventfd.h>

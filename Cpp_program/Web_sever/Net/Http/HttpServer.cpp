@@ -1,7 +1,12 @@
 #include "HttpServer.h"
 #include "../../Base/Logging/Logging.h"
 #include "../../Base/Timestamp.h"
+#include "HttpRequest.h"
+#include "HttpResponse.h"
+#include "../Util/Buffer.h"
 #include "HttpContent.h"
+#include "../Util/EventLoop.h"
+#include "../../Base/Address.h"
 
 using namespace tiny_muduo;
 

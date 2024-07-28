@@ -1,6 +1,7 @@
 #include "../../Base/Address.h"
 #include "Acceptor.h"
 #include "../../Base/Logging/Logging.h"
+#include "EventLoop.h"
 #include "Socket.h"
 #include "Channel.h"
 #include <sys/socket.h>
@@ -19,7 +20,6 @@ Acceptor::Acceptor(EventLoop* loop, const Address& address, bool reuseport)
         acceptSocket_->SetSockoptReuseAddr(true);// 设置地址复用选项
         acceptSocket_->SetSockoptReusePort(reuseport);// 设置地址复用选项
         acceptSocket_->BindAddress(address);// 绑定Acceptor的监听文件描述符到指定地址
-        acceptSocket_->SetSockoptKeepAlive(true);// !!! 必须放在Acceptor中,这才是开始建立一个新连接的设置起点(只有这样才能webbench压测成功,不然segment fault)
         channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));// 设置读回调函数为handleRead方法  即listen_fd_对应的channel的读事件回调为handleRead
       }
 

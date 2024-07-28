@@ -2,7 +2,6 @@
 #define HTTPREQUEST_H
 
 #include "../../Base/NonCopyAble.h"
-#include "HttpRequestParseState.h"
 #include <string>
 #include <map>
 

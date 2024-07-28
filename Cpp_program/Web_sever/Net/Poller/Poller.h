@@ -3,13 +3,13 @@
 #define POLL_H
 #include <vector>
 #include <unordered_map>
-#include "../../Base/Timestamp.h"
 #include "../../Base/NonCopyAble.h"
 #include <memory>
 
 namespace tiny_muduo {
     class Channel;//前向声明
     class EventLoop;
+    class Timestamp;
     class Poller : public NonCopyAble {
     public:
         using Channels = std::vector<Channel*>;

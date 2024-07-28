@@ -6,8 +6,8 @@
 #include <functional>
 #include "NonCopyAble.h"
 #include <sys/prctl.h>
-#include "CurrentThread.h"
 #include <string>
+#include "CurrentThread.h"
 
 namespace tiny_muduo
 {

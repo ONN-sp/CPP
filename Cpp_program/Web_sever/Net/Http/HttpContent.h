@@ -2,11 +2,11 @@
 #define HTTPCONTEN_H
 
 #include "../../Base/NonCopyAble.h"
-#include "../Util/Buffer.h"
 #include "HttpRequest.h"
 #include "HttpRequestParseState.h"
 
 namespace tiny_muduo{
+    class Buffer;
     class HttpContent : public NonCopyAble{// 解析HTTP请求的内容
         public:
             HttpContent();

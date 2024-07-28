@@ -714,7 +714,7 @@
 8. 当新连接一建立(`Acceptor::handlRead()`了),`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
 9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
 10. </mark>本项目采用的是`muduo`设计回调的思想,即`Channel`控制最底层的四种回调:错误、关闭、读、写,这几种回调是通过文件描述符触发的,然后在这几种底层回调函数的内部一般是会进一步调用上层回调(`MessageCallback ConnectionCallback CloseCallback`,需要特别注意的是这个`TcpConnection::close_callback_`不是它拥有的`channel_`的回调,`channel_`的回调函数是`HandleClose`,这个`close_callback_`是在`HandleClose`中进一步调用的上层回调)</mark>
-11. 测试程序结果:
+11. 测试程序结果((`./TcpServer_test`)):
     ![](TcpServer_test测试程序.png)
 # TcpConnection
 1. `TcpConnection`有2个`Buffer`:`input buffer`,`output buffer`:
@@ -794,12 +794,12 @@
 ## HttpServer
 1. <mark>本项目引入了一个`muduo`没有的(`muduo`中其实是更完美的一个踢掉空闲连接的处理),即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭</mark>
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
-3. 测试结果:
+3. 测试结果:(`./HttpServer_test 9999`)
    ![](HttpServer测试结果.png)
 4. <mark>`HttpServer`中有主动关闭(踢掉空闲时间的情况等等),主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠`TcpConnection`中的的被动关闭方式`handleClose()`,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据,因此要用`shutdown`</mark>  服务端主动关闭连接(`shutdown()`),然后会再进行一轮的`read`,当`read_size==0`,就会调用`handleClose()`
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
-   ```txt
+   ```s
    cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0
 
    project(Timestamp_test CXX)# 定义了项目的名称为 WebServer，并且项目的主要编程语言是 C++
@@ -812,7 +812,7 @@
    add_executable(Timestamp_test Timestamp_test.cpp ${SRC_LIST1})# 指定生成目标
    ```
 2. 利用`CMakeLists.txt`生成当前目录的静态库:
-   ```txt
+   ```s
    cmake_minimum_required(VERSION 3.0)
    # 设置项目名称
    project(NetLib)
@@ -822,6 +822,15 @@
    if(NOT CMAKE_BUILD_TYPE)
       set(CMAKE_BUILD_TYPE "Release")
    endif()
+   # 设置编译优化选项
+   SET(CXX_FLAGS
+   -g # 类似g++ -g  便于后续gdb
+   -Wall # 启用大部分编译器警告
+   -Wextra # 启用更多的警告
+   -Werror # 将所有警告视为错误
+   -Wconversion # 警告隐式类型转换可能导致的数据丢失或行为异常
+   -Wshadow # 警告变量名隐藏   即内部作用域变量名可能会遮住外层作用域的该变量名
+   )
    # 添加当前目录到搜索路径中
    include_directories(${CMAKE_CURRENT_SOURCE_DIR})
    # 定义源文件列表
@@ -885,7 +894,7 @@
    make install
    ```
 2. <span style="color:red;"> 在`Windows`上编写完脚本,拷贝到`linux`上执行时,发现会报错:
-   ```
+   ```s
    $'\r': command not found
    invalid option: set: usage: set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]
    build.sh: line 10: syntax error: unexpected end of file
@@ -896,7 +905,7 @@
    ```
 3. <mark>在本项目中,我们对`Net`目录和`Base`目录都写了自动化`build.sh`脚本,而`build.sh`脚本相当于对`CMakeLists`执行`cmake`命令,即:`cmake ..  make  make install`.除了测试程序(`tests`目录),其它文件夹(`Base  Net`)执行脚本后会在`/usr/local/lib`中生成对应的静态库(不会生成可执行文件),然后在测试文件夹下的`CMakeLists.txt`直接调用静态库就行,而不用一个一个的包括源文件.测试程序(`tests`目录)中的`CMakeLists.txt`执行后是直接在目录中生成可执行文件</mark>
 4. 本项目中测试程序中直接调用静态库,如`Timestamp_test.cpp`测试程序:
-   ```txt
+   ```s
    cmake_minimum_required(VERSION 3.0)# 此项目要求的最低 CMake 版本为 3.0
 
    project(Test CXX)
@@ -983,15 +992,15 @@
     3. run 1 2 3
    // 输出4,因为此时argc=4(argv[0]为./test.exe,argv[1]为1,argv[2]为2,argv[3]为3) 
    ``` 
-8. <span style="color:red;">在使用`gdb`调试的时候,编译程序时一定要用`-g`,否则将在`gdb`调试过程中看不见程序的函数名、变量名,而看到的是运行时的内存地址.当把`-g`加上后,并成功编译目标代码后,就能在调试过程直接看到函数名、变量名</span>
+8. <span style="color:red;">在使用`gdb`调试的时候,编译程序时(使用`gdb`之前)一定要用`-g`,否则将在`gdb`调试过程中看不见程序的函数名、变量名,而看到的是运行时的内存地址.当把`-g`加上后,并成功编译目标代码后,就能在调试过程直接看到函数名、变量名</span>
 9. <mark>更详细的`gdb`指令可见`https://www.gy328.com/ref/docs/gdb.html`</mark>
 10. <mark>调试正在运行的程序:在`Linux/Unix`系统中,可以使用`&`符号将命令放到后台运行(常是一个死循环),如:`./test.exe.&`</mark>,此时终端会返回一个类似`[1] 574`,其中`[1]`是作业号(标识在当前`shell`会话中运行的后台作业.每个作业在启动时都会被分配一个唯一的作业号,该作业号仅在当前`shell`会话中有效),`574`是进程ID,此时拿到了进程ID就可以利用`gdb`调试这个正在运行的程序了(<mark>需要注意的是:后台运行程序后,一定要终止它`kill %作业号`或者`kill 进程号`.否则对于`&`,就算终端退出,这个后台程序也会一直运行</mark>)
     * `gdb -p pid`, 如:`gdb -p 574`,此时就进入这个正在运行的程序的调试阶段了
     * 后续就可以使用之前的那些调试命令了,`step nexty print`等等
 ## 所遇问题
-1. `gdb`调试中出现`Broken pipe`错误(这个错误是看`Love 6`博客的,我自己并没有测试,没有测试一端关闭套接字,另一端继续发送数据出现的`Broken pipe`这种情况). 此时就算程序已经编译了`IgnoreSigPipe`,也会在`gdb`中报`broken pipe`错误,但是不用`gdb`就不会报错,原因:
+1. `gdb`调试中出现`Broken pipe`错误. 此时就算程序已经编译了`IgnoreSigPipe`,也会在`gdb`中报`broken pipe`错误,但是不用`gdb`就不会报错,原因:
    * 进程出现`Broken pipe`错误时,会将该信号发送给系统,系统收到信号后会反过来再发给进程来叫停进程(此时用`IgnoreSigPipe`就不会停止进程),当用`gdb`调试时,收到系统发的信号的并不是进程,而是让`gdb`给半路拦截下来了,当`gdb`收到信号后默认处理方式是暂停程序,将错误打印出来.这样一来我们的进程实际上并没有收到信号的情况下就被叫停了(此时`IgnoreSigPipe`就没用了),所以在程序里面不管怎样处理信号都是做无用功.在`gdb`中处理的方法:输入命令`handle SIGPIPE nostop`
-   ![](Love6_Broken_pipe.png)
+   ![](Broken_pipe.png)
 # 压测
 1. `Bug 1`:`0 succeed 0 failed`
    ![](0_succeed_0_failed.png)
@@ -1027,10 +1036,16 @@
    ![](segmentation_fault.png)
    原因:
    ```C++
-   // 错误版本 TcpConnection中设置Keep-Alive
-   TcpConnectionSocket_->SetSockoptKeepAlive(true);
-   // 修正版本 放在Acceptor中设置
-   channel_->SetReadCallback(std::bind(&Acceptor::handleRead, this));
+   // 错误版本 设置了TcpConnectionSocket_,再在TcpConnection中close(connfd)就会释放已经被释放的文件描述符,导致segmentation_fault
+   TcpConnectionSocket_(std::make_unique<Socket>(connfd)),
+   ...
+   TcpConnection::~TcpConnection(){
+      ::close(connfd);
+   }
+   // 修正版本 TcpConnection中不再次释放connfd
+   TcpConnection::~TcpConnection(){
+    // 不能在这里close(connfd)->造成segmentation fault  因为已经在socket中被销毁了
+   }
    ```
 4. 压测的线程`CPU`占用情况:
    * Love 6's WebServer
@@ -1081,11 +1096,35 @@
    ```
    ![](strace结果.png)
    ![](strace调用次数结果.png)
-
-
-
-
-
+# C++编译链接精要
+1. `C++`兼容`C`,从而能在编译的时候直接使用这些头文件,并链接到相应的库上,并在运行的时候直接调用`C`的函数库,这省了中间层的手续,因此更高效(`java`等语言刁`C`需要中间层)
+2. `C++`相较于`java`的注主要优势：
+   * 性能:
+     - `C++`通常比`Java`更高效,因为`C++`代码编译成机器码直接运行,而`Java`代码需要在`Java`虚拟机`(JVM)`上运行.虽然现代 `JVM`有即时编译(`JIT`)技术,但`C++`仍能提供更接近底层硬件的性能,尤其是在需要高性能的场景
+     - `C++`允许开发者手动管理内存(如动态分配和释放),这对于优化程序性能和内存使用非常重要.`Java`依赖于垃圾收集器 (Garbage Collector),虽然减少了内存泄漏的风险,但也可能导致不确定的延迟
+   * 系统级编程:
+     -  `C++`提供了更多的底层功能访问,如指针操作、内存管理、硬件级别的控制等,使其适用于系统级编程、驱动程序开发和嵌入式系统
+     -  `C++`可以更直接地与操作系统交互,使用系统调用和库,这对于开发需要高效率和精细控制的系统应用程序非常有利
+3. <mark>`C++`的编译效率很低:`C++20`之前没有引入模块机制`import`,因此`C++`要用`#include`的方法包含头文件,而`#include`是机械地将库的接口声明以文本替换的方式载入,再重写解析一遍,此时其实会引入很多不必要的依赖,即要当前头文件其实不是全部使用,但是却要全部编译,这样就会使得编译效率很低</mark>
+4. `C++`继承了`C`的单遍编译:指的是从头到尾扫描一遍源码,一边解析代码,一边即刻生成目标代码.在单遍编译时,编译器只能看到目前已经解析过的代码(当前语句之前),看不到之后的代码.
+5. `C++`只能通过解析源码来了解名字的含义(`C++`编译后不会保留类型信息和元数据),而`java`等可以将源码编译为包含字节码和元数据的`.class`文件,元数据包括类的结构信息、方法声明、字段类型、注解等
+6. <mark>陈硕建议的`g++`编译选项:</mark>
+   ```s
+   SET(CXX_FLAGS
+   -g # 类似g++ -g  便于后续gdb
+   -Wall # 启用大部分编译器警告
+   -Wextra # 启用更多的警告
+   -Werror # 将所有警告视为错误
+   -Wconversion # 警告隐式类型转换可能导致的数据丢失或行为异常
+   -Wshadow # 警告变量名隐藏   即内部作用域变量名可能会遮住外层作用域的该变量名
+   )
+   ```
+7. `C++`的编译器会对模板类或函数都具现化一个实体,因此会产生大量的代码,进而可能导致代码膨胀
+8. <mark>模板定义通常也是放在头文件中评的,否则可能发送链接错误</mark>  
+9. 内联函数也可能会导致代码膨胀,因此尽量在较小、简单的地方使用`inline`
+10. 如何判断一个`C++`的可执行文件是编译时是`debug`还是`release`?
+    通过看类模板`class template`中的短成员函数是否被`inline`展开.如果是`release`编译,就会`inline`展开;否则不展开
+11. <mark>对于现代的`GNU`的预处理过程,它在第二次会对同一个头文件不会去读取它,而是直接跳过,这样就加快了编译速度,因此要尽量使用前向声明</mark>
 
 
 

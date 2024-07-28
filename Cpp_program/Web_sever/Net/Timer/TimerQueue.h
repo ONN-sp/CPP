@@ -9,17 +9,13 @@
 #include <utility>
 #include <functional>
 #include <cstdint>   // for uint64_t
-
 #include "Timer.h"     
 #include "../../Base/Timestamp.h" 
 #include "../../Base/NonCopyAble.h" 
-#include "../../Base/Logging/Logging.h" 
-#include "../../Base/TimerId.h" 
-
 namespace tiny_muduo{
     class EventLoop;
     class Channel;
-    class timerId;
+    class TimerId;
     //TimerQueue类管理多个定时器,并在定时器到期时触发回调
     class TimerQueue : public NonCopyAble{
         public:

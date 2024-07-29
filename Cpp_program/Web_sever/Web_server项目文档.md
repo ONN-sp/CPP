@@ -86,8 +86,8 @@
 7. `muduo`的`TcpClient`类没有高水位回调的主要原因是设计上的考虑.`TcpClient`作为客户端连接的封装,通常由应用程序控制数据的发送,而服务端(`TcpServer`)则需要处理更多的客户端连接和更复杂的流量控制
 8. `muduo`中的踢掉空闲连接方法:
    * `timing wheel`循环队列:8个桶组成的循环队列.第一个桶放1秒后将要超时的连接,第2个桶类似.每个连接一收到数据就把它放到第8个桶(即它此时还有7秒才超时),然在每秒的`timer`里把第1个桶(上一秒表示还有一秒超时的桶)的连接断开,这可能有多个连接(利用的是`unordered_set`)
-   ![](timing_wheel_1.png)
-   ![](timing_wheel_2.png)
+   ![](markdown图像集/timing_wheel_1.png)
+   ![](markdown图像集/timing_wheel_2.png)
    在具体实现中使用的是引用计数的办法(`shared_ptr`),如果连接刷新,就把它`insert()`进循环队列最后`.back()`,`unordered_set`会自动去重,即完成了刷新.当引用计数降为0,则会调用析构函数断开连接(这里是主动优雅的用`shutdown()`断开).更详细的代码实现见`https://github.com/chenshuo/muduo/blob/master/examples/idleconnection/echo.cc`
    * 另一个思路是用链表排序的方法:使用链表将`TcpConnection`串起来.`TcpConnnection`每次收到消息就把自己移到链表末尾,这样链表是按接收时间先后排序的.再用一个定时器定期从链表前端查找并踢掉超时的连接,详见`https://github.com/chenshuo/muduo/blob/master/examples/idleconnection/sortedlist.cc`
 # 定时器
@@ -249,7 +249,7 @@
    * `Poller` 负责实际的 I/O 多路复用操作,它将发生的事件通知 `EventLoop`
    * `Channel` 与具体的文件描述符关联,负责将文件描述符上的事件分发给对应的处理函数
    * `EventLoop` 通过调用 `Poller` 的 `poll` 方法来等待事件的发生,当获取到活动事件后,它会获取活动事件的`Channel`列表(即注册与当前就绪事件的`fd`对应的`Channel`,把这些活跃的`Channel`放入`active_channels`),再依次调用每个`Channel`的回调函数处理事件
-3. ![](EventLopp_Poller_Channel.png)
+3. ![](markdown图像集/EventLopp_Poller_Channel.png)
 4. 类比`tiny_httpserver`来理解这三者的关系:(以`tiny_httpserver`主线程为例)`EventLoop`就是`tiny_httpserver`中主线程的事件循环(`while(1)`);`Poller`负责底层的事件多路复用,通过调用系统调用如`epoll_wait`来监听文件描述符上的事件;`Channel`封装了文件描述符及其事件处理函数,负责具体的事件处理逻辑(`Channel`就是主线程调用的就绪事件的对应的执行函数(如:`acceptConn`))
 5. 一个线程<=>一个`EventLoop`,一个`EventLoop`可能涉及多个文件描述符
 6. `epoll_wait()`:返回的是就绪的文件描述符个数,即就绪事件的个数,就绪事件被放在了`events_`中
@@ -338,7 +338,7 @@
    `EventLoop::doPendingFunctors()`不是简单地在临界区内依次调用`Functor`,而是把回调列表`pendingFunctors_`交换到局部变量`functors`中去了,这样`functors`对于此`EventLoop`对应的线程它就是其独立拥有的,即线程安全的了(只是多消耗了栈空间).这样操作一方面减小了临界区的长度,另一方面也避免了死锁(此时可能出现的死锁情况:(`C++`中,`std::mutex`表示的就是非可重入互斥锁,这种锁不允许同一线程在已经持有锁的情况下再次获取同一个锁,否则会导致死锁),`Functor`可能再调用`QueueOneFunc`就可能出现一个线程再获取已经持有的锁)
 13. `doPendingFunctors()`其实解决的是上层回调
 14. `EventLoop`的`loop`方法是一个死循环,除非主动调用`quit`,或调用了该`loop_`的析构函数才能终止(和`Asynclogging::ThreadFunc`一样)
-15. `EventLoop`采用的是`epoll`的水平触发(默认就是水平触发),而不是边沿触发,为什么?
+15. <mark>`EventLoop`采用的是`epoll`的水平触发(默认就是水平触发),而不是边沿触发,为什么?</mark>
     * 为了与传统的`poll()`兼容(`poll`没有边沿触发),因为在文件描述符数目较少,活动文件描述符比例较高时,`epoll`不见得比`poll`更高效,必要时可以切换`Poller`
     * 水平触发更简单
     * 读写的时候不必等候触发`EAGAIN`(表示缓冲区是否满(满对应写操作)),可以节省系统调用次数,降低延迟
@@ -356,7 +356,7 @@
    Channels active_channels_
    // 普通指针的vector数组在clear时不会出现析构Channel对象的可能
    ```
-   ![](智能指针问题.png)
+   ![](markdown图像集/智能指针问题.png)
 # EventLoopThread&EventLoopThreadLoop
 1. 为了更直接的表示`one loop per thread`,我们建立了`EventLoopThread`,`thread_(std::bind(&EventLoopThread::StartFunc, this), name)`:体现了一个`thread`与一个`loop`绑定
 2. `EventLoopThreadPool`中的`base_loop_`:它是整个`EventLoopThreadPool`的核心`EventLoop`对象,通常是主线程的`EventLoop`.它是传入一个`EventLoopThreadPool`的参数,而不会在这个`EventLoopThreadPool`中的`loops_`中
@@ -394,7 +394,7 @@
    }
    // 不能std::move(loop_),因为这样会造成loop_被无法左值引用了,而让StartFunc中的loop_相对于被析构了  
    ```
-   ![](wakeup_error.png)
+   ![](markdown图像集/wakeup_error.png)
 # CurrentThread
 1. `__thread`是一种用于声明线程局部存储变量的关键字.在多线程编程中,它允许每个线程拥有自己独立的变量副本,这意味着每个线程一进来后都会拥有这个变量,但是它们之间是互不干扰的.`__thread`可以用来修饰那些带有全局性且值可能变,但是又不值得用全局变量保护的变量
 2. `::syscall(SYS_gettid)`:在`Linux`系统中用来获取当前线程ID的系统函数
@@ -460,7 +460,8 @@
    * 当到了新的一天,日志也会滚动
 5. 日志库不能每条消息都`flush`硬盘,更不能每条日志都`open/close`,这样性能开销太大.本项目定期(默认3秒)将缓冲区日志消息`flush`到硬盘(注意:这里的3秒指的是写入磁盘的时间间隔,而`asynclogging`中的3秒指的是前端和后端线程交换的时间间隔)
 6. 日志信息->`::fwirte_unlocked`写到`fp_`所代表的文件流对应的内部缓冲区中->`flush`到本地文件中
-7. 日志都在`./LogFiles/`文件夹中
+7. 日志都在`tests/LogFiles/`文件夹中
+8. 测试`logfile_test.cpp`时需要先改`Logfiles`文件夹权限->`sudo chmod 777 ../Logfiles`(在`build`下)
 # logging
 1. 日志信息是有等级的,由低到高为:`DEBUG INFO WARN ERROR FATAL`:
    ```C++
@@ -481,7 +482,7 @@
    ```s
    日期 时间 微秒 线程ID 级别 写入的日志正文消息 - 源文件名:行号
    ```
-   ![](日志消息.png)
+   ![](markdown图像集/日志消息.png)
 3. 本项目的默认路径:`./webserver/tests/Logfiles/`
 4. 本项目的日志文件名:`LogFile_当前时间_微秒.log`
 5. 本项目的日志的使用方式(非异步):
@@ -511,20 +512,21 @@
 13. `Asynclogging`的`ThreadFunc`方法是一个死循环,除非主动调用`quit`,或调用了该`log_`的析构函数才能终止
 14. 《`Linux`多线程服务端编程》的P114-119:
     * 第一种情况是前端日志的频度不高,后端3秒超时后将"当前缓冲`current_`"写入文件:
-    ![](asynclogging_1.png)
+    ![](markdown图像集/asynclogging_1.png)
     * 第二种情况,在3秒超时之前已经写满了当前缓冲,于是唤醒后端线程开始写入文件:
-    ![](asynclogging_2.png)  
+    ![](markdown图像集/asynclogging_2.png)  
     * 第三种情况,前端在短时间内密集写入日志消息,用完了两个缓冲,并重新分配了一块新的缓冲:
-    ![](asynclogging_3.png) 
+    ![](markdown图像集/asynclogging_3.png) 
     * 第四种情况,文件写入速度较慢,导致前端耗尽了两个缓冲,并分配了新缓冲:
-    ![](asynclogging_4.png) 
+    ![](markdown图像集/asynclogging_4.png) 
 # 所遇问题
 1. 由于路径不正确的`segmentation fault`:写入日志的本地文件路径错误
-2. 本地文件出现乱码:`stream_ << GeneralTemplate(data, len)`这里传入的长度`len`如果大了,那么写入的日志文件就会乱码.因为在`logstream`的`append()`中,指针`cur_`会多向前移动一个位置,但是这个位置啥也没有,最终导致写入乱码;`len`小了,不会乱码,只是导致日志信息缺失
+2. 测试`Asynclogging_test.cpp`时需要先改`Logfiles`文件夹权限->`sudo chmod 777 ../Logfiles`(在`build`下)
+3. 本地文件出现乱码:`stream_ << GeneralTemplate(data, len)`这里传入的长度`len`如果大了,那么写入的日志文件就会乱码.因为在`logstream`的`append()`中,指针`cur_`会多向前移动一个位置,但是这个位置啥也没有,最终导致写入乱码;`len`小了,不会乱码,只是导致日志信息缺失
 3. `std::strlen`与`sizeof()`的区别:
    * `std::strlen`:计算`C`风格字符串(以`\0`结尾的字符数组)的长度,计算字符数组的字符数(不包括`\0`).它只适用与以`\0`结尾的字符数组
    * `sizeof()`:这是一个编译时的运算符,用于计算数据类型或对象在内存中的大小,以字节为单位
-4.  `asynclogging`的调用出现死锁:经过几个小时的验证,最终发现死锁不是由于主线程(`asynclogging`中创建日志线程的原线程)和新创建的子线程(日志线程)之间调用(`CutDown() wait()`)导致`Latch`中锁的死锁,因为它们之间没有出现同一个线程持有同一把锁的情况,`CutDown()`是在线程1中执行,然后对有着同一个`latch_`对象的线程2产生唤醒操作.真正导致死锁的原因是:`condition.h`定义的条件变量对象,之前使用的是`std::unique_lock<std::mutex> lock(mutex_.mutex());`:此时在`asynclogging`的`ThreadFunc`一开始就上锁了,如果这还上锁那么就会死锁.解决办法:`std::unique_lock<std::mutex> lock(mutex_.mutex(), std::defer_lock);`:`std::defer_lock`表示不调用`std::unique_lock  std::lock_guard`时就立即上锁,而是后面需要上锁自己手动`lock()`
+4. `asynclogging`的调用出现死锁:经过几个小时的验证,最终发现死锁不是由于主线程(`asynclogging`中创建日志线程的原线程)和新创建的子线程(日志线程)之间调用(`CutDown() wait()`)导致`Latch`中锁的死锁,因为它们之间没有出现同一个线程持有同一把锁的情况,`CutDown()`是在线程1中执行,然后对有着同一个`latch_`对象的线程2产生唤醒操作.真正导致死锁的原因是:`condition.h`定义的条件变量对象,之前使用的是`std::unique_lock<std::mutex> lock(mutex_.mutex());`:此时在`asynclogging`的`ThreadFunc`一开始就上锁了,如果这还上锁那么就会死锁.解决办法:`std::unique_lock<std::mutex> lock(mutex_.mutex(), std::defer_lock);`:`std::defer_lock`表示不调用`std::unique_lock  std::lock_guard`时就立即上锁,而是后面需要上锁自己手动`lock()`
 5. 忘写`written_bytes_ += len;`,导致一直不能新建`LogFile`,即就算输出的日志超过了给定的日志文件最大限制`kSingleFileMaxSize`,它也不能新建一个本地文件进行写入
 6. `LogFile`的`Flush`和`append`函数在使用互斥锁前,一定要先判断是否存在,即`if(mutex_)`.必须先判断,不然程序有bug! 这个`mutex_`可能在其它地方被销毁了,而此时还没有`new`一个`LogFile`(一个`LogFile`有一个属于自己的局部变量`std::unique_ptr<MutexLock> mutex_;`),那么此时就会出现卡死的bug(因为`mutex_`已经被销毁了)
 7. 如果写入的日志消息很小,占不满一个缓冲区,并且业务线程在3秒内就`Stop`了日志线程,那么本地文件啥也写不进来
@@ -639,7 +641,7 @@
    * 对于`input buffer`,`onMessage()`回调发生在该`TcpConnection`所属IO线程,应用程序应该在`onMessage()`中完成对`input buffer`的操作,并且不要把`input buffer`暴露给其他线程.这样,对`input buffer`的操作都在同一个IO线程,因此`Buffer class`不必是线程安全的。
    * 对于`output buffer`,应用程序不会直接操作它,而是调用`TcpConenction::send()`来发送数据,后者是线程安全的.准确来说,是会让`output buffer`只会在所属IO线程操作
 10. `Buffer`的数据结构:
-   ![](Buffer数据结构.png)
+   ![](markdown图像集/Buffer数据结构.png)
    2个索引`readIndex writeIndex`把缓冲区分为了三块:`prependable readable writable`:可以理解为三块缓冲区(预留缓冲区、可读缓冲区、可写缓冲区),这三块缓冲区的大小可以是0
    `prependable = readIndex`
    `readable = writeIndex - readIndex`
@@ -651,18 +653,18 @@
     static const size_t kInitialSize = 1024; // Buffer初始大小
     ```
     初始化完成后的`Buffer`结构:
-    ![](Buffer初始化完成.png)
+    ![](markdown图像集/Buffer初始化完成.png)
 12. `Buffer`的基本IO操作对应的结构图:
     * 初始化完成后,向`Buffer`写入200字节:
-      ![](Buffer写入200字节.png) 
+      ![](markdown图像集/Buffer写入200字节.png) 
       此时`readIndex`不变,`writeIndex`向后移动200字节
     * 读出50字节:
-      ![](Buffer读出50字节.png)  
+      ![](markdown图像集/Buffer读出50字节.png)  
       `readIndex`向后移动50字节,`writeIndex`不变
     * 接下来,一次性读入150字节,由于全部数据读完了,`readIndex writeIndex`返回原位以备新一轮使用:
-      ![](Buffer读完数据.png)   
+      ![](markdown图像集/Buffer读完数据.png)   
     * <mark>`Buffer`的长度不是固定的,可以自动增长(`MakeSureEnoughStorage`中的`resize()`)(因为底层数据结构用的是`vector<char>`).`readable`由增长为1350(刚好增加了1200),`writeable`由824减为0.另外,`readIndex`由58回到了初始位置8,保证`prependable`等于`kCheapPrependable`.注意由于`vector`重新分配了内存,原来`Buffer`中指向其元素的指针就会失效,这也就是为什么`readIndex writeIndex`是整数下标而不是指针的原因</mark>.`Buffer`没有缩写功能,下次写1350字节数据的时候,就不用重新分配了
-      ![](Buffer的resize.png)
+      ![](markdown图像集/Buffer的resize.png)
 13. `vector`的`size`和`capacity`:`size`指的是当前存储的有效数据量;`capacity`指的是当前`vector`可以存储的最大数据量.两者是不同的概念
 14. `buffer_.data();`<=>`&(*buffer_.begin())`,本项目直接用的`.data()`方法
 15. `Buffer`使用`vector`数据结构的好处:
@@ -705,8 +707,8 @@
 3. 为什么`std::shared_ptr<EventLoopThreadPool> threadPool_;`用`shared_ptr`:
    因为在多线程环境中,多个线程可能需要同时访问`threadPool_`,此时需要共享所有权(免得出现空悬指针的情况)
 4. 客户端发起一个新建连接(即一个新的`TcpConnection`)请求实际的函数调用关系如下:(起初创建`accpetor`对象就已经`::bind`了)`TcpServer::Start()`(启动`Acceptor::Listen()`)->`Acceptor::channel_`(绑定到`acceptSocket_`了)对应的读事件触发->调用读回调函数`handleRead`->调用`TcpServer::HandleNewConnection`->创建`TcpConnection`对象、传递`TcpServer`中的上层回调到该`TcpConnection`中、将`TcpConnection::ConnectionEstablished`放入所属的`EventLoop`中(用户自定义的`connection_callback_`就在这个函数里面执行)
-   ![](Tcpserver调用关系.png)
-   ![](手写Tcpserver调用关系.png)
+   ![](markdown图像集/Tcpserver调用关系.png)
+   ![](markdown图像集/手写Tcpserver调用关系.png)
    <mark>需要注意的是:回调函数实际的调用顺序和回调函数的实际的传入顺序是相反的,这就等价于递归中的递推和回溯过程</mark>
 5. `Tcpserver`处于`HTTP`的下一层(很上层了),其中的连接建立、销毁连接等操作的具体执行是在其所属的`EventLoop`的任务队列`pendingFunctors_`中,在`Tcpserver`中不会执行具体的这些操作,只是把这些操作注册到所属的`EventLoop`中(如`ptr->loop()->RunOneFunc(std::bind(&TcpConnection::ConnectionDestructor, ptr));`)
 6. 本项目的`ConnectionMap connections_`中是一个`TcpConnection`名称和一个`TcpConnectionPtr`映射,而`TcpConnection`名称=`ip_port`(服务器的`IP`和端口)+文件描述符值+该`TcpConnection`的`ID`(`next_conn_id`)
@@ -715,7 +717,7 @@
 9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
 10. </mark>本项目采用的是`muduo`设计回调的思想,即`Channel`控制最底层的四种回调:错误、关闭、读、写,这几种回调是通过文件描述符触发的,然后在这几种底层回调函数的内部一般是会进一步调用上层回调(`MessageCallback ConnectionCallback CloseCallback`,需要特别注意的是这个`TcpConnection::close_callback_`不是它拥有的`channel_`的回调,`channel_`的回调函数是`HandleClose`,这个`close_callback_`是在`HandleClose`中进一步调用的上层回调)</mark>
 11. 测试程序结果((`./TcpServer_test`)):
-    ![](TcpServer_test测试程序.png)
+    ![](markdown图像集/TcpServer_test测试程序.png)
 # TcpConnection
 1. `TcpConnection`有2个`Buffer`:`input buffer`,`output buffer`:
    * `input buffer`:`TcpConnection`会从`socket`(内核缓冲区)读取数据,然后写入`input buffer`(用户缓冲区)(实际是由`Buffer::readFd()`完成);客户代码在`onMessage`回调中,从`input buffer`读取数据
@@ -737,7 +739,7 @@
     `TcpConnetion`对象是短命对象,如:如果客户端断开了某个`Tcp`连接,此时它对应的服务端`TcpConnection`对象的生命即将走到尽头,但是这时我们并不能立即`delete`这个对象,因为其它地方可能还持有它的引用,因此要用到`shared_ptr`(源于`TcpConnection`模糊的生命期)
 14. `TcpConnection::ConnectionEstablished()`中为什么要用`Tie()`?
     `channel_`中注册了当前`TcpConnection`对象的回调事件.如果在回调事件处理过程中,拥有`channel_`的高层对象(对应的`TcpConnection`)被销毁了,这就会导致`channel_`指向的对象变得无效或指向非法内存(空悬指针),因此我们应该延长该`TcpConnection`对象的生命周期,使之比其拥有的`channel_`长,所以要调用`channel_->Tie(shared_from_this());` 
-    ![](生命对象管理问题.png) 
+    ![](markdown图像集/生命对象管理问题.png) 
 15. `TcpConnection`中的`channel_`设置的`channel_->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this));`的关闭回调和服务端被动关闭调用`HandleClose`是两码事
 16. <mark>本项目的`TCP`连接只有一种关闭连接的方式:被动关闭(`HttpServer`中有主动关闭,主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠这儿的被动关闭方式,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据),即对方先关闭连接,本地`read()`返回0,触发关闭逻辑(注意:这个被动关闭不是通过`channel_`的关闭回调来关闭的,`channel_`的关闭回调是在文件描述符挂起(挂断)时才会被调用的,不是这儿说的被动关闭).被动关闭触发的是`channel_`的可读事件(因为对方发起关闭发送标识符):</mark>
    ```C++
@@ -745,7 +747,7 @@
         HandleClose();// 为什么这不采用shutdown()   因为shutdown()不是真正的完全关闭,此时资源还没有被关闭(只关闭了写端),因此写成shutdown()就会造成资源未释放
    ```
    服务端被动关闭的一个函数调用流程:
-   ![](被动关闭函数调用.png)
+   ![](markdown图像集/被动关闭函数调用.png)
 17. <mark>本项目和`muduo`的被动关闭过程是完全直接关闭连接,清理相关的资源,不是`shutdown()`的半关闭(此时服务器不会调用`shutdown()`方法)</mark>
 18. 被动关闭过程->`TCP`的四次挥手过程(因此是优雅的)
 19. 对于主动关闭连接:
@@ -795,7 +797,7 @@
 1. <mark>本项目引入了一个`muduo`没有的(`muduo`中其实是更完美的一个踢掉空闲连接的处理),即空闲连接的超时处理`auto_close_idleconnection_`:本项目对于空闲连接会进行8秒的超时检查,如果这个连接超过8秒还未使用的话就会被关闭</mark>
 2. `HttpServer`相当于就是`TcpServer`的向上一层的封装,因此`HttpServer::ConnectionCallback()  HttpServer::MessageCallback()`就是`TcpServer::ConnectionCallback()  TcpServer::MessageCallback()`,即用户自定义回调函数先传给`HttpServer`这两个回调函数,然后再由`HttpServer`传给相应的`TcpServer`对象的这两个回调函数
 3. 测试结果:(`./HttpServer_test 9999`)
-   ![](HttpServer测试结果.png)
+   ![](markdown图像集/HttpServer测试结果.png)
 4. <mark>`HttpServer`中有主动关闭(踢掉空闲时间的情况等等),主动关闭都是用的优雅的`shutdown()`方法,最后这个连接的真正关闭还是依靠`TcpConnection`中的的被动关闭方式`handleClose()`,`HttpServer`中的主动关闭只是暂时的,为了在自己"擅作主张"的关闭时能接收到客户端后面的数据,因此要用`shutdown`</mark>  服务端主动关闭连接(`shutdown()`),然后会再进行一轮的`read`,当`read_size==0`,就会调用`handleClose()`
 # Cmake的学习
 1. 直接利用`CMakeLists.txt`对当前目录下的某个`.cpp`文件(在当前目录下)生成可执行文件:
@@ -872,7 +874,7 @@
 7. <mark>为了合理实现可以相互调用静态库的方法写`CMakeLists.txt`,(前提假设:下层不能调用上层,上层可以调用下层,相同层之间可能会相互调用)我们必须相同层次的目录不能单独生成静态库,即想象成网络通信时,就是相同层不要单独构建一个库,需要把相同层的源文件构建在同一个库中.如果把相同层构建为两个不同的库,这可能是完成不了的,比如:`Timer`目录文件会调用`Util`中的文件,而`Util`文件也会调用`Timer`文件,所以此时就不知道怎么构建库了,因此对于相同层我们应该构建在一个库中.本项目,我们假定了三层,一层为底层`webserver_base`(包括`./Base/Logging`和`Base`)库,第二层为网络层`webserver_net`库(包括`Poller Timer Util`),第三层为应用层`webserver_http`(`Http`)</mark>
 # 所遇问题
 1. <mark>链接静态库的顺序出错`HttpServer_test.cpp`:`target_link_libraries(HttpServer_test webserver_net webserver_base)`(对于`HttpServer_test.cpp`,`webserver_net`静态库要在`webserver_base`静态库前面):</mark>
-   ![](静态库链接顺序出错.png)
+   ![](markdown图像集/静态库链接顺序出错.png)
 # Shell脚本
 1. 可以将`cmake`的构建过程用`Shell`脚本给出,如:
    ```bash
@@ -973,12 +975,12 @@
 3. `gdb`操作的日志功能:  `set logging on`:它会开启一个`gdb`的日志功能,把`gdb`中操作过程的每一个调试步骤会记录到`gdb.txt`中,并保存在当前目录下
 4. 在`gdb`里面(进入`gdb`后),可以通过`shell+命令行指令`来调用终端命令,如:`shell ls`
 5. `watchpoint`:观察变量是否变化(`info watchpoints`来查看设置的观察点)(发生变化了`gdb`就会主动输出`Old value`和`New value`来表示变量变化了)    观察点用于监视某个变量或内存位置的值是否发生变化.与断点不同,观察点不依赖于特定的代码行或函数,而是依赖于数据的变化
-   ![](watchpoint.png)
+   ![](markdown图像集/watchpoint.png)
 6. <mark>`core dump`(核心转储)是当程序发送崩溃时,操作系统将程序的内存映像和一些诊断信息写入到一个文件中,这个文件就是`core dump`,常用于调试,但它的文件常常很大,因此默认是禁用了的(不会默认生成),可以通过`ulimit -a`查看:</mark>
-   ![](core_file.png)
+   ![](markdown图像集/core_file.png)
    `ulimit -c unlimited`: 打开权限,生成`core file`.
    分析核心转储文件通常需要调试工具,如`gdb`,`gdb ./test core`:程序崩溃并生成核心文件`core`,并使用`gdb`分析核心文件
-   ![](core_file2.png)
+   ![](markdown图像集/core_file2.png)
 7. 对于带参数的函数可以直接用`run arg1 arg2`,如:
    ```C++
    int main(int argc, char* argv[]){
@@ -1000,10 +1002,10 @@
 ## 所遇问题
 1. `gdb`调试中出现`Broken pipe`错误. 此时就算程序已经编译了`IgnoreSigPipe`,也会在`gdb`中报`broken pipe`错误,但是不用`gdb`就不会报错,原因:
    * 进程出现`Broken pipe`错误时,会将该信号发送给系统,系统收到信号后会反过来再发给进程来叫停进程(此时用`IgnoreSigPipe`就不会停止进程),当用`gdb`调试时,收到系统发的信号的并不是进程,而是让`gdb`给半路拦截下来了,当`gdb`收到信号后默认处理方式是暂停程序,将错误打印出来.这样一来我们的进程实际上并没有收到信号的情况下就被叫停了(此时`IgnoreSigPipe`就没用了),所以在程序里面不管怎样处理信号都是做无用功.在`gdb`中处理的方法:输入命令`handle SIGPIPE nostop`
-   ![](Broken_pipe.png)
+   ![](markdown图像集/Broken_pipe.png)
 # 压测
 1. `Bug 1`:`0 succeed 0 failed`
-   ![](0_succeed_0_failed.png)
+   ![](markdown图像集/0_succeed_0_failed.png)
    因为`HttpRequest.cpp`判断版本出错:
    ```C++
    // 错误版本
@@ -1033,7 +1035,7 @@
    ```
    `connName`是通过字符串拼接方式,如果其中一项包好了无效或未初始化的数据,就会导致段错误
 3. `Bug 3`:运行一段时间后`segmentation fault`.
-   ![](segmentation_fault.png)
+   ![](markdown图像集/segmentation_fault.png)
    原因:
    ```C++
    // 错误版本 设置了TcpConnectionSocket_,再在TcpConnection中close(connfd)就会释放已经被释放的文件描述符,导致segmentation_fault
@@ -1049,17 +1051,17 @@
    ```
 4. 压测的线程`CPU`占用情况:
    * Love 6's WebServer
-      ![](Love_6_cpu.png)
+      ![](markdown图像集/Love_6_cpu.png)
    * Drew Jun's WevServer
-       ![](Drew_Jun_cpu.png)
+       ![](markdown图像集/Drew_Jun_cpu.png)
 5. 压测的结果  10000并发  1000并发
    * 长连接(`keep alive`)
-      ![](1000并发_长连接.png)
-      ![](10000并发_长连接.png)
+      ![](markdown图像集/1000并发_长连接.png)
+      ![](markdown图像集/10000并发_长连接.png)
       10000并发长连接有`failed`(还未解决),初步猜测是文件描述符设置不了65535那么大(电脑不行)(测了`Love 6`的代码也有`failed`)
    * 短连接
-      ![](1000并发_短连接.png)
-      ![](10000并发_短连接.png)
+      ![](markdown图像集/1000并发_短连接.png)
+      ![](markdown图像集/10000并发_短连接.png)
 # 好用的工具
 1. `top`:观察`cpu`、内存等占用率
    * 直接`top`命令显示的`cpu`占有率是相对于一个逻辑核心而言.在多核系统中,总的`cpu`占有率可以超过100%.例如,如果系统有 4个核心,一个进程使用了每个核心的50%的时间,那么`top`中显示的`cpu`占用率可能会接近200%
@@ -1072,7 +1074,7 @@
    2. nc -l -p 端口 // 监听本地机器上的指定端口
    3. echo "Hello" | nc 127.0.0.1 9999// 在终端直接输入数据并发送到服务器
    ```
-   ![](nc测试.png)
+   ![](markdown图像集/nc测试.png)
 3. `gdb`:见前面
 4. `webbench`:一个简单且常用的网页服务器性能测试工具,用于测量网站的并发访问性能
    ```s
@@ -1094,8 +1096,8 @@
    3. strace 程序名 程序参数// 跟踪一个并同时启动该程序,此时会实时输出到终端.不过滤(grep)的话默认输出的信息是很详细的   strace ./HttpServer_test 9999
    4. strace -c -p 进程ID -o 跟踪文件要保存的地址// 记录系统调用次数、消耗时间
    ```
-   ![](strace结果.png)
-   ![](strace调用次数结果.png)
+   ![](markdown图像集/strace结果.png)
+   ![](markdown图像集/strace调用次数结果.png)
 # C++编译链接精要
 1. `C++`兼容`C`,从而能在编译的时候直接使用这些头文件,并链接到相应的库上,并在运行的时候直接调用`C`的函数库,这省了中间层的手续,因此更高效(`java`等语言刁`C`需要中间层)
 2. `C++`相较于`java`的注主要优势：

@@ -17,8 +17,14 @@ SET(CXX_FLAGS
 # add_executable(Timestamp_test Timestamp_test.cpp)# 指定生成目标
 # target_link_libraries(Timestamp_test webserver_base)
 
+# add_executable(TimerQueue_test TimerQueue_test.cpp)# 指定生成目标
+# target_link_libraries(TimerQueue_test webserver_net webserver_base)
+
 # add_executable(Logfile_stream_test Logfile_stream_test.cpp)# 指定生成目标
 # target_link_libraries(Logfile_stream_test webserver_base)
+
+# add_executable(Asynclogging_test Asynclogging_test.cpp)# 指定生成目标
+# target_link_libraries(Asynclogging_test webserver_base)
 
 # add_executable(TcpServer_test TcpServer_test.cpp)# 指定生成目标
 # target_link_libraries(TcpServer_test webserver_base webserver_net) 

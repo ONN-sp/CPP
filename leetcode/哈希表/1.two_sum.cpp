@@ -18,7 +18,8 @@ public:
         return v;
     }
 };
-//unordered_map哈希表查找(O(1)查找复杂度)
+// unordered_map哈希表查找(O(1)查找复杂度)
+// 找target-nums[i]是在已加入哈希表的<key, value>中寻找,即3 2 4是在访问到nums[2]=4中才确定的
 #include<unordered_map>
 class Solution {
 public:

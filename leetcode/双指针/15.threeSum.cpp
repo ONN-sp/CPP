@@ -22,6 +22,7 @@ public:
             while(forward<end){
                 if(nums[i]+nums[forward]+nums[end]==0){
                     result.emplace_back(vector<int>{nums[i],nums[forward],nums[end]});
+                    // forward和end的去重必须要在找到一个满足条件的三元组后进行去重
                     while(forward<end&&nums[forward]==nums[forward+1])//去重nums[forward]
                         forward++;
                     while(forward<end&&nums[end]==nums[end-1])//去重nums[end]

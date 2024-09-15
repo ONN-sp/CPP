@@ -30,13 +30,24 @@
    ```
 10. `unordered_map`的几种访问、遍历方法:
     ```C++
-    1. 下标访问法,利用key
+    1. 下标访问法,利用key   `[]`操作
     2. .at(key)成员方法,返回的是key对应的value
     3. .find(key)成员方法,返回的是迭代器
     4. for(auto i:mm),返回的是键值对,不是迭代器.即i.first和i.second
     5. begin()/end(),遍历整个容器中的键值对,返回的是迭代器,即i->first和i->second
     ```
+    ![](markdown图像集/2024-08-21-15-24-51.png)
 11. <span style="color:red;">`unordered_map`的`key`只能用基本数据类型(包括`string`),但是结构体、类或数组`vector`等都是不行的;而哈希表的`value`可以是数组等其它复杂类型</span>
+12. `unordered_map`可以通过迭代器初始化赋值:
+   ```C++
+   unordered_map<string, string> p1; // 直接定义
+   unordered_map<string, string> p2{ {"apple", "red"}, {"lemon", "yellow"} }; // 直接在定义后赋值
+   unordered_map<string, string> p3(p2); // 拷贝p2给p3
+   unordered_map<string, string> p4(p3.begin(), p3.end()); // 通过迭代器一一赋值
+   // unordered_set等也类似
+   vector<int> nums;
+   unordered_set<int> ss(nums.begin(), nums.end());
+   ```
 # 字母异位词分组
 1. 整个`vector`容器不能直接用标准输出流进行输出
 2. <mark>`vector`容器只有非空的时候才能使用`[]`索引的方法.若是直接下标访问空的会报错</mark>
@@ -49,7 +60,7 @@
    ```C++
    1. 直接赋值 
    unordered_map<int, int> mm;
-   mm[1]=2;//m[key] = value;
+   mm[1]=2;//m[key] = value;   访问一个不存在的键可以直接添加键值对(一种初始化的新手段)
    2. insert方法
    mm.insert(pair<int,int>(1,2));
    3. emplace方法
@@ -67,6 +78,19 @@
    ![Alt text](markdown图片集/image-1.png)
 7. <mark>哈希表是基于数组的,所以要把`key`转换为数组下标,而这就是哈希函数的功能,转换后的下标就是哈希值</mark>
 8. `unordered_map`容器插入的键值对本身是无序的,其中`insert`方法和`vetcor`的`push_back`也不同,它是按照哈希值进行散列的
+# 快乐数
+1. 此题的关键:何时返回`false`->在求和的过程中,如果重复出现一个`sum`值,那么就一定`return false`;否则出现`sum==1`就`return true`
+2. 对每一位数求平和:
+   ```C++
+   int getsum(int n){
+      int sum=0;
+      while(n){
+         sum += (n%10)*(n%10);
+         n /= 10;// 从m位数变为m-1维
+      }
+      return sum;
+   }
+   ```
 # 最长连续序列
 1. `unordered_set`,`std::unordered_set<std::typename> uset`:
    ```s
@@ -130,8 +154,8 @@
    vector<vector<int>> result;
    result.emplace_back(vector<int>{nums[i],nums[forward],nums[end]})
    ```
-2. 此题最重要的是去重,但这里的去重不是去掉数组的相同元素,而是去掉相同结果集,所以set不能直接完成这里的去重
-3. 此题中的三数求和是求的数组的三个元素，而不是对应的下标，这和题库中前面的两数求和(1)不同(双指针不能用来求下标这种题型，因为不能用sort)
+2. 此题最重要的是去重,但这里的去重不是去掉数组的相同元素,而是去掉相同结果集,所以`set`不能直接完成这里的去重
+3. 此题中的三数求和是求的数组的三个元素，而不是对应的下标，这和题库中前面的两数求和(1)不同(双指针不能用来求下标这种题型，因为不能用`sort`)
 4. 注意此题的剪枝情况(去重也可视为一种剪枝操作):
    ```C++
    eg:
@@ -144,6 +168,8 @@
 5. 剪枝通常指的是一种优化技术，通过提前判断和排除不必要的搜索分支来减少搜索空间，以提高算法的效率，这通常应用于搜索算法或者递归算法中
 6. <mark>`C++ STL`中的`sort`通常会使用底层实现来执行排序操作，而不会创建额外的临时数组</mark>
 7. 此题的去重、剪枝、双指针移动条件的方法适用于此类问题：求数组中n个元素的和与target相等形成的解集（元素解），不显示重复的n元组
+# 四数相加Ⅱ
+1. 此题和两数求和一样,可以直接用哈希表法,因为这道题目是四个独立的数组,只要找到`nums1[i]+nums2[j]+nums3[k]+nums4[l]=0`就可以,不用考虑有重复的四个元素相加等于0的情况,所以相对于题目18.四数之和,题目15.三数之和(这两道题最好不要直接用哈希表法)是不同的
 # 接雨水
 1. 此题我是按列计算的,即每次计算一个宽度为1的方块的积水面积.每一列的积水面积公式=`(min(left_max,right_max)-height[i])*1`
 # 无重复字符的最长子串
@@ -368,8 +394,10 @@
 # 翻转链表
 1. 此题有两种方法:递推法(迭代法)、递归法
 2. 递推法就是在顺序访问链表的同时修改相邻两个节点的指向,需注意的是要保存`cur`节点的初始`cur->next`
-3. 为了更清晰的想清楚迭代公式,可以利用`nullptr`,并将它想做`head`的前一个节点(类似虚拟头节点),并且这样不用在外面显示重新设翻转后的节点的`.next`成员为`NULL`
-4. <span style="color:red;">翻转链表的方法技巧:使用3个节点指针`pre cur nex`,分别记录相邻的三个节点;`pre`初始化为一个`nullptr`,`cur`初始化为待翻转链表的起点;`nex`为此时`cur`的下一个节点(即`cur->next`);在迭代的过程中,第一次迭代不是将第二个节点的`next`指向第一个节点,而是将`cur->next`初始化为`nullptr`;然后`pre cur nex`依次往后移一个节点位置,后续的迭代过程就是改`next`的指向了:</span>
+3. 动态图(动图有误,应该先移动`pre`,再移动`cur`):
+   ![](markdown图片集/翻转链表.gif)
+4. 为了更清晰的想清楚迭代公式,可以利用`nullptr`,并将它想做`head`的前一个节点(类似虚拟头节点),并且这样不用在外面显示重新设翻转后的节点的`.next`成员为`NULL`
+5. <span style="color:red;">翻转链表的方法技巧:使用3个节点指针`pre cur nex`,分别记录相邻的三个节点;`pre`初始化为一个`nullptr`,`cur`初始化为待翻转链表的起点;`nex`为此时`cur`的下一个节点(即`cur->next`);在迭代的过程中,第一次迭代不是将第二个节点的`next`指向第一个节点,而是将`cur->next`初始化为`nullptr`;然后`pre cur nex`依次往后移一个节点位置,后续的迭代过程就是改`next`的指向了:</span>
    ```C++
    1. 初始化定义:
    ListNode* pre=nullptr;
@@ -398,6 +426,8 @@
    5. 此时再设一个指针ListNode* ptr=head;由3可知,当ptr走到环起点,即走a长度;此时slow->next为环起点;
    6. 那么只需判断ptr==slow->next即可,若满足则刚好走到了环起点;   (只需判断ptr==slow即可)
    ```
+2. 动态图:
+   ![](markdown图片集/环形链表II.gif)
 # 合并两个有序链表
 1. 思路:在迭代的过程中,需要维护一个`pre`指针来记录合并后节点的先后顺序,但是`nullptr->next`是不存在的,且不能直接把`pre`设为`list1 || list2`,这样会导致死循环,所以创一个新指针`new ListNode(-1)`,我们需要做的就是调整它的`next`指针.直到`list1`或者`list2`指向了`nullptr`:如果`list1`当前节点的值小于等于`list2`,我们就把`list1`当前的节点接在`pre`节点的后面同时将`list1`指针往后移一位.否则,我们对`list2`做同样的操作.不管我们将哪一个元素接在了后面,我们都需要把`pre`向后移一位
 # 两数相加
@@ -652,13 +682,15 @@
 13. <mark>对于二叉树题选取遍历方法最重要</mark>
 # 二叉树的中序遍历
 1. 递归法和迭代法
-# 二叉树的最大深度
-1. 二叉树的高度和深度在大多数情况下是一样的概念,对于<mark>求二叉树的高度和深度的逻辑通常是使用后序遍历</mark>,即处理过程("中")在后面
-2. 此题只要把每一个节点的左右孩子深度求出来,就能得到此父节点的深度`1+max(leftDepth, rightDepth)`
-3. 本题也可以使用前序,但是比后序更复杂
-4. 计算高度和深度是从下往上算(回溯过程就能实现从下往上处理),即叶子节点处为1,往上一层就加1:
+# 二叉树的最大深度(<=>根节点的高度)
+1. 二叉树的高度和深度在大多数情况下是一样的概念,对于<mark>求二叉树的高度和深度的逻辑通常是使用后序遍历</mark>,即处理过程("中")在后面 高度:该节点距离叶子节点的最长简单路径的节点数  深度:从根节点到该节点的最长简单路径的节点数
+2. 求高度->后序  求深度->前序(这样较好)
+3. 此题只要把每一个节点的左右孩子深度求出来,就能得到此父节点的深度`1+max(leftDepth, rightDepth)`
+4. 本题也可以使用前序,但是比后序更复杂
+5. 本题说的是二叉树最大深度,其实就是根节点的高度
+6. 计算高度是从下往上算(回溯过程就能实现从下往上处理),即叶子节点处为1,往上一层就加1:
    ```C++
-   1. 后序遍历求深度/高度
+   1. 后序遍历求高度
    int getDepth(TreeNode* node){
       if(node == nullptr)//到了叶子节点的孩子节点
          return 0;
@@ -708,6 +740,7 @@
    node->right = sortArray(nums, mid+1, right);
    ```
 2. 迭代法就是使用三个队列来模拟这个不断寻找分割点,然后`new ThreeNode`的过程 
+3. <mark>中序遍历二叉搜索树得到的就是一个有序数组</mark>
 # 验证二叉搜索树
 1. 对于二叉搜索树,如果用中序遍历,那么它就会得到一个单调递增的有序数组
 2. <mark>遇到二叉搜索树或判断是否是二叉搜索树就要想到使用中序遍历</mark>
@@ -792,6 +825,7 @@
    ```
 7. "路径总和Ⅲ"与前两种不同,它不是仅考虑根节点到叶子节点,而是所有符合条件的路径(对路径的起点和终点不要求,但是要从父节点到子节点)
 8. 对于"路径总和Ⅲ",最好的方法是使用<mark>前缀和</mark>,如果穷举所有的可能,即检测以当前节点为根的向下延深的路径种树,这样会超时.对于前缀和方法:<mark>保存由根节点到当前节点的路径上所有的节点的和.先序遍历二叉树的时候,记录下根节点到当前节点`cur`的路径上除当前节点以外所有的前缀和(不能在查找是否有满足的前缀和前,就把此时的前缀和(`curr+=cur->val`)加到哈希表中,这样的话对于`targetSum=0`时就会出错),在已保存的前缀和表中查找(利用哈希表)是否存在前缀和刚好等于当前节点到根节点的前缀和`curr-targetSum`(即`if(mm.count(curr-targetSum))`).为了保证找到的前缀和都是从父节点到子节点,必须在回溯时将哈希表对应`curr`前缀和的次数(`key-value`中的`value`)减1</mark>
+9. `if(traversal(cur->left, target-cur->val))`:这种中间是`target-cur->val`,这是隐藏了回溯过程,它函数结束,`target`值没变(即没减`cur->val`),这是利用隐式构建一个临时变量`(int tmp=)target-cur->val`来实现的
 # 二叉树中的最大路径和
 1. 此题不能认为`cur`节点的最大路径和=`cur->left`的最大路径和+`cur->right`的最大路径和
 2. `cur`节点的最大贡献值:空节点的最大贡献值等于0;非空节点的最大贡献值等于节点值`cur->val`与其子节点(`cur->left`和`cur->right`)中的最大贡献值之和(对于叶节点而言,最大贡献值等于节点值).`cur`的最大贡献值!=`cur`的最大路径和
@@ -804,8 +838,70 @@
    //节点20的最大贡献值=20+15=35,而其最大路径和=15+7+20=42
    ```
 3. <mark>利用最大贡献值是解本题的关键</mark>
-
-
-
 # 分割回文串
 1. `s.substr(int pos, int len)`:返回一个以`pos`开始的`len`个字符的拷贝的子串.若`pos`的值超过了`string s`的大小,则`substr`函数会抛出一个`out_of_range`异常;若`pos+n`的值超过了`string s`的大小,则`substr`会调整`n`的值,只拷贝到`string s`的末尾
+# 组合总和Ⅱ
+1. 此题的关键是去重,即虽然集合中有重复元素,但是不能有重复的组合  用`set  map`去重,很容易超时
+2. 此题需要进行的是树层去重(回溯问题可以抽象为树形结构(树枝 树层)),我们要去重的是同一树层上的"使用过"的节点,同一树枝上都是一个组合里的元素,不用去重
+   ![](markdown图片集/树层去重.png)
+3. 利用`startIndex`树层去重:<mark>此方法需要先对数组排序</mark>:
+   ```C++
+   1. 利用startIndex
+   for (int i = startIndex; i < candidates.size() && sum + candidates[i] <= target; i++) {
+            // 要对同一树层使用过的元素进行跳过
+            if (i > startIndex && candidates[i] == candidates[i - 1]) {
+                continue;
+            }
+            sum += candidates[i];
+            path.push_back(candidates[i]);
+            backtracking(candidates, target, sum, i + 1); // 和39.组合总和的区别1，这里是i+1，每个数字在每个组合中只能使用一次
+            sum -= candidates[i];
+            path.pop_back();
+   }
+   2. 利用used数组
+   // 为什么used[i-1]==false就是同一树层呢,因为同一树层,used[i-1]==false才能表示(used[i-1]在同一层的左边相邻树枝的根节点的最后一次回溯就会把used[i-1]置为false),当前取的candidates[i]是从 candidates[i-1]回溯而来的
+   // used[i-1]==false表示candidates[i-1]同一树层使用过
+   // used[i-1]==true表示candidates[i-1]同一树枝使用过
+   for (int i = startIndex; i < candidates.size() && sum + candidates[i] <= target; i++) {
+      // used[i - 1] == true，说明同一树枝candidates[i - 1]使用过
+      // used[i - 1] == false，说明同一树层candidates[i - 1]使用过
+      // 要对同一树层使用过的元素进行跳过
+      if (i > 0 && candidates[i] == candidates[i - 1] && used[i - 1] == false) {
+         continue;
+      }
+      sum += candidates[i];
+      path.push_back(candidates[i]);
+      used[i] = true;
+      backtracking(candidates, target, sum, i + 1, used); // 和39.组合总和的区别1：这里是i+1，每个数字在每个组合中只能使用一次
+      used[i] = false;
+      sum -= candidates[i];
+      path.pop_back();
+   }
+   ```
+# 递增子序列
+1. 此题也需要树层去重,但是此题不能对原数组排序,因此需要另一种树层去重方法(此方法更通用):
+   ```C++
+   // 更为通用的树层去重 不要求提前排序
+   set<int> used;// 存储记录每一层已访问的节点
+   for(int i=startIndex;i<nums.size();i++){
+      if(!path.empty()&&path[path.size()-1]>nums[i])// 保证递增
+            continue;
+      if(used.find(nums[i])!=used.end())// 不能对原数组排序  因此不能像之前那样树层去重
+            continue;
+      used.insert(nums[i]);// 不需要回溯 因为新的一层都会重新定义(清空)used
+      path.emplace_back(nums[i]);
+      backtracking(nums, i+1);
+      path.pop_back();
+   }
+   ```
+# 全排列
+1. 排列问题需要借用`used`数组,来表示同一树枝中已经访问过的元素
+   ![](markdown图片集/2024-09-15-09-28-48.png)
+# 全排列Ⅱ
+1. 此题既需要树枝去重,又需要树层去重,可以直接用`used`数组实现:
+   ```C++
+   if(i>0&&nums[i]==nums[i-1]&&used[i-1]==false)// 树层去重
+                continue;
+   if(used[i]==true)// 树枝去重
+                continue;
+   ```

@@ -1015,6 +1015,16 @@ void Swap(AnyType &a, AnyType &b);
    * 对于修改调用函数中数据的函数时:
      ![Alt text](markdown图像集/image-110.png)
 24. `C++`中内置数据类型不是类,而是语言的基本构造块之一
+25. 临时变量不能作为非`const`引用变量的传入(`C++`编译器报错:`error: cannot bind non-const lvalue reference of type 'int&' to an rvalue of type 'int'`):
+    ```C++
+    int func(int& tmp){
+        return tmp;
+    }
+    int main(){
+        int a = 2;
+        func(a+2);// a+2会构建一个临时变量(此时不是a了)
+    }
+    ```
 # auto关键字
 1. 用于声明变量时让编译器自动推断其类型,使得代码更灵活、可读性更好
    ```C++
@@ -2291,7 +2301,12 @@ int main() {
     - 默认情况下,`cin`和`cout`为了兼容`C`的`scanf`和`printf`,会与`stdio`进行同步,这样在混合使用`cin/cout`和`scanf/printf`时可以保持输入输出的顺序一致性,但这也增加了额外的开销
    * 不必要的功能:
     - `cin`和`cout`提供了更多的功能,如流操作符的链式调用、异常处理等,这些功能虽然增强了它们的灵活性和易用性,但在处理大量数据时,可能会带来不必要的性能开销
-    - `scanf`和`printf`没有这些额外的功能,所以在处理简单的大量输入输出操作时,它们更加轻量级    
+    - `scanf`和`printf`没有这些额外的功能,所以在处理简单的大量输入输出操作时,它们更加轻量级  
+# stoi stol stoll tp_string
+1. `std::string`->`int/long/long long`:`stoi/stol/stoll`
+2. `int`->`std::string`:`to_string(int num)`
+3. `.c_str()`:返回指向该`std::string`对象内容的`const char*`类型指针
+4. `const char*`->`int`:`atoi()`
 
 
 

@@ -663,7 +663,7 @@
       `readIndex`向后移动50字节,`writeIndex`不变
     * 接下来,一次性读入150字节,由于全部数据读完了,`readIndex writeIndex`返回原位以备新一轮使用:
       ![](markdown图像集/Buffer读完数据.png)   
-    * <mark>`Buffer`的长度不是固定的,可以自动增长(`MakeSureEnoughStorage`中的`resize()`)(因为底层数据结构用的是`vector<char>`).`readable`由增长为1350(刚好增加了1200),`writeable`由824减为0.另外,`readIndex`由58回到了初始位置8,保证`prependable`等于`kCheapPrependable`.注意由于`vector`重新分配了内存,原来`Buffer`中指向其元素的指针就会失效,这也就是为什么`readIndex writeIndex`是整数下标而不是指针的原因</mark>.`Buffer`没有缩写功能,下次写1350字节数据的时候,就不用重新分配了
+    * <mark>`Buffer`的长度不是固定的,可以自动增长(`MakeSureEnoughStorage`中的`resize()`)(因为底层数据结构用的是`vector<char>`).`readable`由150增长为1350(刚好增加了1200),`writeable`由824减为0.另外,`readIndex`由58回到了初始位置8,保证`prependable`等于`kCheapPrependable`.注意由于`vector`重新分配了内存,原来`Buffer`中指向其元素的指针就会失效,这也就是为什么`readIndex writeIndex`是整数下标而不是指针的原因</mark>.`Buffer`没有缩写功能,下次写1350字节数据的时候,就不用重新分配了
       ![](markdown图像集/Buffer的resize.png)
 13. `vector`的`size`和`capacity`:`size`指的是当前存储的有效数据量;`capacity`指的是当前`vector`可以存储的最大数据量.两者是不同的概念
 14. `buffer_.data();`<=>`&(*buffer_.begin())`,本项目直接用的`.data()`方法
@@ -1079,7 +1079,7 @@
 4. `webbench`:一个简单且常用的网页服务器性能测试工具,用于测量网站的并发访问性能
    ```s
    webbench -c 1000 -t 30 http://127.0.0.1:9999/
-   // 本项目用的是Linya大佬(https://github.com/linyacool/WebBench)优化的Webbench工具(加入了长连接 keep-alive)  多了一个-k命令
+   // 本项目用的是Linya大佬(https://github.com/linyacool/WebBench)优化的Webbench工具(加入了长连接 keep-alive就会多一个-k命令,不用长连接就不用加-k)
     webbench -c 1000 -t 30 -k -2 http://127.0.0.1:9999/
    ```
 5. `pidof`:查找正在运行的进程的进程`ID`

@@ -21,10 +21,10 @@ private:
         if(cur->left==nullptr&&cur->right==nullptr)
             return false; 
         if(cur->left)    
-            if(hasPathSum(cur->left, target-cur->val))
+            if(traversal(cur->left, target-cur->val))
                     return true;
         if(cur->right)
-            if(hasPathSum(cur->right, target-cur->val))
+            if(traversal(cur->right, target-cur->val))
                     return true;
         return false;
     }

@@ -29,6 +29,26 @@ public:
         return dummyHead->next;;
     }
 };
+
+class Solution {
+public:
+    ListNode* swapPairs(ListNode* head) {
+        if(!head||!head->next)
+            return head;
+        ListNode* dummyhead = new ListNode(0);
+        dummyhead->next = head; 
+        ListNode* cur = dummyhead;
+        while(cur->next&&cur->next->next){
+            ListNode* temp1 = cur->next;
+            ListNode* temp2 = cur->next->next->next;
+            cur->next = cur->next->next;
+            cur->next->next = temp1;
+            cur->next->next->next = temp2;
+            cur = cur->next->next;
+        }
+        return dummyhead->next;
+    }
+};
 //时间复杂度：O(n)
 //空间复杂度：O(1)
 

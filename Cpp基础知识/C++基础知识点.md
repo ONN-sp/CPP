@@ -84,6 +84,15 @@
     * 保护实参的值不被修改:使用`const`修饰函数参数可以确保函数内部不会修改实参的值,这样有助于提高代码的可读性,并防止意外的修改实参导致的错误
     * 提高函数的通用性:形参为`const`类型,则实参可以是`const`类型,也可以是非`const`类型
 37. <mark>标准输出和标准输入是程序的默认输出流,标准输出的文件描述符是`1`,标准输入的文件描述符是`0`</mark>
+38. `char`类型对应的是`ASCII`码:
+    ```C++
+    char a=k='0';
+    a++;
+    k=k+'1';
+    =>
+    a='1'(ascll码:48+1=49->'1')
+    k='a'(ascll码:48+49=97->'a')
+    ```
 # 数组
 1. 数组声明应指出以下三点:
     * 存储在每个元素中的值的类型;
@@ -506,7 +515,55 @@
      这样重新分配内存的操作很昂贵,会对性能产生较大的影响
    * 迭代器失效:在上面的重新分配内存中时,可能会导致所有指向`vector`元素的迭代器、指针和引用都失效了(因为之前的地址没东西了,被分配到新位置了),进而导致未定义
    * 性能问题:虽然`vector`会通过指向增长的方式来尽量减少重新分配内存的次数,但在最坏的情况下,频繁的`push_back`操作仍可能会导致大量的内存重新分配和元素拷贝,进而影响性能
-  
+5. `vector`的列表初始化:
+    ```C++
+    vector<vector<string>> res;
+    res.emplace_back(vector<string>{"Q"});// 这是对的:这是利用vector的列表初始化,创建了一个包含一个string的vector
+    res.emplace_back(vector<string>('Q'));// 这是错的:这是表示通过调用vector构造函数来初始化,这种方法的第一个参数必须是int(表示大小).如:vector<string> s(5);
+    res.emplace_back(vector<string>{'Q'});// 这是不提倡的:其实是错的,但是编译器隐式将char转换为string了,所以不会报错
+    ```
+6. `vector`的`size`和`capacity`:
+   * `size`:表示`vector`当前包含的元素数量,即已经存储的有效元素的个数.通过`.size()`函数获取
+   * `capacity`:表示`vector`分配的内存能够容纳的最大元素数量,而不需要重新分配内存.通过`.capacity()`函数获取
+   * 通常情况下,`capacity`会大于或等于`size`.当`vector`添加元素时,如果元素数量超过当前`capacity`,`vector`会重新自动分配一块更大的内存,并将已有元素复制到新内存中.重新分配后,`capacity`会增加,但`size`只反映实际元素的数量
+   * 有时因为编译器或`C++`标准库实现的优化行为,特别是在小型`vector`的`capacity`和`size`中会保持一致;但对于大一点的`vector`它就会`capacity`>`size`了,即：
+     ```C++
+     1.
+     int main() {
+        std::vector<int> v;
+        v.push_back(1);
+        v.push_back(2);
+        std::cout << "Size: " << v.size() << std::endl;         // 输出当前元素个数
+        std::cout << "Capacity: " << v.capacity() << std::endl; // 输出分配的容量
+        return 0;
+     } 
+     =>
+     Size: 2
+     Capacity: 2
+     2.
+     int main() {
+        std::vector<int> v;
+        v.push_back(1);
+        v.push_back(2);
+        v.push_back(3);
+        std::cout << "Size: " << v.size() << std::endl;         // 输出当前元素个数
+        std::cout << "Capacity: " << v.capacity() << std::endl; // 输出分配的容量
+        return 0;
+     } 
+     =>
+     Size: 3
+     Capacity: 4
+     ```
+7. <mark>`vector`的`operator[]`访问元素的方法不会出现越界报错(即`operator[]`无边界检查),只可能会导致未定义行为,即这个越界得到的垃圾值可能会使后续程序崩溃,这种设计是为了提高性能,因为边界监测会增加额外的开销:</mark>
+    ```C++
+    int main(){
+        std::vector<int> a={1,2,3};
+        std::cout << a[3] << std::endl;// 不会报错
+        return 0;
+    }
+    // 此时直接输出的0
+    ```
+8. <mark>`vetcor`的`.at()`访问元素的方法与`operator[]`类似,如:`vec.at(3);// 访问下标为3即第4个元素`,但是`.at()`访问元素的方法会进行边界检查</mark>
 # 循环和关系表达式
 1. 语句和表达式的区别就是一个分号`;`
 2. 在`for`语句中声明的变量只能用在`for`语句中,当程序离开循环后,变量也会消失
@@ -1024,6 +1081,27 @@ void Swap(AnyType &a, AnyType &b);
         int a = 2;
         func(a+2);// a+2会构建一个临时变量(此时不是a了)
     }
+    ```
+26. 引用和值拷贝不同:
+    ```C++
+    unordered_map<string, map<string, int>> targets;
+    bool backtracking(int ticketNum, vector<string>& result) {
+        if (result.size() == ticketNum + 1) {
+            return true;
+        }
+        for (auto& target : targets[result[result.size() - 1]]) { 
+            if (target.second > 0 ) { // 记录到达机场是否飞过了
+                result.push_back(target.first);
+                target.second--;
+                if (backtracking(ticketNum, result)) return true;
+                result.pop_back();
+                target.second++;
+            }
+        }
+        return false;
+    }
+    // 为什么auto& target加上&,target的改变就会对后续的递归有影响？
+    // auto& target是一个引用,而不是一个值拷贝.这意味着你在遍历targets[result[result.size() - 1]]时,target直接引用了targets容器中实际的元素.因此,target的修改会直接反映在targets容器中,所以会影响后续递归
     ```
 # auto关键字
 1. 用于声明变量时让编译器自动推断其类型,使得代码更灵活、可读性更好

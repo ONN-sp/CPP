@@ -858,7 +858,7 @@
             sum -= candidates[i];
             path.pop_back();
    }
-   2. 利用used数组
+   2. 利用used数组 也要先排序
    // 为什么used[i-1]==false就是同一树层呢,因为同一树层,used[i-1]==false才能表示(used[i-1]在同一层的左边相邻树枝的根节点的最后一次回溯就会把used[i-1]置为false),当前取的candidates[i]是从 candidates[i-1]回溯而来的
    // used[i-1]==false表示candidates[i-1]同一树层使用过
    // used[i-1]==true表示candidates[i-1]同一树枝使用过

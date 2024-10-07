@@ -1,0 +1,1 @@
+1. `net start mysql80`:这条命令在`Windows`命令提示符下运行,用来启动名为`mysql80`的`MySQL`服务(`mysql80`:这是`MySQL 8.0`的服务名称.不同的`MySQL`版本或者实例可以有不同的服务名,具体取决于安装时的配置.默认情况下,`MySQL 8.0`的服务名通常是 `mysql80`)

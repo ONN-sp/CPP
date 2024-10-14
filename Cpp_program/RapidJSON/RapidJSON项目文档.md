@@ -49,10 +49,11 @@
 3. 由于`SAX`解析器不需要将整个文档加载到内存中,因此它的内存占用非常小,特别适合处理大型文档或内存有限的场景
 4. `SAX`是顺序处理的,它无法回溯或随机访问文档的某个部分
 # Allocator
-1. `CrtAllocator`为什么要用`C`来定义内存块分配函数:
+1. <mark>`Allocator`中的`CrtAllocator``MemoryPoolAllocator`其实就是对标准库的`std::allocator`默认内存分配器的重新实现,使用了高效的内存池策略等</mark>
+2. `CrtAllocator`为什么要用`C`来定义内存块分配函数:
    * 兼容性:C语言的标准库函数`malloc`、`realloc`和`free`是跨平台、广泛使用的内存管理工具.通过使用这些函数,CrtAllocator可以在几乎所有支持`C`的环境中运行,不依赖于`C++`特定的内存管理机制.这确保了`RapidJSON`在不同平台上的兼容性
    * 性能与开销:`C`语言的内存管理函数执行开销较小,并且可以直接分配或释放任意大小的内存块.与`C++`的`new`和`delete`相比,`malloc/free`的内存分配机制通常更加直接且底层,适合处理大量、快速的内存分配需求,如`RapidJSON`中频繁的内存操作
-2. 内存池分配器`MemoryPoolAllocator`是如何实现高效的内存块分配的:
+3. 内存池分配器`MemoryPoolAllocator`是如何实现高效的内存块分配的:
    * 预先分配大块内存=>减少系统(`malloc free`)调用
    * 内存池中每个内存块的链表管理
    * 按需分配新内存块=>当内存池中的当前内存块不足以满足某个内存请求时,分配器会按需分配一个新的内存块,而不是立即分配大量的内存.这种策略保证了内存的使用效率,并避免了内存浪费
@@ -60,11 +61,11 @@
    * 避免内存碎片
    * `Free`操作的简化
    * `Clear`操作
-3. 内存池分配器`MemoryPoolAllocator`通过统一管理内存块,减少了内存碎片的产生.内存池一次性分配较大的内存块,内部的小对象分配都来自同一块连续的内存区域
-4. 内存池分配器`MemoryPoolAllocator`的`Free`实际是一个空操作,即内存块的回收并不是立即执行的.相反,内存块在整个内存池分配器被销毁时才会统一释放,这样避免了频繁的内存释放操作,进一步提升性能
-5. 在某些情况下,用户可能需要手动释放内存池中的内存块.而`Clear()`函数会释放内存池中除了第一个块之外的所有内存块,确保内存池在这之后仍然可以被使用
-6. 对齐内存边界重要性:对齐操作在计算机系统中非常重要,特别是在处理器访问内存时.处理器从内存读取数据时,通常是按块进行的,最常见的是按4字节(32位)或8字节(64位)读取.对齐的内存访问可以使得处理器只需要一次内存访问即可读取完整的数据,而不对齐的访问可能会导致处理器需要进行两次内存读取.如果数据没有对齐到合适的边界,处理器需要进行两次或更多次内存读取,将结果合并后才能得到所需的数据,这会增加延迟并降低性能
-7. 本项目的对齐内存操作:
+4. 内存池分配器`MemoryPoolAllocator`通过统一管理内存块,减少了内存碎片的产生.内存池一次性分配较大的内存块,内部的小对象分配都来自同一块连续的内存区域
+5. 内存池分配器`MemoryPoolAllocator`的`Free`实际是一个空操作,即内存块的回收并不是立即执行的.相反,内存块在整个内存池分配器被销毁时才会统一释放,这样避免了频繁的内存释放操作,进一步提升性能 当前内存池被消耗=>内存池中定义的内存块自然也消耗
+6. 在某些情况下,用户可能需要手动释放内存池中的内存块.而`Clear()`函数会释放内存池中除了第一个块之外的所有内存块,确保内存池在这之后仍然可以被使用
+7. 对齐内存边界重要性:对齐操作在计算机系统中非常重要,特别是在处理器访问内存时.处理器从内存读取数据时,通常是按块进行的,最常见的是按4字节(32位)或8字节(64位)读取.对齐的内存访问可以使得处理器只需要一次内存访问即可读取完整的数据,而不对齐的访问可能会导致处理器需要进行两次内存读取.如果数据没有对齐到合适的边界,处理器需要进行两次或更多次内存读取,将结果合并后才能得到所需的数据,这会增加延迟并降低性能
+8. 本项目的对齐内存操作:
    ```C++
    1. 计算掩码
    const uintptr_t mask = sizeof(void*) - 1;// 若sizeof(void*)为8,则mask为7(0b111)
@@ -75,13 +76,13 @@
    4. 调整内存块的剩余内存大小
    size -= abuf-ubuf;// 因为我们是向上对齐地址,因此对其操作会减少原始的剩余内存大小  则更新剩余的可用内存大小=原始剩余的可用大小-因为对齐而损失的内存大小
    ```
-8. `MemoryPoolAllocator`预先分配大块内存:内存池分配器的核心思想是预先分配较大的内存块,然后在这些内存块中按需分配小对象.通过这种方式,内存池避免了频繁的动态内存分配调用,如`malloc`或`new`,从而显著提升了内存分配的效率.(当程序开始使用分配器时,内存池分配器会申请一个大块内存(如64KB).每次请求内存时,如果内存块内存大小足够,则内存池分配器会直接从预分配的内存块中分配;否则,会在`MemoryPoolAllocator`中重新分配一个内存块)
+9. `MemoryPoolAllocator`预先分配大块内存:内存池分配器的核心思想是预先分配较大的内存块,然后在这些内存块中按需分配小对象.通过这种方式,内存池避免了频繁的动态内存分配调用,如`malloc`或`new`,从而显著提升了内存分配的效率.(当程序开始使用分配器时,内存池分配器会申请一个大块内存(如64KB).每次请求内存时,如果内存块内存大小足够,则内存池分配器会直接从预分配的内存块中分配;否则,会在`MemoryPoolAllocator`中重新分配一个内存块)
    ![](markdown图像集/2024-10-07-09-25-27.png)
-9.  内存块(`ChunkHeader`表示的就是一块内存块)的链表结构:<mark>本项目的内存池分配器使用链表来管理每个内存块,`ChunkHeader *chunkHead`指向链表头部,链表中的每个节点(`ChunkHeader`)表示一个内存块.通过这个指针,分配器可以轻松地遍历所有的内存块,以便分配和释放内存.其中每个内存块都有一个头部`ChunkHeader`结构体来记录其容量和已分配的内存大小以及指向下一个内存块的指针(这个指针就实现了链表管理)</mark>
-10. `ownBuffer`:
+10. 内存块(`ChunkHeader`表示的就是一块内存块)的链表结构:<mark>本项目的内存池分配器使用链表来管理每个内存块,`ChunkHeader *chunkHead`指向链表头部,链表中的每个节点(`ChunkHeader`)表示一个内存块.通过这个指针,分配器可以轻松地遍历所有的内存块,以便分配和释放内存.其中每个内存块都有一个头部`ChunkHeader`结构体来记录其容量和已分配的内存大小以及指向下一个内存块的指针(这个指针就实现了链表管理)</mark>
+11. `ownBuffer`:
     * `ownBuffer=true`:表示内存池分配器自己管理该内存块.也就是说,内存块的分配和释放都由 `MemoryPoolAllocator`自己负责.此时,当分配器销毁时,它会负责释放这些内存块
     * `ownBuffer=false`:表示内存块是由用户提供的，并且`MemoryPoolAllocator`不会负责释放这些内存.这种情况适用于用户已经有一块现成的内存(如堆或栈上的内存),并希望将其提供给分配器使用.在这种情况下,当分配器销毁时,它不会试图释放由用户提供的内存块  此时当`MemoryPoolAllocator`析构时,它不会释放由用户提供的缓冲区,因为它不拥有这些内存
-11. `SharedData`:
+12. `SharedData`:
     ```C++
      struct SharedData {
         ChunkHeader *chunkHead;
@@ -92,18 +93,127 @@
      // size_t refcount:这个计数器用于跟踪有多少个MemoryPoolAllocator实例共享同一个SharedData对象.当一个分配器被复制(如,通过拷贝构造函数或赋值操作符)时,引用计数会增加;当一个分配器被销毁时,引用计数会减少.只有当引用计数减少到零时，才会真正释放SharedData所管理的内存,即内存池
      // bool ownBuffer:该字段指示内存块是否由 MemoryPoolAllocator自己管理.通过这个字段,分配器可以判断是否需要在析构时释放内存,避免错误地释放由用户提供的内存
      ```
-12. 本项目中,每个内存池`MemoryPoolAllocator`实例通常会拥有自己独立的`SharedData`结构体,即<mark>一个内存池与一个`SharedData`一一对应</mark>
-13. 本项目中<mark>一个内存块和一个`ChunkHeader`结构体是一一对应的</mark>
-14. 一个内存池可以管理多个内存块,即一个`SharedData`结构体管理多个`ChunkHeader`结构体
-15. <mark>内存池通过`SharedData`结构体,内存块通过`ChunkHeader`结构体设计来管理其元数据,而具体的`data`紧跟在头部之后,形成一个连续的线性空间.这种结构可以高效地进行内存分配和管理,同时支持多个内存块的链式组织,形成完整的内存池</mark>
-16. `void *`是一种通用指针类型,可以指向任何类型的数据.在`C/C++`中,`void *`被广泛用于函数参数和返回值,这样可以允许代码处理各种数据类型而不需要显式指定类型.如:在内存块分配器`CrtAllocator`中,`void*`可以用于分配和返回任意类型的内存块，使得分配器更灵活
-17. `static inline ChunkHeader *GetChunkHead(SharedData *shared)`:从内存池结构体`SharedData`中获取第一个内存块头`chunkHead`的起始地址,假设当前内存池`SharedData`的对齐大小为32字节,那么`shared`的地址从0开始,+32字节的偏移后得到 `ChunkHeader`的起始地址
-18. `static inline uint8_t *GetChunkBuffer(SharedData *shared)`:返回当前内存块中`data`区域的起始地址,即跳过当前内存块的`chunkHead`.假设`ChunkHeader`的对齐大小为16字节,而`shared->chunkHead`的地址为0x1020,那么加上16字节后,数据区起始地址就是0x1030
+13. 本项目中,每个内存池`MemoryPoolAllocator`实例通常会拥有自己独立的`SharedData`结构体,即<mark>一个内存池与一个`SharedData`一一对应</mark>
+14. 本项目中<mark>一个内存块和一个`ChunkHeader`结构体是一一对应的</mark>
+15. 一个内存池可以管理多个内存块,即一个`SharedData`结构体管理多个`ChunkHeader`结构体
+16. <mark>内存池通过`SharedData`结构体,内存块通过`ChunkHeader`结构体设计来管理其元数据,而具体的`data`紧跟在头部之后,形成一个连续的线性空间.这种结构可以高效地进行内存分配和管理,同时支持多个内存块的链式组织,形成完整的内存池</mark>
+17. `void *`是一种通用指针类型,可以指向任何类型的数据.在`C/C++`中,`void *`被广泛用于函数参数和返回值,这样可以允许代码处理各种数据类型而不需要显式指定类型.如:在内存块分配器`CrtAllocator`中,`void*`可以用于分配和返回任意类型的内存块，使得分配器更灵活
+18. `static inline ChunkHeader *GetChunkHead(SharedData *shared)`:从内存池结构体`SharedData`中获取第一个内存块头`chunkHead`的起始地址,假设当前内存池`SharedData`的对齐大小为32字节,那么`shared`的地址从0开始,+32字节的偏移后得到 `ChunkHeader`的起始地址
+19. `static inline uint8_t *GetChunkBuffer(SharedData *shared)`:返回当前内存块中`data`区域的起始地址,即跳过当前内存块的`chunkHead`.假设`ChunkHeader`的对齐大小为16字节,而`shared->chunkHead`的地址为0x1020,那么加上16字节后,数据区起始地址就是0x1030
     ![](markdown图像集/2024-10-06-23-12-39.png)
-19. 只有最后一个分配的内存块(或者说是内存块的最后一个分配的内存对象)才能安全地扩展(这是因为它紧邻着当前内存块的未分配空间),这里的最后一个指的是当前内存块链表中最新分配的那块内存,它在当前内存块的已分配部分的末尾.假设某个内存块不是最后一个分配的块,而是中间的某个块,试图扩展它会破坏后续分配的内存块结构,导致内存重叠或越界
-20. `if (originalPtr == GetChunkBuffer(shared_) + shared_->chunkHead->size - originalSize)`:如果相等,则表示需要重新分配的内存块的起始地址就是当前内存池分配的最新的(最后一个)内存块起始地址`originalPtr`是传入的需要重新分配或扩展的内存块的起始地址  `GetChunkBuffer(shared_)`返回当前内存块(`shared_->chunkHead`)的起始地址,这是当前内存池中最新分配的内存块的起始地址  `shared_->chunkHead->size`是当前内存块已经分配出去的内存大小  `originalSize`是要重新分配的内存块的原始大小.如:
+20. 只有最后一个分配的内存块(或者说是内存块的最后一个分配的内存对象)才能安全地扩展(这是因为它紧邻着当前内存块的未分配空间),这里的最后一个指的是当前内存块链表中最新分配的那块内存,它在当前内存块的已分配部分的末尾.假设某个内存块不是最后一个分配的块,而是中间的某个块,试图扩展它会破坏后续分配的内存块结构,导致内存重叠或越界
+21. `if (originalPtr == GetChunkBuffer(shared_) + shared_->chunkHead->size - originalSize)`:如果相等,则表示需要重新分配的内存块的起始地址就是当前内存池分配的最新的(最后一个)内存块起始地址`originalPtr`是传入的需要重新分配或扩展的内存块的起始地址  `GetChunkBuffer(shared_)`返回当前内存块(`shared_->chunkHead`)的起始地址,这是当前内存池中最新分配的内存块的起始地址  `shared_->chunkHead->size`是当前内存块已经分配出去的内存大小  `originalSize`是要重新分配的内存块的原始大小.如:
     ![](markdown图像集/2024-10-07-09-21-48.png)
     ![](markdown图像集/2024-10-07-09-22-07.png)
     ![](markdown图像集/2024-10-07-09-22-17.png)
-21. <mark>内存池中的内存块的分配是线性的</mark>
-22. 不能说成在一个大内存块继续分配小内存块,因为内存块之间是独立的,都有一个自己的头部结构体`ChunkHeader`;只能说在一个大内存块上分配小的内存对象
+22. <mark>内存池中的内存块的分配是线性的</mark>
+23. 不能说成在一个大内存块继续分配小内存块,因为内存块之间是独立的,都有一个自己的头部结构体`ChunkHeader`;只能说在一个大内存块上分配小的内存对象
+24. 在`CrtAllocator`和`MemoryPoolAllocator`中分别定义`Malloc`和`Realloc`函数,是因为它们具有不同的内存分配策略和用途.虽然函数名相同,但这两个分配器的实现细节和设计目标是不同的,它们分别用于标准堆分配和优化的内存池分配,不同的实现方式为不同的应用场景提供了灵活的选择
+    * `CrtAlocator::Malloc() CrtAllocator::Realloc()`:简单地调用C标准库的`malloc realloc`,提供了一种直接使用标准库内存管理机制的旋转.它的优点是简单直接,依赖于系统提供的内存管理方式,适合那些不需要频繁分配/释放内存的小型应用程序
+    * `MemoryPoolAllocator::Malloc() MemoryPoolAllocator::Realloc()`:它的主要优势是性能优化,特别是在需要频繁分配和释放小内存时.这种方式避免了频繁调用系统分配器的高开销,提高了效率
+25. <mark>为什么要定义`StdAllocator`类:`StdAllocator`继承自标准库的`std::allocator<T>`?</mark>
+    其主要设计目的是让`RapidJSON`的分配器能与标准库容器(如`std::vector` `std::map`等)一起使用.标准库的许多容器支持自定义分配器,而默认情况下使用的是`std::allocator`.`CrtAlocator MemoryPoolAllocator`虽然提供了内存分配功能,但它们并不遵循标准库分配器的接口规范(即`allocate deallocate construct destroy`等接口),而`StdAllocator`提供了一个符合标准接口的分配器
+26. `StdAllocator`自定义的标准内存分配器可以使用`std::allocator CrtAllocator`作为基础分配器(`template <typename T, typename BaseAllocator = std::allocator<T>>``template <typename T, typename BaseAllocator = CrtAllocator>`),`std::allocator`是标准库容器默认的内存分配器(标准库的许多容器支持自定义分配器,而默认情况下使用的是`std::allocator`.`StdAllocator`是为了解决在使用这些容器时能够无缝地与`RapidJSON`的分配器系统结合起来.虽然内存块和内存池分配器可以高效地分配内存,但它们并不直接与`STL`容器兼容)  `StdAllocator`不能以`MemoryPoolAllocator`为底层内存分配器
+27. `StdAllocator`通过使用`rebind()`用于将当前内存分配器直接绑定到不同类型的容器上,而不需要每一种类型的容器都去定义一个内存分配器,如:
+   ```C++
+   #include <iostream>
+   #include <memory> // for std::allocator
+   #include "rapidjson/allocator.h" // 假设已包含 RapidJSON 的 allocator 头文件
+   int main() {
+      // 创建一个 StdAllocator<int> 分配器
+      StdAllocator<int> intAllocator;
+      // 通过 rebind 将分配器绑定到 double 类型
+      StdAllocator<double>::rebind<int>::other reboundAllocator = intAllocator;
+      // 使用 reboundAllocator 分配内存
+      int* p = reboundAllocator.allocate(5); // 为 5 个 int 分配内存
+      // 为分配的内存赋值并输出
+      for (int i = 0; i < 5; ++i) {
+         p[i] = i * 2;
+         std::cout << p[i] << " ";  // 输出：0 2 4 6 8
+      }
+      // 释放分配的内存
+      reboundAllocator.deallocate(p, 5);
+      return 0;
+   }
+   ```
+28. `std::allocator`:它是`C++`标准库中提供的一个默认的内存分配器,主要用于管理动态内存分配.它为标准容器提供了内存分配和释放的机制,它是一个通用的分配器类,可以为任何类型分配内存.`std::allocator`不是只能用于容器的内存分配,它是`C++`标准库中的一种通用内存分配器,用作处理动态内存分配和对象的构造与销毁,可以想作类似`new delete<=>allocate deallocate`来动态分配内存.其模板为:
+   ```C++
+   template <typename T>
+   class allocator {
+   public:
+      using value_type = T;
+      allocator() noexcept;
+      template <typename U> allocator(const allocator<U>&) noexcept;
+      T* allocate(std::size_t n);// 用于分配未初始化的内存块
+      void deallocate(T* p, std::size_t n);// 用于释放之前通过 allocate 分配的内存
+      template <typename U, typename... Args>
+      void construct(U* p, Args&&... args);// 用于在分配的内存上构造对象(调用构造函数)
+      template <typename U>
+      void destroy(U* p);// 用于在内存中销毁对象(调用析构函数)
+   };
+   ```
+   ```C++
+   1. std::allocator不是只能用于容器的内存分配
+   #include <iostream>
+   #include <memory> // for std::allocator
+   int main() {
+      std::allocator<int> alloc; // 创建一个 std::allocator<int> 分配器
+      // 分配内存
+      int* p = alloc.allocate(5); // 分配内存，足够容纳 5 个 int  分配的是一个int数组  而非容器
+      // 构造对象
+      for (int i = 0; i < 5; ++i) {
+         alloc.construct(&p[i], i * 2); // 在内存上构造对象
+      }
+      // 打印构造的对象
+      for (int i = 0; i < 5; ++i) {
+         std::cout << p[i] << " ";  // 输出：0 2 4 6 8
+      }
+      std::cout << std::endl;
+      // 销毁对象
+      for (int i = 0; i < 5; ++i) {
+         alloc.destroy(&p[i]); // 调用析构函数，销毁对象
+      }
+      // 释放内存
+      alloc.deallocate(p, 5); // 释放分配的内存
+      return 0;
+   }
+   2.
+   int main() {
+    // 使用 std::allocator 自定义分配器
+    std::vector<int, std::allocator<int>> vec;// 其实不用写内存分配器,因为容器里默认就是使用std::allocator
+    vec.push_back(1);
+    vec.push_back(2);
+    vec.push_back(3);
+    for (auto i : vec) {
+        std::cout << i << " ";  // 输出：1 2 3
+    }
+    std::cout << std::endl;
+    return 0;
+   }
+   ```
+29. <mark>`std::allocator_traits`:这是`C++11`引入的一个模板工具类,用于提取分配器类型的相关特性.它为不同的分配器提供了一个统一的接口,封装了各种复杂的底层内存分配器的操作,即它是底层内存分配器的上层抽象层.`std::allocator_traits`不仅支持 `std::allocator`,还支持用户定义的分配器.无论你使用什么样的分配器,`std::allocator_traits`都能统一调用这些分配器的成员函数,而不需要为每个分配器单独实现.假设你实现了一个自定义分配器,`allocator_traits`可以无缝地处理它(只需要将自定义内存分配器传入这个工具类即可),而不需要更改容器或分配相关代码.需要注意的是:`std::allocator_traits`只是用于操作和抽象分配器的接口,而不是实际的分配器实现,也不负责具体的内存分配(底层的内存分配器本身才负责分配和释放内存的操作).即如:调用`std::allocator_traits`的`construct()`函数时,它会检查传入的底层分配器是否有相应的成员函数,如果有,就会去调用内存分配器的相应函数;如果没有就会编译报错.因此`std::allocator_traits`只是提供一个抽象统一的接口,不做具体的处理:</mark>
+    ![](markdown图像集/2024-10-13-19-08-57.png)
+30. `StdAllocator`中利用了`std::allocator_traits<std::allocator<T>>`这个抽象的统一接口层来定义和标准库兼容的内存分配器.其中给这个工具类`std::allocator_traits`传入的内存分配器是`std::allocator<T>`(`typedef std::allocator_traits<std::allocator<T>> traits_type`),即在`StdAllocator`中定义`construct() destroy() max_size()`函数其实是调用的`std::allocator<T>`这个内存分配器的相应函数
+31. `StdAllocator::allocate()`和`StdAllocator::deallocate()`函数没有直接使用`std::allocator_traits`工具类的接口,而是调用的基础内存分配器的`Malloc()`和`Free()`函数来实现
+32. 为什么要定义`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`?
+    在`C++11`及更早的标准中,`std::allocator<void>`是合法的(那么就可能有很多外部调用`RapidJSON`的项目就支持了`std::allocator<void>`),并用于支持泛型编程中的某些特性(尽管`void`不能直接分配内存).为了保持与这些旧标准的兼容性,`RapidJSON`提供了一个特化的`StdAllocator<void, BaseAllocator>`.然而,在`C++17`中,`std::allocator<void>`被弃用和移除,因为`void`作为分配器类型没有实际意义.因此,使用条件编译来确保只有在不支持`C++17`时,才定义`StdAllocator<void, BaseAllocator>`,以避免在`C++17`环境中产生编译错误
+33. <mark>为什么`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`中用于`void`类型也要定义`rebind()`?</mark>
+   `STL`容器和算法期望所有分配器都实现`rebind`,以便可以灵活地为不同类型分配内存.这是`C++`分配器接口的一部分,即使是特化为`void`类型的分配器,也必须遵循这一接口要求.在很多实际场景中,虽然分配器可能一开始被定义为`void`类型,但在运行时,我们需要为具体类型的对象(如`int`或`double`)分配内存.通过`rebind`,`StdAllocator<void, BaseAllocator>`可以动态生成适用于其他类型的分配器
+34. `struct IsRefCounted<T, typename internal::EnableIfCond<T::kRefCounted>::Type> : public TrueType;internal::EnableIfCond<T::kRefCounted>::Type`:这段代码是结构体模板的特化版本,它在某些条件满足时被使用.这里判断条件满足时用了`SFINAE`机制,即:当模板的某个替换导致语法错误时,编译器不会报错,而是会尝试其它的模板匹配(如:通用模板,而非特化模板了).因此,`IsRefCounted<T>`会在类型`T`拥有`kRefCounted`成员且为`true`时进行替换,如果`T`没有`kRefCounted`成员或不为`true`,则这个特化模板会被忽略,编译器会选择默认的通用`IsRefCounted`实现,即`struct IsRefCounted : public FalseType`  `::kRefCounted`类似`std::is_integral`中的`::value`
+35. `template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };template <typename T> struct EnableIfCond<false, T> {};`:虽然对于`template <typename T> struct EnableIfCond<false, T> {};`这个特化模板在调用时不用显示指定参数`T`,因为`C++`的模板参数可以在调用时根据上下文推导.如果某个模板参数有默认值,而其它参数能够被推导出,编译器就可以在不需要显示指定所有模板参数的情况下进行推导,上面这个就是在前面`template <bool Condition, typename T = void>`已经设了默认值了:
+   ```C++
+   template <bool Condition, typename T = void>
+   struct EnableIfCond {
+      typedef T Type;
+   };
+   // 当Condition为false时的特化
+   template <typename T>
+   struct EnableIfCond<false, T> {};// 这个false就代表了通用模板中的Condition的具体特化,即具体到false这个值上了
+   // 调用
+   EnableIfCond<false> myCondition; // 这里省略了类型T
+   // 调用时不用显示指定模板参数T,编译器会使用EnableIfCond中typename T = void的默认值，实际上就变成了 EnableIfCond<false, void>
+   ```
+
+
+
+

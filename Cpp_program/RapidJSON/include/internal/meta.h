@@ -32,20 +32,22 @@ RAPIDJSON_DIAG_OFF(6334)
 #endif
 
 //@cond RAPIDJSON_INTERNAL
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 namespace internal {
 
 // Helper to wrap/convert arbitrary types to void, useful for arbitrary type matching
 template <typename T> struct Void { typedef void Type; };
 
-///////////////////////////////////////////////////////////////////////////////
-// BoolType, TrueType, FalseType
-//
+/**
+ * @brief 接受一个bool类型参数cond
+ * 
+ * @tparam Cond 
+ */
 template <bool Cond> struct BoolType {
-    static const bool Value = Cond;
+    static const bool Value = Cond;// 模仿std::is_integral中的::value
     typedef BoolType Type;
 };
-typedef BoolType<true> TrueType;
+typedef BoolType<true> TrueType;// BoolType<true>是一个Value=true的结构体类型,其实就是表示的一个true的bool类型
 typedef BoolType<false> FalseType;
 
 
@@ -129,11 +131,15 @@ template <typename B, typename D> struct IsBaseOf
 #endif // RAPIDJSON_HAS_CXX11_TYPETRAITS
 
 
-//////////////////////////////////////////////////////////////////////////
-// EnableIf / DisableIf
-//
-template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };
-template <typename T> struct EnableIfCond<false, T> { /* empty */ };
+/**
+ * @brief 模板特化  完全特化 
+ * 下面代码实现了std::is_integral的类似功能 只是这里是用于判断allocators.h中的kRefCounted是否为true,若是则可以引用计数
+ * 
+ * @tparam Condition 
+ * @tparam T 
+ */
+template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };// 这是一个通用模板,接受一个布尔条件Condition和一个类型T.如果Condition为true,则EnableIfCond<true, T>会提供一个名为Type的类型,该类型是T
+template <typename T> struct EnableIfCond<false, T> { /* empty */ };//这里的特化模板没有直接使用SFINAE机制  完全特化:当Condition为false时,不提供Type成员,即啥也不做
 
 template <bool Condition, typename T = void> struct DisableIfCond { typedef T Type; };
 template <typename T> struct DisableIfCond<true, T> { /* empty */ };
@@ -172,7 +178,7 @@ template <typename T> struct RemoveSfinaeTag<SfinaeTag&(*)(T)> { typedef T Type;
          RAPIDJSON_REMOVEFPTR_(returntype)>::Type
 
 } // namespace internal
-RAPIDJSON_NAMESPACE_END
+}
 //@endcond
 
 #if defined(_MSC_VER) && !defined(__clang__)

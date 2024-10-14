@@ -1,6 +1,7 @@
 #ifndef RAPIDJSON_ALLOCATORS_H
 #define RAPIDJSON_ALLOCATORS_H
 
+
 #include "rapidjson.h"
 #include "internal/meta.h"
 #include <memory>// STL
@@ -357,5 +358,212 @@ namespace RAPIDJSON{
         BaseAllocator* baseAllocator_;// 用于分配内存块的基础分配器,为空就是使用默认的BaseAllocator->CrtAllocator
         SharedData *shared_;// 指向共享的SharedData,包含内存块的链表头等信息
     };
+    namespace internal{
+        template<typename, typename = void>
+        struct IsRefCounted : public FalseType// 通用模板   IsRefCounted默认继承自FalseType,表示类型T不支持引用计数
+        { };
+        template<typename T>
+        struct IsRefCounted<T, typename internal::EnableIfCond<T::kRefCounted>::Type> : public TrueType//部分特化模板 这段代码通过模板特化和SFINAE机制
+        { };
+    }
+    // 下面的Realloc Malloc Free是为了在直接指定内存分配器时提供统一的内存分配、重新分配和释放的接口,而不是作为类的方法出现   A& a是指定的基础分配器的实例,如A=MeoryAllocator
+    template<typename T, typename A>
+    inline T* Realloc(A& a, T* old_p, size_t old_n, size_t new_n)
+    {
+        RAPIDJSON_NOEXCEPT_ASSERT(old_n <= (std::numeric_limits<size_t>::max)() / sizeof(T) && new_n <= (std::numeric_limits<size_t>::max)() / sizeof(T));
+        return static_cast<T*>(a.Realloc(old_p, old_n * sizeof(T), new_n * sizeof(T)));
+    }
+    template<typename T, typename A>
+    inline T *Malloc(A& a, size_t n = 1)
+    {
+        return Realloc<T, A>(a, NULL, 0, n);// old_n=0->malloc
+    }
+    template<typename T, typename A>
+    inline void Free(A& a, T *p, size_t n = 1)
+    {
+        static_cast<void>(Realloc<T, A>(a, p, n, 0));// new_n=0->free
+    }
+    // 自定义一个内存分配器 继承自std::allocator<T> 它通过组合一个基础分配器 BaseAllocator(默认为CrtAllocator),实现了灵活且高效的内存管理机制
+    template <typename T, typename BaseAllocator = CrtAllocator>// T:内存分配所管理的对象类型
+    class StdAllocator : public std::allocator<T>// StdAllocator继承自std::allocator<T>,这使得它可以无缝地与STL容器配合使用
+    {
+        typedef std::allocator<T> allocator_type;
+        #if RAPIDJSON_HAS_CXX11
+            typedef std::allocator_traits<allocator_type> traits_type;// 这是C++11引入的特性,用于提供对分配器的通用接口  std::allocator<T>作为这个工具类的底层内存分配器
+        #else
+            typedef allocator_type traits_type;
+        #endif
+    public:
+        typedef BaseAllocator BaseAllocatorType;
+        StdAllocator() RAPIDJSON_NOEXCEPT :// 默认构造函数
+            allocator_type(),// 调用std::allocator<T>默认构造函数
+            baseAllocator_()
+        { }
+        StdAllocator(const StdAllocator& rhs) RAPIDJSON_NOEXCEPT :// 拷贝构造函数
+            allocator_type(rhs),
+            baseAllocator_(rhs.baseAllocator_)
+        { }
+        template<typename U>
+        StdAllocator(const StdAllocator<U, BaseAllocator>& rhs) RAPIDJSON_NOEXCEPT :// 模板拷贝构造函数,允许从不同类型的拷贝
+            allocator_type(rhs),
+            baseAllocator_(rhs.baseAllocator_)
+        { }
+        #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+            StdAllocator(StdAllocator&& rhs) RAPIDJSON_NOEXCEPT :// 移动构造函数
+                allocator_type(std::move(rhs)),
+                baseAllocator_(std::move(rhs.baseAllocator_))
+            { }
+        #endif
+        #if RAPIDJSON_HAS_CXX11
+            // ??? 下面两个类型特性指示分配器在容器移动赋值和交换时是否需要传播其状态,std::true_type表示需要传播
+            using propagate_on_container_move_assignment = std::true_type;
+            using propagate_on_container_swap = std::true_type;
+        #endif
+        StdAllocator(const BaseAllocator& baseAllocator) RAPIDJSON_NOEXCEPT :// 允许使用BaseAllocator实例来构造StdAllocator,即可以自定义基础分配器
+            allocator_type(),
+            baseAllocator_(baseAllocator)
+        { }
+        ~StdAllocator() RAPIDJSON_NOEXCEPT
+        { }
+        template<typename U>
+        struct rebind {// 允许分配器重新绑定到不同类型
+            typedef StdAllocator<U, BaseAllocator> other;
+        };
+        // std::allocator_traits的常用成员
+        typedef typename traits_type::size_type         size_type;// 分配器的大小类型
+        typedef typename traits_type::difference_type   difference_type;// 指针差类型
+        typedef typename traits_type::value_type        value_type;// 分配器管理的对象类型
+        typedef typename traits_type::pointer           pointer;// 对象的指针类型
+        typedef typename traits_type::const_pointer     const_pointer;// 对象的引用类型
+        #if RAPIDJSON_HAS_CXX11
+        typedef typename std::add_lvalue_reference<value_type>::type &reference;
+        typedef typename std::add_lvalue_reference<typename std::add_const<value_type>::type>::type &const_reference;
+        pointer address(reference r) const RAPIDJSON_NOEXCEPT// 获取对象的地址
+        {
+            return std::addressof(r);
+        }
+        const_pointer address(const_reference r) const RAPIDJSON_NOEXCEPT
+        {
+            return std::addressof(r);
+        }
+        // 返回分配器能够分配的最大对象数量 通过traits_type的max_size来计算
+        size_type max_size() const RAPIDJSON_NOEXCEPT
+        {
+            return traits_type::max_size(*this);
+        }
+        // 在分配好的内存空间p上构造对象,使用传入的参数args
+        template <typename ...Args>
+        void construct(pointer p, Args&&... args)
+        {
+            traits_type::construct(*this, p, std::forward<Args>(args)...);
+        }
+        // 调用对象p的析构函数,销毁对象
+        void destroy(pointer p)
+        {
+            traits_type::destroy(*this, p);
+        }
+        #endif
+        // 使用BaseAllocator的Malloc方法为类型U分配n个对象的内存  而不是使用traits_type::allocate  traits_type::deallocate  
+        template <typename U>
+        U* allocate(size_type n = 1, const void* = 0)
+        {
+            return RAPIDJSON::Malloc<U>(baseAllocator_, n);
+        }
+        // 使用BaseAllocator的Free方法释放类型U的n个对象的内存
+        template <typename U>
+        void deallocate(U* p, size_type n = 1)
+        {
+            RAPIDJSON::Free<U>(baseAllocator_, p, n);
+        }
+        // 为当前类型T分配内存,等效于前面的allocate<value_type>(n)
+        pointer allocate(size_type n = 1, const void* = 0)
+        {
+            return allocate<value_type>(n);
+        }
+        // 等效前面的deallocate<value_type>(n)
+        void deallocate(pointer p, size_type n = 1)
+        {
+            deallocate<value_type>(p, n);
+        }
+        #if RAPIDJSON_HAS_CXX11
+            using is_always_equal = std::is_empty<BaseAllocator>;// 指示分配是否总是相等. BaseAllocator是空类(即不包含任何成员变量),则StdAllocator的所有实例总是相等
+        #endif
+        // 根据判断BaseAllocator是否相等来判断StdAllocator实例是否相等
+        template<typename U>
+        bool operator==(const StdAllocator<U, BaseAllocator>& rhs) const RAPIDJSON_NOEXCEPT
+        {
+            return baseAllocator_ == rhs.baseAllocator_;
+        }
+        template<typename U>
+        bool operator!=(const StdAllocator<U, BaseAllocator>& rhs) const RAPIDJSON_NOEXCEPT
+        {
+            return !operator==(rhs);
+        }
+        static const bool kNeedFree = BaseAllocator::kNeedFree;// 指示分配器是否需要调用Free方法释放内存
+        static const bool kRefCounted = internal::IsRefCounted<BaseAllocator>::Value;// 指示分配器是否支持引用计数  这个Value是IsRefCounted的父类BoolType中的value,这一点就是模仿std::is_integral中的::value
+        // 定义StdAllocator中的Malloc Realloc Free
+        void* Malloc(size_t size)
+        {
+            return baseAllocator_.Malloc(size);
+        }
+        void* Realloc(void* originalPtr, size_t originalSize, size_t newSize)
+        {
+            return baseAllocator_.Realloc(originalPtr, originalSize, newSize);
+        }
+        static void Free(void *ptr) RAPIDJSON_NOEXCEPT
+        {
+            BaseAllocator::Free(ptr);
+        }
+        private:
+            template <typename, typename>
+            friend class StdAllocator; // 友元.允许不同类型参数的StdAllocator实例访问当前实例的私有成员
+            BaseAllocator baseAllocator_;// 基础分配器
+    };
+    // 由于在C++17之前std::allocator<void>是合法的(尽管void不能直接分配内存),但这里为了保持某些项目中可能使用了这个旧标准,所以定义了一个支持std::allocator<void>的StdAllocator
+    #if !RAPIDJSON_HAS_CXX17
+    template <typename BaseAllocator>
+    class StdAllocator<void, BaseAllocator> : public std::allocator<void>
+    {
+        typedef std::allocator<void> allocator_type;
+
+    public:
+        typedef BaseAllocator BaseAllocatorType;
+        StdAllocator() RAPIDJSON_NOEXCEPT :
+            allocator_type(),
+            baseAllocator_()
+        { }
+        StdAllocator(const StdAllocator& rhs) RAPIDJSON_NOEXCEPT :
+            allocator_type(rhs),
+            baseAllocator_(rhs.baseAllocator_)
+        { }
+        template<typename U>
+        StdAllocator(const StdAllocator<U, BaseAllocator>& rhs) RAPIDJSON_NOEXCEPT :
+            allocator_type(rhs),
+            baseAllocator_(rhs.baseAllocator_)
+        { }
+        StdAllocator(const BaseAllocator& baseAllocator) RAPIDJSON_NOEXCEPT :
+            allocator_type(),
+            baseAllocator_(baseAllocator)
+        { }
+        ~StdAllocator() RAPIDJSON_NOEXCEPT
+        { }
+        // 为什么这个StdAllocator用于void类型也要定义rebind?
+        // STL容器和算法期望所有分配器都实现rebind,以便可以灵活地为不同类型分配内存.这是C++分配器接口的一部分,即使是特化为void类型的分配器,也必须遵循这一接口要求
+        // 在很多实际场景中,虽然分配器可能一开始被定义为void类型,但在运行时,我们需要为具体类型的对象(如 int 或 double)分配内存.通过rebind, StdAllocator<void, BaseAllocator>可以动态生成适用于其他类型的分配器
+        template<typename U>
+        struct rebind {//  
+            typedef StdAllocator<U, BaseAllocator> other;
+        };
+        typedef typename allocator_type::value_type value_type;
+    private:
+        template <typename, typename>
+        friend class StdAllocator;
+        BaseAllocator baseAllocator_;
+    };
+    #endif
 }
+
+
+
+
 #endif

@@ -1331,7 +1331,7 @@ void Swap(AnyType &a, AnyType &b);
       return 0;
    }
    ```
-5. <mark>对于函数模板,调用时可以省略尖括号`<>`,编译器会根据传入的参数类型推断模板参数的类型;然而在类模板中,由于类型推断可能会更加复杂,因此在实例化类模板时,通常需要显式指定尖括号`<>`并提供模板参数类型:</mark>
+5. <mark>对于函数模板,调用时可以省略尖括号`<>`,编译器会根据传入的参数类型推断模板参数的类型;然而在类(结构体)模板中,由于类型推断可能会更加复杂,因此在实例化类模板时,通常需要显式指定尖括号`<>`并提供模板参数类型:</mark>
    ```C++
    1. 函数模板,调用时不需要尖括号(与类模板不一样)
    template<typename T>
@@ -1603,7 +1603,7 @@ void Swap(AnyType &a, AnyType &b);
             return 0;
         }
     ```
-
+19. <mark>`C++`中类的成员默认是`private`,结构体默认是`public`</mark>
 # 类模板
 1. 
 ```C++
@@ -1656,6 +1656,103 @@ int main() {
     return 0;
 }
 ```
+# 模板特化
+1. 模板特化是`C++`中模板的一个强大功能,允许为特定类型或特定参数值定制模板的实现(如:当前模板对于类型为`int`时它会特殊实现,而不都是通用实现).通过模板特化,开发者可以在处理某些特定类型或参数时提供特殊的实现,而其他情况下则使用通用模板.模板特化分为两类:完全特化和部分特化
+2. 完全特化是指为模板的特定类型提供完全独立的实现.当一个模板被完全特化后,只有当模板参数完全匹配特化类型时,才会使用这个特化版本:
+   ```C++
+   1. 未使用SFINAE机制
+   template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };// 这是一个通用模板,接受一个布尔条件Condition和一个类型T.如果Condition为true,则EnableIfCond<true, T>会提供一个名为Type的类型c成员,该类型是T
+   template <typename T> struct EnableIfCond<false, T> {};// 完全特化:当Condition为false时,不提供Type成员变量,即啥也不做
+   2. 未使用SFINAE机制
+    // 通用模板
+    template <typename T>
+    class MyClass {
+    public:
+        void display() {
+            std::cout << "Generic template" << std::endl;
+        }
+    };
+    // 完全特化：为int类型提供特殊实现
+    template <>
+    class MyClass<int> {// 模板特化需要使用尖括号指定通用模板参数  未使用SFINAE机制
+    public:
+        void display() {
+            std::cout << "Specialized template for int" << std::endl;
+        }
+    };
+    int main() {
+        MyClass<double> obj1;  // 使用通用模板
+        obj1.display();        // 输出：Generic template
+
+        MyClass<int> obj2;     // 使用特化的模板
+        obj2.display();        // 输出：Specialized template for int
+
+        return 0;
+    }
+    ```
+3. 部分特化:
+    ```C++
+    1.
+    template<typename, typename = void>
+    struct IsRefCounted : public FalseType// 通用模板   IsRefCounted默认继承自FalseType,表示类型T不支持引用计数
+    { };
+    template<typename T>
+    struct IsRefCounted<T, typename internal::EnableIfCond<T::kRefCounted>::Type> : public TrueType//部分特化模板 使用了SFINAE机制
+    { };
+    2.
+    // 通用模板,接受两个类型参数
+    template <typename T1, typename T2>
+    class MyClass {
+    public:
+        void display() {
+            std::cout << "Generic template" << std::endl;
+        }
+    };
+    // 部分特化：当两个参数都是相同类型时
+    template <typename T>
+    class MyClass<T, T> {// 未使用SFINAE机制
+    public:
+        void display() {
+            std::cout << "Partially specialized template for same types" << std::endl;
+        }
+    };
+    int main() {
+        MyClass<int, double> obj1;   // 使用通用模板
+        obj1.display();              // 输出：Generic template
+        MyClass<int, int> obj2;      // 使用部分特化的模板
+        obj2.display();              // 输出：Partially specialized template for same types
+        return 0;
+    }
+    // MyClass<T, T> 是对 MyClass<T1, T2> 的部分特化,适用于两个参数是相同类型的情况.如果参数类型不同,则使用通用模板
+    ```
+4. <mark>模板特化通常和`SFINAE`机制相联系(但不是所有的模板特化都与`SFINAE`相关).`SFINAE`允许在模板参数替换失败时,不会导致编译错误,而是让编译器忽略该特定的模板实例化(即模板特化版本),而去查找其它符合条件的版本(如:通用模板版本).注意:`SFINAE`机制是在模板参数替换过程中自动会被触发的,不用加外部声明什么的</mark>(这是一个编译期机制,在编译器试图根据提供的模板参数进行模板实例化时自动进行.其核心原理是在模板参数替换阶段,如果编译器发现某个模板实例化时因不合法的表达式、类型推导或不匹配的模板参数导致替换失败,则会触发 `SFINAE`)
+5. <mark>`SFINAE`是根据类型或表达式条件选择模板的技术,而对于直接指定的一个具体参数(完全特化),如:`int`等,这种是没有`SFINAE`机制的.`SFINAE`机制通常和类似`std::enable_if<std::is_integral<T>::value>::type`这种表达式相结合,这样才可以在编译器实现推导</mark>:
+    ```C++
+    template <typename T>
+    typename std::enable_if<std::is_integral<T>::value>::type
+    process(T value) {
+        std::cout << "Integral template: " << value << std::endl;
+    }
+    // typename std::enable_if<std::is_integral<T>::value>::type::如果T是整数类型,那么std::is_integral<T>::value=true,此时process的返回类型为type,从通用模板可以看出,type不指定的话就是void  如果不想void,就要传入类似typename std::enable_if<std::is_integral<T>::value, int>::type
+    ```
+6. <mark>上面的`::value`:在`C++`中,`::value`通常用于访问模板元编程中的类型或静态成员,特别是在使用`std::is_integral、std::is_floating_point`等类型特征类时.在标准库中的`std::is_integral`和其他类似的类型特征类中,`::value`是一个静态成员,它的类型是`bool`.它用于表示特定类型的特征,即:</mark>
+    ```C++
+    #include <type_traits>
+    std::is_integral<int>::value // 返回 true  int是整型,则其value=true
+    std::is_integral<double>::value // 返回 false
+    ```
+7. <mark>尖括号(<>)在模板特化和模板(结构体、类)实例化,尖括号用于指定模板参数的类型,尖括号中的参数与通用模板的参数对应:</mark>
+   ```C++
+   1. 模板特化:在模板特化时,尖括号用于指定特化的具体参数,即使特化的某些参数是常量,尖括号依然是必然的
+   template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };// 通用模板
+   template <typename T> struct EnableIfCond<false, T> {};// <false, T>就是指定通用模板中的具体参数  未使用SFINAE机制
+   2. 模板实例化:在使用模板时,尖括号用于实例化模板,并传入具体的类型或值
+   template <typename T>
+   struct MyTemplate {};// 通用模板
+   MyTemplate<int> instance; // <int>就是指定实例化MyTemplate通用模板的具体参数T
+   ```
+   <mark>由此可以看出,模板特化可以理解为模板实例化的一种情况</mark>
+8. 虽然模板特化可以看作模板实例化的一种,但是还是需要指定如:`template <typename T>`这种声明,因为特化模板本质还是一种泛化模板,需要在前面加上模板参数的声明
 # 类继承
 1. 从一个类派生出另一个类时,原始类称为基类,继承类称为派生类   
 2. 使用公有派生`public`,基类的`public`成员将称为派生类的`public`成员;基类的`private`成员也将称为派生类的一部分,但只能通过基类的公有和保护方法访问
@@ -1695,9 +1792,9 @@ int main() {
 4. 编译器对非虚方法使用静态链表联编,对虚方法使用动态联编
 5. <mark>为什么需要动态联编?=>在大多数情况下,动态联编很好,因为它让程序能够选择为特定类型设计的方法,实现灵活和可扩展的设计</mark>
 6. 动态联编需要一些额外的处理开销,而静态联编的效率更高.因此,仅在程序设计中确实需要虚函数时,编译器才使用动态联编的方法,而默认是静态联编
-6. <mark>虚函数工作原理:通常,编译器处理虚函数的方法是:给每个对象添加一个隐藏成员.隐藏成员中保存了一个指向函数地址数组的指针.这种数组称为虚函数表.虚函数表中存储了为类对象进行声明的虚函数的地址.例如,基类对象包含一个指针,该指针指向基类中所有虚函数的地址表.派生类对象将包含一个指向独立地址表的指针.如果派生类提供了虚函数的新定义,该虚函数表将保存新函数的地址;如果派生类没有重新定义虚函数,该虚函数表将保存函数原始版本的地址.如果派生类定义了新的虚函数,则该函数的地址也将被添加到虚函数表中.注意,无论类中包含的虚函数是1个还是10个,都只需要在对象中添加1个地址成员(指向这个虚函数表),只是表的大小不同而已</mark>:
+7. <mark>虚函数工作原理:通常,编译器处理虚函数的方法是:给每个对象添加一个隐藏成员.隐藏成员中保存了一个指向函数地址数组的指针.这种数组称为虚函数表.虚函数表中存储了为类对象进行声明的虚函数的地址.例如,基类对象包含一个指针,该指针指向基类中所有虚函数的地址表.派生类对象将包含一个指向独立地址表的指针.如果派生类提供了虚函数的新定义,该虚函数表将保存新函数的地址;如果派生类没有重新定义虚函数,该虚函数表将保存函数原始版本的地址.如果派生类定义了新的虚函数,则该函数的地址也将被添加到虚函数表中.注意,无论类中包含的虚函数是1个还是10个,都只需要在对象中添加1个地址成员(指向这个虚函数表),只是表的大小不同而已</mark>:
    ![](leetcode图像集/虚函数工作原理.png)
-7. 从上图可知,如果派生类重载了基类的虚函数,派生类会有自己的虚函数表,表中包含派生类重载的虚函数的地址(派生类中对于基类虚函数的实现的这个函数本质还是一个虚函数,还是会在虚函数表中);如果派生类没有重载某个基类的虚函数,派生类的虚函数表中对应的条目会指向基类的虚函数实现
+8. 从上图可知,如果派生类重载了基类的虚函数,派生类会有自己的虚函数表,表中包含派生类重载的虚函数的地址(派生类中对于基类虚函数的实现的这个函数本质还是一个虚函数,还是会在虚函数表中);如果派生类没有重载某个基类的虚函数,派生类的虚函数表中对应的条目会指向基类的虚函数实现
 # 虚函数
 1. 虚函数是`C++`实现多态性的一种机制,通过使用虚函数,可以在派生类中重新定义基类中的函数
 2. 虚函数定义使用`virtual`关键字
@@ -2182,8 +2279,6 @@ int main() {
     ```
 # 友元(friend)
 1. 友元类允许另一个类访问它的私有(`private`)和保护(`protected`)成员
-
-
 # static
 1. <mark>`static`关键字只在类的声明(通常是头文件)中使用,用于指示某个成员是静态的(属于类,而不是实例).在实现文件中,编译器根据头文件中的声明,已经知道哪个成员是静态的,因此不需要再次声明:</mark>
    ```C++
@@ -2241,7 +2336,7 @@ int main() {
     // 必须在类的外部初始化静态数据成员
     int MyClass::a = 20; // 正确：在类外部初始化非 `const` 静态数据成员
     const int MyClass::b; // 正确：类外部也需要定义 `const` 静态成员，但不需要再次赋值
-    2. 
+    1. 
     //C++17 引入了内联变量（inline variable）,它的静态成员也可以在类中直接初始化
     class MyClass {
     public:

@@ -113,8 +113,23 @@
     * `MemoryPoolAllocator::Malloc() MemoryPoolAllocator::Realloc()`:它的主要优势是性能优化,特别是在需要频繁分配和释放小内存时.这种方式避免了频繁调用系统分配器的高开销,提高了效率
 25. <mark>为什么要定义`StdAllocator`类:`StdAllocator`继承自标准库的`std::allocator<T>`?</mark>
     其主要设计目的是让`RapidJSON`的分配器能与标准库容器(如`std::vector` `std::map`等)一起使用.标准库的许多容器支持自定义分配器,而默认情况下使用的是`std::allocator`.`CrtAlocator MemoryPoolAllocator`虽然提供了内存分配功能,但它们并不遵循标准库分配器的接口规范(即`allocate deallocate construct destroy`等接口),而`StdAllocator`提供了一个符合标准接口的分配器
-26. `StdAllocator`自定义的标准内存分配器可以使用`std::allocator CrtAllocator`作为基础分配器(`template <typename T, typename BaseAllocator = std::allocator<T>>``template <typename T, typename BaseAllocator = CrtAllocator>`),`std::allocator`是标准库容器默认的内存分配器(标准库的许多容器支持自定义分配器,而默认情况下使用的是`std::allocator`.`StdAllocator`是为了解决在使用这些容器时能够无缝地与`RapidJSON`的分配器系统结合起来.虽然内存块和内存池分配器可以高效地分配内存,但它们并不直接与`STL`容器兼容)  `StdAllocator`不能以`MemoryPoolAllocator`为底层内存分配器
-27. `StdAllocator`通过使用`rebind()`用于将当前内存分配器直接绑定到不同类型的容器上,而不需要每一种类型的容器都去定义一个内存分配器,如:
+26. `StdAllocator`自定义的标准内存分配器可以直接使用`std::allocator CrtAllocator`作为基础分配器(`template <typename T, typename BaseAllocator = std::allocator<T>>``template <typename T, typename BaseAllocator = CrtAllocator>`),`std::allocator`是标准库容器默认的内存分配器(标准库的许多容器支持自定义分配器,而默认情况下使用的是`std::allocator`.`StdAllocator`是为了解决在使用这些容器时能够无缝地与`RapidJSON`的分配器系统结合起来.虽然内存块和内存池分配器可以高效地分配内存,但它们并不直接与`STL`容器兼容)  
+27. <span style="color:red;">需要注意的是:`StdAllocator`能以`MemoryPoolAllocator`为底层内存分配器,但是前提是必须先给`MemoryPoolAllocator`实例化一个底层分配器后才能将`MemoryPoolAllocator`作为`StdAllocator`的内存分配器:</span>
+   ```C++
+   1. 不能直接将MemoryPoolAllocator作为底层内存分配器  依赖关系的循环问题
+   StdAllocator<int, MemoryPoolAllocator<CrtAllocator>> allocator;
+   // 定义一个使用 StdAllocator 的 vector
+   std::vector<int, StdAllocator<int, MemoryPoolAllocator<CrtAllocator>>> vec(allocator);
+   // 报错:error: type/value mismatch at argument 2 in template parameter list for ‘template<class T, class BaseAllocator> class rapidjson::StdAllocator’8 |     StdAllocator<int, MemoryPoolAllocator> allocator;     =>编译器期望StdAllocator的第二个模板参数是一个可以直接使用的分配器,比如 CrtAllocator.但当你传递MemoryPoolAllocator时,编译器遇到了类型和值的不匹配,因为MemoryPoolAllocator需要先被实例化(带有底层的BaseAllocator参数)才能作为其他分配器的底层分配器
+   // 为什么不能直接将MemoryPoolAllocator作为底层内存分配器?
+   因为MemoryPoolAllocator并不是一个独立的分配器,它需要一个底层的BaseAllocator来处理内存分配(比如CrtAllocator或其他简单分配器).这意味着如果你尝试直接将 MemoryPoolAllocator作为StdAllocator的底层分配器,它就会引发依赖关系的循环问题
+   2. 提前确保为MemoryPoolAllocator提供了一个适当的底层分配器,而不是直接使用默认值
+   MemoryPoolAllocator<CrtAllocator> poolAllocator;
+   StdAllocator<int, MemoryPoolAllocator<CrtAllocator>> allocator;
+   // 定义一个使用 StdAllocator 的 vector
+   std::vector<int, StdAllocator<int, MemoryPoolAllocator<CrtAllocator>>> vec(allocator);
+   ```
+28.  `StdAllocator`通过使用`rebind()`用于将当前内存分配器直接绑定到不同类型的容器上,而不需要每一种类型的容器都去定义一个内存分配器,如:
    ```C++
    #include <iostream>
    #include <memory> // for std::allocator
@@ -136,7 +151,7 @@
       return 0;
    }
    ```
-28. `std::allocator`:它是`C++`标准库中提供的一个默认的内存分配器,主要用于管理动态内存分配.它为标准容器提供了内存分配和释放的机制,它是一个通用的分配器类,可以为任何类型分配内存.`std::allocator`不是只能用于容器的内存分配,它是`C++`标准库中的一种通用内存分配器,用作处理动态内存分配和对象的构造与销毁,可以想作类似`new delete<=>allocate deallocate`来动态分配内存.其模板为:
+29.  <mark>`std::allocator`:它是`C++`标准库中提供的一个默认的内存分配器,主要用于管理动态内存分配.它为标准容器提供了内存分配和释放的机制,它是一个通用的分配器类,可以为任何类型分配内存.通常,`C++`容器类(如`std::vector`,`std::list`等)都使用分配器来管理底层内存.`std::allocator`不是只能用于容器的内存分配,它是`C++`标准库中的一种通用内存分配器,用作处理动态内存分配和对象的构造与销毁,可以想作类似`new delete<=>allocate deallocate`来动态分配内存.</mark>其模板为:
    ```C++
    template <typename T>
    class allocator {
@@ -191,16 +206,16 @@
     return 0;
    }
    ```
-29. <mark>`std::allocator_traits`:这是`C++11`引入的一个模板工具类,用于提取分配器类型的相关特性.它为不同的分配器提供了一个统一的接口,封装了各种复杂的底层内存分配器的操作,即它是底层内存分配器的上层抽象层.`std::allocator_traits`不仅支持 `std::allocator`,还支持用户定义的分配器.无论你使用什么样的分配器,`std::allocator_traits`都能统一调用这些分配器的成员函数,而不需要为每个分配器单独实现.假设你实现了一个自定义分配器,`allocator_traits`可以无缝地处理它(只需要将自定义内存分配器传入这个工具类即可),而不需要更改容器或分配相关代码.需要注意的是:`std::allocator_traits`只是用于操作和抽象分配器的接口,而不是实际的分配器实现,也不负责具体的内存分配(底层的内存分配器本身才负责分配和释放内存的操作).即如:调用`std::allocator_traits`的`construct()`函数时,它会检查传入的底层分配器是否有相应的成员函数,如果有,就会去调用内存分配器的相应函数;如果没有就会编译报错.因此`std::allocator_traits`只是提供一个抽象统一的接口,不做具体的处理:</mark>
+30.  <mark>`std::allocator_traits`:这是`C++11`引入的一个模板工具类,用于提取分配器类型的相关特性.它为不同的分配器提供了一个统一的接口,封装了各种复杂的底层内存分配器的操作,即它是底层内存分配器的上层抽象层.`std::allocator_traits`不仅支持 `std::allocator`,还支持用户定义的分配器.无论你使用什么样的分配器,`std::allocator_traits`都能统一调用这些分配器的成员函数,而不需要为每个分配器单独实现.假设你实现了一个自定义分配器,`allocator_traits`可以无缝地处理它(只需要将自定义内存分配器传入这个工具类即可),而不需要更改容器或分配相关代码.需要注意的是:`std::allocator_traits`只是用于操作和抽象分配器的接口,而不是实际的分配器实现,也不负责具体的内存分配(底层的内存分配器本身才负责分配和释放内存的操作).即如:调用`std::allocator_traits`的`construct()`函数时,它会检查传入的底层分配器是否有相应的成员函数,如果有,就会去调用内存分配器的相应函数;如果没有就会编译报错.因此`std::allocator_traits`只是提供一个抽象统一的接口,不做具体的处理:</mark>
     ![](markdown图像集/2024-10-13-19-08-57.png)
-30. `StdAllocator`中利用了`std::allocator_traits<std::allocator<T>>`这个抽象的统一接口层来定义和标准库兼容的内存分配器.其中给这个工具类`std::allocator_traits`传入的内存分配器是`std::allocator<T>`(`typedef std::allocator_traits<std::allocator<T>> traits_type`),即在`StdAllocator`中定义`construct() destroy() max_size()`函数其实是调用的`std::allocator<T>`这个内存分配器的相应函数
-31. `StdAllocator::allocate()`和`StdAllocator::deallocate()`函数没有直接使用`std::allocator_traits`工具类的接口,而是调用的基础内存分配器的`Malloc()`和`Free()`函数来实现
-32. 为什么要定义`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`?
+31.  `StdAllocator`中利用了`std::allocator_traits<std::allocator<T>>`这个抽象的统一接口层来定义和标准库兼容的内存分配器.其中给这个工具类`std::allocator_traits`传入的内存分配器是`std::allocator<T>`(`typedef std::allocator_traits<std::allocator<T>> traits_type`),即在`StdAllocator`中定义`construct() destroy() max_size()`函数其实是调用的`std::allocator<T>`这个内存分配器的相应函数
+32. `StdAllocator::allocate()`和`StdAllocator::deallocate()`函数没有直接使用`std::allocator_traits`工具类的接口,而是调用的基础内存分配器的`Malloc()`和`Free()`函数来实现
+33. 为什么要定义`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`?
     在`C++11`及更早的标准中,`std::allocator<void>`是合法的(那么就可能有很多外部调用`RapidJSON`的项目就支持了`std::allocator<void>`),并用于支持泛型编程中的某些特性(尽管`void`不能直接分配内存).为了保持与这些旧标准的兼容性,`RapidJSON`提供了一个特化的`StdAllocator<void, BaseAllocator>`.然而,在`C++17`中,`std::allocator<void>`被弃用和移除,因为`void`作为分配器类型没有实际意义.因此,使用条件编译来确保只有在不支持`C++17`时,才定义`StdAllocator<void, BaseAllocator>`,以避免在`C++17`环境中产生编译错误
-33. <mark>为什么`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`中用于`void`类型也要定义`rebind()`?</mark>
+34. <mark>为什么`class StdAllocator<void, BaseAllocator> : public std::allocator<void>`中用于`void`类型也要定义`rebind()`?</mark>
    `STL`容器和算法期望所有分配器都实现`rebind`,以便可以灵活地为不同类型分配内存.这是`C++`分配器接口的一部分,即使是特化为`void`类型的分配器,也必须遵循这一接口要求.在很多实际场景中,虽然分配器可能一开始被定义为`void`类型,但在运行时,我们需要为具体类型的对象(如`int`或`double`)分配内存.通过`rebind`,`StdAllocator<void, BaseAllocator>`可以动态生成适用于其他类型的分配器
-34. `struct IsRefCounted<T, typename internal::EnableIfCond<T::kRefCounted>::Type> : public TrueType;internal::EnableIfCond<T::kRefCounted>::Type`:这段代码是结构体模板的特化版本,它在某些条件满足时被使用.这里判断条件满足时用了`SFINAE`机制,即:当模板的某个替换导致语法错误时,编译器不会报错,而是会尝试其它的模板匹配(如:通用模板,而非特化模板了).因此,`IsRefCounted<T>`会在类型`T`拥有`kRefCounted`成员且为`true`时进行替换,如果`T`没有`kRefCounted`成员或不为`true`,则这个特化模板会被忽略,编译器会选择默认的通用`IsRefCounted`实现,即`struct IsRefCounted : public FalseType`  `::kRefCounted`类似`std::is_integral`中的`::value`
-35. `template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };template <typename T> struct EnableIfCond<false, T> {};`:虽然对于`template <typename T> struct EnableIfCond<false, T> {};`这个特化模板在调用时不用显示指定参数`T`,因为`C++`的模板参数可以在调用时根据上下文推导.如果某个模板参数有默认值,而其它参数能够被推导出,编译器就可以在不需要显示指定所有模板参数的情况下进行推导,上面这个就是在前面`template <bool Condition, typename T = void>`已经设了默认值了:
+35. `struct IsRefCounted<T, typename internal::EnableIfCond<T::kRefCounted>::Type> : public TrueType;internal::EnableIfCond<T::kRefCounted>::Type`:这段代码是结构体模板的特化版本,它在某些条件满足时被使用.这里判断条件满足时用了`SFINAE`机制,即:当模板的某个替换导致语法错误时,编译器不会报错,而是会尝试其它的模板匹配(如:通用模板,而非特化模板了).因此,`IsRefCounted<T>`会在类型`T`拥有`kRefCounted`成员且为`true`时进行替换,如果`T`没有`kRefCounted`成员或不为`true`,则这个特化模板会被忽略,编译器会选择默认的通用`IsRefCounted`实现,即`struct IsRefCounted : public FalseType`  `::kRefCounted`类似`std::is_integral`中的`::value`
+36. `template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };template <typename T> struct EnableIfCond<false, T> {};`:虽然对于`template <typename T> struct EnableIfCond<false, T> {};`这个特化模板在调用时不用显示指定参数`T`,因为`C++`的模板参数可以在调用时根据上下文推导.如果某个模板参数有默认值,而其它参数能够被推导出,编译器就可以在不需要显示指定所有模板参数的情况下进行推导,上面这个就是在前面`template <bool Condition, typename T = void>`已经设了默认值了:
    ```C++
    template <bool Condition, typename T = void>
    struct EnableIfCond {
@@ -213,6 +228,15 @@
    EnableIfCond<false> myCondition; // 这里省略了类型T
    // 调用时不用显示指定模板参数T,编译器会使用EnableIfCond中typename T = void的默认值，实际上就变成了 EnableIfCond<false, void>
    ```
+37. `using propagate_on_container_move_assignment = std::true_type;using propagate_on_container_swap = std::true_type;`:这是定义在`C++11`标准库中内存分配器工具类(`std::allocator_traits`)中,`propagate_on_container_move_assignment`用于指示当容器A移动赋值到容器B时,是否允许相应的容器A的内存分配器传播到容器B的内存分配器中去(`std::true_type`表示要将容器A的分配器传到容器B中去);同理,`propagsate_on_container_swap`表示的就是当两个容器进行交换操作时,是否允许容器之间的分配器也进行交换(容器交换:指的是交换两个容器的内容,`std::swap()`将使得容器的元素和内部状态(如大小、容量等)相互调换)
+# 内存流 memorybuffer.h/memorystream.h
+1. `memorybuffer.h`中`GenericMemoryBuffer`的作用是提供内存中的输出字节流管理,而我们利用栈这个数据结构来管理内存缓冲区(内存缓冲区可以基于不同的数据结构实现,比如数组、队列或栈.其目的是存储数据,稍后进行读取、处理或传输,`memorybuffer.h`利用栈这种数据结构来实现的当前内存缓冲区)
+2. 栈与内存缓冲区的区别:栈可以被用来管理内存缓冲区,但它并不等同于内存缓冲区.内存缓冲区更侧重于存储数据的具体内存区域,而栈是一种管理这些数据的方式.你可以通过栈来有序地放入和取出数据,但栈的本质是一种数据管理的策略,而非具体的内存块,栈可以理解为实现内存缓冲区的一种方式
+3. `memorybuffer.h`中使用`template`关键字来消除普通成员函数给模板成员函数的调用可能带来的歧义
+4. 其实`memorybuffer.h`创建的内存缓冲区是由对应的`stack_`管理分配创建的,而`stack_`栈本质的内存分配操作又是依赖`allocator`内存分配器的`malloc`操作实现的
+5. `memorystream.h`定义一个内存字节流,用于处理内存中的输入字节流.与文件流(`filereadstream.h`)不同,它操作的是内存缓冲区`memorybuffer`.`MemoryStream.h`用于处理输入字节流,即提供了一系列的接口,如:`Peek()、Take()、Tell()、Peek4()`.而`Put()、Flush()、PutEnd()`是给流提供写入功能的,`MemoryStream.h`是不支持的
+6. `MemoryBuffer`用于管理内存中的输出字节流,即写入流.它能够在内存中分配和管理(`stack_`来管理)数据,支持将字节数据写入到内存缓冲区中
+7. `MemoryStream`是一个只读流,不支持写操作(`MemoryStream`适用于处理那些已经在内存中存在的数据,比如在某些场景下我们需要从内存中读取二进制数据或编码检测)
 
 
 

@@ -239,6 +239,8 @@
         return 0;
     }
     ```
+# 结构体模板
+1. 结构体模板和类模板几乎是一样的
 # 共用体
 1. 共用体是一种数据格式,它能够存储不同的数据类型(这一点类似结构体),但是它<u>只能同时存储其中的一种类型</u>.
 2. 共用体的定义与结构体类似,但是共用体不能像结构体那样利用列表整体赋值,union只能用点号(`.`)对成员单独赋值
@@ -1331,17 +1333,22 @@ void Swap(AnyType &a, AnyType &b);
       return 0;
    }
    ```
-5. <mark>对于函数模板,调用时可以省略尖括号`<>`,编译器会根据传入的参数类型推断模板参数的类型;然而在类(结构体)模板中,由于类型推断可能会更加复杂,因此在实例化类模板时,通常需要显式指定尖括号`<>`并提供模板参数类型:</mark>
+5. <mark>对于函数模板,调用时若模板参数可以被推导,则可以省略尖括号`<>`,编译器会根据传入的参数类型推断模板参数的类型(此时省略或不省略都是可以的);然而在类(结构体)模板中,由于类型推断可能会更加复杂,因此在实例化类模板时,通常需要显式指定尖括号`<>`并提供模板参数类型:</mark>
    ```C++
    1. 函数模板,调用时不需要尖括号(与类模板不一样)
    template<typename T>
-   T max(T a, T b) {
+   T mmax(T a, T b) {
       return (a > b) ? a : b;
    }
    int main() {
-      int result = max(3, 5); // 编译器推断为 max<int>(3, 5)
-      double result2 = max(3.0, 5.0); // 编译器推断为 max<double>(3.0, 5.0)
+      int result = mmax(3, 5); // 编译器推断为 max<int>(3, 5)
+      double result2 = mmax(3.0, 5.0); // 编译器推断为 max<double>(3.0, 5.0)
       return 0;
+   }
+   int main() {
+   int result = mmax<int, int>(3, 5); // 编译器推断为 max<int>(3, 5)
+   double result2 = mmax<double, double>(3.0, 5.0); // 编译器推断为 max<double>(3.0, 5.0)
+   return 0;
    }
    2.
    类模板,调用时需要尖括号
@@ -1363,6 +1370,24 @@ void Swap(AnyType &a, AnyType &b);
    * 由于函数模板在编译器被解析和实例化,因此可以实现静态多态性.相比于运行时多态性,模板实例化能在编译器就确定具体类型,避免了运行时的性能开销
    * 模板实例化在编译器中进行类型检查,这意味着编译器会在编译阶段检查模板函数的类型错误,而不是运行时
    * 模板的每个实例化都会生成一个新的函数版本,这可能会导致代码膨胀(即生成了大量不同类型的函数代码)
+7. 函数模板特化:
+    ```C++
+    template <typename T>
+    void process(T value) {
+        std::cout << value << std::endl;
+    }
+
+    // 函数模板特化也是要用尖括号的,理解为一种通用模板实例化的特殊情况
+    template <>
+    void process<int>(int value) {
+        std::cout <<  123 << value << std::endl;
+    }
+    int main() {
+    process(2.0);// <=>process<double>(2.0)
+    process<int>(8);
+    return 0;
+    }
+    ```
 # 类
 1. `C++`中,<mark>类的成员变量可以在类的构造函数中初始化,也可以使用成员初始化列表来初始化(冒号实现初始化列表)</mark>:
    ```C++
@@ -1605,60 +1630,92 @@ void Swap(AnyType &a, AnyType &b);
     ```
 19. <mark>`C++`中类的成员默认是`private`,结构体默认是`public`</mark>
 # 类模板
-1. 
-```C++
-类模板,调用时需要尖括号
-template<typename T>
-class MyClass {
-public:
-  T value;
-  MyClass(T val) : value(val) {}
-};
+1. 类模板和结构体模板在实例化时不能像函数模板那样利用参数推导来省略尖括号 `<>`
+    ```C++
+    类模板,调用时需要尖括号
+    template<typename T>
+    class MyClass {
+    public:
+    T value;
+    MyClass(T val) : value(val) {}
+    };
 
-int main() {
-  MyClass<int> obj1(5); // 显式指定类型
-  MyClass<double> obj2(3.14); // 显式指定类型
-  // MyClass obj1(5); // 错误，需要显式指定类型
-  return 0;
-}
-```
-2. 
-```C++
-// 定义一个模板类 Box
-template <typename T>
-class Box {
-private:
-    T length; // 长度
-    T width;  // 宽度
-    T height; // 高度
-public:
-    // 构造函数
-    Box(T l, T w, T h) : length(l), width(w), height(h) {}
-    // 成员函数：计算体积
-    T getVolume() {
-        return length * width * height;
-    }
-    // 成员函数：显示尺寸
-    void displayDimensions() {
-        cout << "Length: " << length << ", Width: " << width << ", Height: " << height << endl;
-    }
-};
-int main() {
-    // 创建不同类型的Box对象
-    Box<int> intBox(3, 4, 5);
-    Box<double> doubleBox(3.5, 4.5, 5.5);
-    // 输出整数类型Box的体积和尺寸
-    cout << "Integer Box Volume: " << intBox.getVolume() << endl;
-    intBox.displayDimensions();
-    // 输出浮点数类型Box的体积和尺寸
-    cout << "Double Box Volume: " << doubleBox.getVolume() << endl;
-    doubleBox.displayDimensions();
+    int main() {
+    MyClass<int> obj1(5); // 显式指定类型
+    MyClass<double> obj2(3.14); // 显式指定类型
+    // MyClass obj1(5); // 错误，需要显式指定类型
     return 0;
-}
-```
+    }
+    ```
+2. 
+    ```C++
+    // 定义一个模板类 Box
+    template <typename T>
+    class Box {
+    private:
+        T length; // 长度
+        T width;  // 宽度
+        T height; // 高度
+    public:
+        // 构造函数
+        Box(T l, T w, T h) : length(l), width(w), height(h) {}
+        // 成员函数：计算体积
+        T getVolume() {// 这是模板成员函数
+            return length * width * height;
+        }
+        int getVolume(){// 这个是普通成员函数
+            return 5;
+        }
+        // 成员函数：显示尺寸
+        void displayDimensions() {
+            cout << "Length: " << length << ", Width: " << width << ", Height: " << height << endl;
+        }
+    };
+    int main() {
+        // 创建不同类型的Box对象
+        Box<int> intBox(3, 4, 5);
+        Box<double> doubleBox(3.5, 4.5, 5.5);
+        // 输出整数类型Box的体积和尺寸
+        cout << "Integer Box Volume: " << intBox.getVolume() << endl;
+        intBox.displayDimensions();
+        // 输出浮点数类型Box的体积和尺寸
+        cout << "Double Box Volume: " << doubleBox.getVolume() << endl;
+        doubleBox.displayDimensions();
+        return 0;
+    }
+    ```
+3. <mark>`C++`中,在结构体模板和类模板中涉及到模板参数的成员函数才是模板成员函数,否则为普通成员函数.有时为了消除编译器对模板成员函数与普通成员函数之间的歧义,需要使用`template`关键字:</mark>
+    ```C++
+    template <typename T>
+    struct MyStruct {
+        void func() { /* ... */ }
+        void func(T arg) { /* ... */ }
+    };
+    template <typename T>
+    void callFunc(MyStruct<T>& obj) {
+        obj.template func(5); // 指定obj.func是一个模板成员函数
+    }
+    // 使用template关键字,明确告诉编译器func是一个模板成员函数
+    ```
+4. <mark>`C++`中,`typename`用于告诉编译器,后面的标识符是一个类型.当我们在模板类或函数中使用某个类型参数时,编译器无法在第一次解析模板时确定该标识符是类型还是静态成员,尤其当这个标识符依赖于模板参数时:</mark>
+    ```C++
+    template <typename T>
+    class Wrapper {
+    public:
+        using ValueType = T;
+        ValueType get() { return ValueType(); }
+    };
+    // 在这里,Wrapper<T>::ValueType是依赖于模板参数T的类型.如果没有typename关键字,编译器可能会把Wrapper<T>::ValueType误认为是Wrapper<T>类的静态成员变量,而不是一个类型
+    template <typename T>
+    void process(Wrapper<T>& w) {
+        typename Wrapper<T>::ValueType v = w.get(); // 使用typename关键字消除歧义
+        std::cout << v << std::endl;
+    }
+    ```
 # 模板特化
 1. 模板特化是`C++`中模板的一个强大功能,允许为特定类型或特定参数值定制模板的实现(如:当前模板对于类型为`int`时它会特殊实现,而不都是通用实现).通过模板特化,开发者可以在处理某些特定类型或参数时提供特殊的实现,而其他情况下则使用通用模板.模板特化分为两类:完全特化和部分特化
-2. 完全特化是指为模板的特定类型提供完全独立的实现.当一个模板被完全特化后,只有当模板参数完全匹配特化类型时,才会使用这个特化版本:
+2. 函数模板、结构体模板、类模板都有模板特化
+3. 完全特化是指为模板的特定类型提供完全独立的实现.当一个模板被完全特化后,只有当模板参数完全匹配特化类型时,才会使用这个特化版本:
    ```C++
    1. 未使用SFINAE机制
    template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };// 这是一个通用模板,接受一个布尔条件Condition和一个类型T.如果Condition为true,则EnableIfCond<true, T>会提供一个名为Type的类型c成员,该类型是T
@@ -1690,7 +1747,7 @@ int main() {
         return 0;
     }
     ```
-3. 部分特化:
+4. 部分特化:
     ```C++
     1.
     template<typename, typename = void>
@@ -1725,8 +1782,8 @@ int main() {
     }
     // MyClass<T, T> 是对 MyClass<T1, T2> 的部分特化,适用于两个参数是相同类型的情况.如果参数类型不同,则使用通用模板
     ```
-4. <mark>模板特化通常和`SFINAE`机制相联系(但不是所有的模板特化都与`SFINAE`相关).`SFINAE`允许在模板参数替换失败时,不会导致编译错误,而是让编译器忽略该特定的模板实例化(即模板特化版本),而去查找其它符合条件的版本(如:通用模板版本).注意:`SFINAE`机制是在模板参数替换过程中自动会被触发的,不用加外部声明什么的</mark>(这是一个编译期机制,在编译器试图根据提供的模板参数进行模板实例化时自动进行.其核心原理是在模板参数替换阶段,如果编译器发现某个模板实例化时因不合法的表达式、类型推导或不匹配的模板参数导致替换失败,则会触发 `SFINAE`)
-5. <mark>`SFINAE`是根据类型或表达式条件选择模板的技术,而对于直接指定的一个具体参数(完全特化),如:`int`等,这种是没有`SFINAE`机制的.`SFINAE`机制通常和类似`std::enable_if<std::is_integral<T>::value>::type`这种表达式相结合,这样才可以在编译器实现推导</mark>:
+5. <mark>模板特化通常和`SFINAE`机制相联系(但不是所有的模板特化都与`SFINAE`相关).`SFINAE`允许在模板参数替换失败时,不会导致编译错误,而是让编译器忽略该特定的模板实例化(即模板特化版本),而去查找其它符合条件的版本(如:通用模板版本).注意:`SFINAE`机制是在模板参数替换过程中自动会被触发的,不用加外部声明什么的</mark>(这是一个编译期机制,在编译器试图根据提供的模板参数进行模板实例化时自动进行.其核心原理是在模板参数替换阶段,如果编译器发现某个模板实例化时因不合法的表达式、类型推导或不匹配的模板参数导致替换失败,则会触发 `SFINAE`)
+6. <mark>`SFINAE`是根据类型或表达式条件选择模板的技术,而对于直接指定的一个具体参数(完全特化),如:`int`等,这种是没有`SFINAE`机制的.`SFINAE`机制通常和类似`std::enable_if<std::is_integral<T>::value>::type`这种表达式相结合,这样才可以在编译器实现推导</mark>:
     ```C++
     template <typename T>
     typename std::enable_if<std::is_integral<T>::value>::type
@@ -1735,13 +1792,13 @@ int main() {
     }
     // typename std::enable_if<std::is_integral<T>::value>::type::如果T是整数类型,那么std::is_integral<T>::value=true,此时process的返回类型为type,从通用模板可以看出,type不指定的话就是void  如果不想void,就要传入类似typename std::enable_if<std::is_integral<T>::value, int>::type
     ```
-6. <mark>上面的`::value`:在`C++`中,`::value`通常用于访问模板元编程中的类型或静态成员,特别是在使用`std::is_integral、std::is_floating_point`等类型特征类时.在标准库中的`std::is_integral`和其他类似的类型特征类中,`::value`是一个静态成员,它的类型是`bool`.它用于表示特定类型的特征,即:</mark>
+7. <mark>上面的`::value`:在`C++`中,`::value`通常用于访问模板元编程中的类型或静态成员,特别是在使用`std::is_integral、std::is_floating_point`等类型特征类时.在标准库中的`std::is_integral`和其他类似的类型特征类中,`::value`是一个静态成员变量,它的类型是`bool`.它用于表示特定类型的特征,即:</mark>
     ```C++
     #include <type_traits>
     std::is_integral<int>::value // 返回 true  int是整型,则其value=true
     std::is_integral<double>::value // 返回 false
     ```
-7. <mark>尖括号(<>)在模板特化和模板(结构体、类)实例化,尖括号用于指定模板参数的类型,尖括号中的参数与通用模板的参数对应:</mark>
+8. <mark>尖括号(<>)在模板特化和模板(结构体、类)实例化,尖括号用于指定模板参数的类型,尖括号中的参数与通用模板的参数对应:</mark>
    ```C++
    1. 模板特化:在模板特化时,尖括号用于指定特化的具体参数,即使特化的某些参数是常量,尖括号依然是必然的
    template <bool Condition, typename T = void> struct EnableIfCond  { typedef T Type; };// 通用模板
@@ -1752,7 +1809,7 @@ int main() {
    MyTemplate<int> instance; // <int>就是指定实例化MyTemplate通用模板的具体参数T
    ```
    <mark>由此可以看出,模板特化可以理解为模板实例化的一种情况</mark>
-8. 虽然模板特化可以看作模板实例化的一种,但是还是需要指定如:`template <typename T>`这种声明,因为特化模板本质还是一种泛化模板,需要在前面加上模板参数的声明
+9. 虽然模板特化可以看作模板实例化的一种,但是还是需要指定如:`template <typename T>`这种声明,因为特化模板本质还是一种泛化模板,需要在前面加上模板参数的声明
 # 类继承
 1. 从一个类派生出另一个类时,原始类称为基类,继承类称为派生类   
 2. 使用公有派生`public`,基类的`public`成员将称为派生类的`public`成员;基类的`private`成员也将称为派生类的一部分,但只能通过基类的公有和保护方法访问

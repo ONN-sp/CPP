@@ -415,9 +415,9 @@ namespace RAPIDJSON{
             { }
         #endif
         #if RAPIDJSON_HAS_CXX11
-            // ??? 下面两个类型特性指示分配器在容器移动赋值和交换时是否需要传播其状态,std::true_type表示需要传播
-            using propagate_on_container_move_assignment = std::true_type;
-            using propagate_on_container_swap = std::true_type;
+        // 面两个类型特性指示分配器在容器移动赋值和交换时是否需要传播其状态,std::true_type表示需要传播
+        using propagate_on_container_move_assignment = std::true_type;
+        using propagate_on_container_swap = std::true_type;
         #endif
         StdAllocator(const BaseAllocator& baseAllocator) RAPIDJSON_NOEXCEPT :// 允许使用BaseAllocator实例来构造StdAllocator,即可以自定义基础分配器
             allocator_type(),

@@ -82,7 +82,7 @@ namespace RAPIDJSON{
                 }
             }
             std::FILE* fp_;// 文件指针
-            char* buffer_;// 用户提供的缓冲区,用于临时存储从文件读取的数据
+            char* buffer_;// 用户提供的缓冲区,用于临时存储从文件读取的数据  buffer_表示的是缓冲区的起始位置
             size_t bufferSize_;// 缓冲区大小
             char* bufferLast_;// 缓冲区中最后一个字符的位置
             char* current_;// 当前缓冲区的读取位置的指针

@@ -12,8 +12,8 @@ namespace RAPIDJSON{
      */
     template <typename Allocator = CrtAllocator>
     struct GenericMemoryBuffer{
-        GenericMemoryBuffer(Allocator* allocator=nullptr, size_t capacity=kDefaultChunkCapacity)// nullptr表示默认行为,即Allocator = CrtAllocator
-            : stack_(allocator, capacity)
+        GenericMemoryBuffer(Allocator* allocator=nullptr, size_t capacity=kDefaultCapacity)// nullptr表示默认行为,即Allocator = CrtAllocator
+            : stack_(allocator, capacity)// 创建栈管理的内存缓冲区
             {}
         /**
          * @brief 将一个字符c放入内存缓冲区

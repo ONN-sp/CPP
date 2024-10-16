@@ -231,7 +231,7 @@
 37. `using propagate_on_container_move_assignment = std::true_type;using propagate_on_container_swap = std::true_type;`:这是定义在`C++11`标准库中内存分配器工具类(`std::allocator_traits`)中,`propagate_on_container_move_assignment`用于指示当容器A移动赋值到容器B时,是否允许相应的容器A的内存分配器传播到容器B的内存分配器中去(`std::true_type`表示要将容器A的分配器传到容器B中去);同理,`propagsate_on_container_swap`表示的就是当两个容器进行交换操作时,是否允许容器之间的分配器也进行交换(容器交换:指的是交换两个容器的内容,`std::swap()`将使得容器的元素和内部状态(如大小、容量等)相互调换)
 # 内存流 memorybuffer.h/memorystream.h
 1. `memorybuffer.h`中`GenericMemoryBuffer`的作用是提供内存中的输出字节流管理,而我们利用栈这个数据结构来管理内存缓冲区(内存缓冲区可以基于不同的数据结构实现,比如数组、队列或栈.其目的是存储数据,稍后进行读取、处理或传输,`memorybuffer.h`利用栈这种数据结构来实现的当前内存缓冲区)
-2. `memorybuffer.h`其实是一个输出字节流,即写入流
+2. `memorybuffer.h`其实是一个输出字节流,即写入流.<span style="color:red;">需要注意的是:创建一个`MemoryBuffer`对象并不会立即分配`kDefaultCapacity`大小的内存缓冲区,因为它的构造函数里面只有`stack_(allocator, capacity)`的初始化,而对于`Stack`对象,它的构造函数` Stack(Allocator* allocator, size_t stackCapacity) : allocator_(allocator), ownAllocator_(0), stack_(0), stackTop_(0), stackEnd_(0), initialCapacity_(stackCapacity){}`也是没有具体的内存分配操作的(即没有`malloc()`),具体的内存的分配是在`Push()`操作时发生的,而不是在构造`GenericMemoryBuffer`时发生</span>
 3. 栈与内存缓冲区的区别:栈可以被用来管理内存缓冲区,但它并不等同于内存缓冲区.内存缓冲区更侧重于存储数据的具体内存区域,而栈是一种管理这些数据的方式.你可以通过栈来有序地放入和取出数据,但栈的本质是一种数据管理的策略,而非具体的内存块,栈可以理解为实现内存缓冲区的一种方式
 4. `memorybuffer.h`中使用`template`关键字来消除普通成员函数给模板成员函数的调用可能带来的歧义
 5. 其实`memorybuffer.h`创建的内存缓冲区是由对应的`stack_`管理分配创建的,而`stack_`栈本质的内存分配操作又是依赖`allocator`内存分配器的`malloc`操作实现的
@@ -241,7 +241,7 @@
 # 文件流 filereadstream.h/filewritestream.h
 1. `filereadstream.h`:用于从文件中读取数据的输入流;`filewritestream.h`:用于向文件中写入数据的输出流  它们的操作都是基于文件句柄(`FILE*`),底层通过调用`C`标准库函数`fread() fwrite()`实现数据流操作
 2. <mark>`filereadstream.h`通过将文件分批读取到缓冲区,再从缓冲区中提供数据,这样可以提高读取效率,避免频繁的文件访问.实际上这个缓冲区`buffer_`是被重复使用的:首先,从文件中读取数据到缓冲区(此时不一定读完了文件,可能只读了`bufferSize_`个字节的文件数据,也有可能读完了);然后,缓冲区中的数据等待被其他地方读取,这样设计可以大大减少磁盘I/O的操作,而内存读取操作会很快.如果缓冲区中的数据没有被读取完,这个缓冲区是不会重新从文件中读取数据的,即`if(current_ < bufferLast_) ++current_;`;只有当缓冲区的数据被完全读取完时,才会触发新的文件读取操作`else if(!eof_){count_ += readCount_;readCount_ = std::fread(buffer_, 1, bufferSize_, fp_);...}`(新的文件读取操作还是将文件读取到刚刚那个缓冲区)</mark>
-3. `FileReadStream::Take() FileReadStream::Peek() FileReadStream::Tell()`:这些函数不是文件读取的相关操作,而是从缓冲区中读取的相关操作
+3. `FileReadStream::Take() FileReadStream::Peek() FileReadStream::Tell()`:这些函数不是文件读取的相关操作,而是从缓冲区中读取的相关操作;`FileReadStream::Read()`:这是从文件读取到缓冲区的函数(利用`std::fread`)
 4. `filereadstream.h`中不要把对文件的读取和缓冲区的读取弄混了,如:
    ```C++
    char* current_;// 当前缓冲区的读取位置的指针
@@ -250,6 +250,8 @@
    ```
 5. <mark>为什么`FileReadStream::Tell()`不直接返回`count_`,而是`return count_ + static_cast<size_t>(current_-buffer_);`?</mark>
    因为`count_`虽然表示的是已经从缓冲区中读取走的字节总数,但是`count_`不会统计当前缓冲区中已经被读取的部分数据(此时当前缓冲区可能没有被读取完),`count_`只有在当前缓冲区整体被读取完才会去更新,因此要加上还没统计当前缓冲区中被读取的字节数`current_-buffer_`
+6. `FileWriteStream::Put() FileWriteStream::PutN()`:这是将字符数据写入到缓冲区;而`FileWriteStream::Flush()`才会将缓冲区数据写入到文件中
+7. <mark>在重复写n个字符的时候,即`PutN()`时,使用了`std::memset()`:底层由C实现,使用了高度优化的汇编代码来操作内存,并利用了硬件特性,在批量数据填充中,效率很高.注意:`std::memset()`不是`gcc`内置函数,这和`memcpy()`不同</mark>
 
 
 

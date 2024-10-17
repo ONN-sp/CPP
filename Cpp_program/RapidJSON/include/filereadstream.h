@@ -58,6 +58,11 @@ namespace RAPIDJSON{
             void Flush() {RAPIDJSON_ASSERT(false);}
             char* PutBegin() {RAPIDJSON_ASSERT(false); return nullptr;}
             size_t PutENd(char*) {RAPIDJSON_ASSERT(false); return 0;}
+            /**
+             * @brief 用于检测  检测是否还剩至少4个字节
+             * 
+             * @return const char* 
+             */
             const char* Peek4() const {
                 return (current_+4-!eof_ <= bufferLast_)? current_:nullptr;
             }

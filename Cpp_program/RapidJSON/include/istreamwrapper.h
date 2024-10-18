@@ -2,13 +2,14 @@
 #define RAPIDJSON_ISTREAMWRAPPER_H_
 
 #include "stream.h"
-#include <iosfwd>
+#include <iosfwd>// // 引入C++标准库中的输入输出流的前置声明
 #include <ios>
 
 namespace RAPIDJSON{
     template <typename StreamType>
     class BasicIStreamWrapper{
         public:
+            typedef typename StreamType::char_type Ch;
             /**
              * @brief 根据给定的输入流构建BasicIStreamWrapper对象
              * 
@@ -35,7 +36,7 @@ namespace RAPIDJSON{
              */
             BasicIStreamWrapper(StreamType& stream, char* buffer, size_t bufferSize)
                 : stream_(stream),// 绑定传入的流
-                  buffer_(buffer),// 初始化缓冲区为 peekBuffer_
+                  buffer_(buffer),// 初始化缓冲区为buffer
                   bufferSize_(bufferSize),// 缓冲区大小为 4
                   bufferLast_(0),// 初始化缓冲区末尾指针
                   current_(buffer_),// 当前读取位置指向缓冲区起始位置
@@ -51,14 +52,14 @@ namespace RAPIDJSON{
              * 
              * @return char 
              */
-            char Peek() const {return *current_;}
+            Ch Peek() const {return *current_;}
             /**
              * @brief 取出当前缓冲区中读取位置的字符,并从下一个字符重新继续读取
              * 
              * @return char 
              */
-            char Take(){
-                char  c= *current_;
+            Ch Take(){
+                Ch c= *current_;
                 Read();
                 return c;
             }
@@ -80,11 +81,11 @@ namespace RAPIDJSON{
              * 
              * @return const char* 
              */
-            const char* Peek4() const{
+            const Ch* Peek4() const{
                 return (current_+4-!eof_ <= bufferLast_)?current_:0;
             }
         private:
-             // 禁用拷贝构造函数和拷贝赋值运算符
+            // 禁用拷贝构造函数和拷贝赋值运算符
             BasicIStreamWrapper(const BasicIStreamWrapper&) = delete;
             BasicIStreamWrapper& operator=(const BasicIStreamWrapper&)= delete;
             /**
@@ -108,10 +109,10 @@ namespace RAPIDJSON{
                 }
             }
             StreamType& stream_;// 输入流
-            char peekBuffer_[4], *buffer_;// peekBuffer_用于小型缓冲区 buffer_指向用户提供的缓冲区或默认缓冲区
+            Ch peekBuffer_[4], *buffer_;// peekBuffer_用于小型缓冲区 buffer_指向用户提供的缓冲区或默认缓冲区
             size_t bufferSize_;// 缓冲区大小
-            char* bufferLast_;// 指向缓冲区中最后一个字符
-            char* current_;// 当前读取指针
+            Ch* bufferLast_;// 指向缓冲区中最后一个字符
+            Ch* current_;// 当前读取指针
             size_t readCount_;// 当前缓冲区中已读取的字符数
             size_t count_;// 已经从缓冲区中读取走的字节总数
             bool eof_;// 是否到达流的末尾

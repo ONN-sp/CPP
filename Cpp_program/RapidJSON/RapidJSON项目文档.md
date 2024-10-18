@@ -255,5 +255,10 @@
 # 通用输入输出流 istreamwrapper.h/ostreamwrapper.h
 1. `istreamwrapper.h`实际上就是一个通用的输入流包装器,它可以处理任何符合`std::basic_istream`接口的输入流,即它可以把任何继承自`std::istream`的类(如`std::istringstream、std::stringstream、std::ifstream、std::fstream`)包装成`RapidJSON`的输入流
 2. <mark>`istreamwrapper.h`传入`std::ifstream`就可以实现文件输入流的包装,虽然这实现了类似`filereadstream.h`的功能(因此,可以从程序看出`istreamwrapper.h`和`filereadstream.h`的代码很相似),但是`istreamwrapper.h`的性能会差一些,它没有针对专用流(如文件流)进行特别优化,如`istreamwrapper.h`中读取流数据使用的是流接口`stream_.read()`,而不是像`filereadstream.h`中的`std::fread()`这种`C`标准库函数;前者的读取性能往往更差</mark>
-
-
+3. `istreamwrapper.h`默认构造函数(即不传入用户缓冲区)使用的是`Ch`类型较小的`Ch peekBuffer_[4]`缓冲区(`Ch`是根据`StreamType`的字符类型定义的,比如`StreamType`是 `std::istream`时,`Ch`就是`char`,而`StreamType`是`std::wistream`时,`Ch`就是`wchar_t`.这使得`BasicIStreamWrapper`可以支持不同字符类型的输入流).如果用户没有提供自己的缓冲区,那么`BasicIStreamWrapper`就会使用内部定义的`Ch peekBuffer_[4]`作为默认的缓冲区.这个`peekBuffer_`非常小,只有4个`Ch`类型的字符大小,因此在流处理时,效率较低,适合小规模的流操作或简单的`Peek`操作.而用户自定义的缓冲区是一个`char`类型的`char* buffer`,即会将流中的数据从`Ch`类型转换到`char*`的缓冲区中,不管流的字符类型是`char`还是`wchar_t`,或者是其它
+4. <span style="color:red;">本项目中流中所使用的缓冲区和标准输入输出流中对应的输入缓冲区、输出缓冲区是不一样的.对于一个传入的流对象`StreamType& stream`,它本身是有自己的内部缓冲区的(输入流对象就有输入缓冲区、输出流就有输出缓冲区),这个缓冲区通常由`C++`标准库自动管理,这个缓冲区是用于优化系统调用与实际输入设备(如文件、键盘、屏幕等)之间的数据传输(有一个缓冲区作为中介,可以匹配磁盘等的读取速率慢而内存读取速度快的匹配问题).`istreamwrapper.h`中自定义的缓冲区`buffer_`不是传入流对象的对应输入缓冲区,而是一个后一层的缓冲区,它允许用户自己管理缓冲区大小和内存位置,是一个应用级的,不是`C++`标准库自动管理的,可以理解为:`istreamwrapper.h`其实是传入的流对象的输入缓冲区向自定义缓冲区`buffer_`输入数据的过程</span>
+   ![](markdown图像集/image-4.png)
+   ![](markdown图像集/2024-10-18-13-44-00.png)
+5. `istreamwrapper.h`输入流:从键盘(`std::iostream`)、文件(`std::ifstream`)等输入到输入缓冲区`buffer_`;`ostreamwrapper.h`输出流:从传入的输出流`stream_`的输出缓冲区输出到目标地方(如文件、屏幕等)
+6. <mark>`ostreamwrapper.h`只是一个输出流的包装器,它本身是没有定义一个类似`istreamwrapper.h`中应用级的缓冲区`buffer_`,因为它是直接将流对象的输出缓冲区数据输出到屏幕、文件等地方的,而不是:自定义缓冲区->流对象输出缓冲区->屏幕、文件,因此`ostreamwrapper.h`只是起到了一个输出流对象的上层封装的作用</mark>
+![](markdown图像集/2024-10-18-13-44-13.png)

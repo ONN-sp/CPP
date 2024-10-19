@@ -12,6 +12,7 @@ namespace RAPIDJSON{
      */
     template <typename Allocator = CrtAllocator>
     struct GenericMemoryBuffer{
+        typedef char Ch;
         GenericMemoryBuffer(Allocator* allocator=nullptr, size_t capacity=kDefaultCapacity)// nullptr表示默认行为,即Allocator = CrtAllocator
             : stack_(allocator, capacity)// 创建栈管理的内存缓冲区
             {}
@@ -21,7 +22,7 @@ namespace RAPIDJSON{
          * 
          * @param c 
          */
-        void Put(char c) {*stack_.template Push<char>() = c;}// template关键字来指明Push()是一个模板成员函数,进而消除歧义
+        void Put(Ch c) {*stack_.template Push<Ch>() = c;}// template关键字来指明Push()是一个模板成员函数,进而消除歧义
         void Flush() {}
         /**
          * @brief 清空缓冲区数据
@@ -32,22 +33,22 @@ namespace RAPIDJSON{
          * @brief 用于在缓冲区中分配count个字节,并返回指向这些字节的指针
          * 
          * @param count 
-         * @return char* 
+         * @return Ch* 
          */
-        char* Push(size_t count) {return stack_.template Push<char>(count);}
+        Ch* Push(size_t count) {return stack_.template Push<Ch>(count);}
         /**
          * @brief 从缓冲区中弹出count个字节
          * 
          * @param count 
          */
-        void Pop(size_t count) {stack_.template Pop<char>(count);}
+        void Pop(size_t count) {stack_.template Pop<Ch>(count);}
         /**
          * @brief 返回指向缓冲区底部(起始位置)的指针,返回的是常量指针,即不能通过此指针修改缓冲区内容
          * 
-         * @return const char* 
+         * @return const Ch* 
          */
-        const char* GetBuffer() const {
-            return stack_.template Bottom<char>();
+        const Ch* GetBuffer() const {
+            return stack_.template Bottom<Ch>();
         }
         /**
          * @brief 返回当前缓冲区已使用的字节大小

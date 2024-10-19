@@ -9,7 +9,7 @@ namespace RAPIDJSON{
     template <typename StreamType>
     class BasicIStreamWrapper{
         public:
-            typedef typename StreamType::char_type Ch;
+            typedef typename StreamType::char_type Ch;// 如std::istream::char_type
             /**
              * @brief 根据给定的输入流构建BasicIStreamWrapper对象
              * 
@@ -86,6 +86,7 @@ namespace RAPIDJSON{
             }
         private:
             // 禁用拷贝构造函数和拷贝赋值运算符
+            BasicIStreamWrapper();
             BasicIStreamWrapper(const BasicIStreamWrapper&) = delete;
             BasicIStreamWrapper& operator=(const BasicIStreamWrapper&)= delete;
             /**

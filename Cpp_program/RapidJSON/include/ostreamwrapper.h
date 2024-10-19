@@ -37,7 +37,6 @@ namespace RAPIDJSON{
             char* PutBegin() { RAPIDJSON_ASSERT(false); return 0; }
             size_t PutEnd(char*) { RAPIDJSON_ASSERT(false); return 0; }
         private:
-            // 禁用拷贝构造函数和拷贝赋值运算符
             BasicOStreamWrapper(const BasicOStreamWrapper&) = delete;
             BasicOStreamWrapper& operator=(const BasicOStreamWrapper&)= delete;
             StreamType& stream_;// 输出流

@@ -253,7 +253,7 @@
 6. `FileWriteStream::Put() FileWriteStream::PutN()`:这是将字符数据写入到缓冲区;而`FileWriteStream::Flush()`才会将缓冲区数据写入到文件中
 7. <mark>在重复写n个字符的时候,即`PutN()`时,使用了`std::memset()`:底层由C实现,使用了高度优化的汇编代码来操作内存,并利用了硬件特性,在批量数据填充中,效率很高.注意:`std::memset()`不是`gcc`内置函数,这和`memcpy()`不同</mark>
 # 通用输入输出流 istreamwrapper.h/ostreamwrapper.h
-1. `istreamwrapper.h`实际上就是一个通用的输入流包装器,它可以处理任何符合`std::basic_istream`接口的输入流,即它可以把任何继承自`std::istream`的类(如`std::istringstream、std::stringstream、std::ifstream、std::fstream`)包装成`RapidJSON`的输入流
+1. `istreamwrapper.h`实际上就是一个通用的输入流包装器,它可以处理任何符合`std::basic_istream`接口的输入流,即它可以把任何继承自`std::istream`的类(如`std::istringstream、std::stringstream、std::ifstream、std::fstream`)包装成`RapidJSON`的输入流  `istreamwrapper.h`的`BasicIStreamWrapper`实现了一个封装,不是像`stream.h`中的`GenericStreamWrapper`这种的完全抽象接口封装,`BasicIStreamWrapper`通常作为输入流处理的封装而直接使用,而不会用来继承
 2. <mark>`istreamwrapper.h`传入`std::ifstream`就可以实现文件输入流的包装,虽然这实现了类似`filereadstream.h`的功能(因此,可以从程序看出`istreamwrapper.h`和`filereadstream.h`的代码很相似),但是`istreamwrapper.h`的性能会差一些,它没有针对专用流(如文件流)进行特别优化,如`istreamwrapper.h`中读取流数据使用的是流接口`stream_.read()`,而不是像`filereadstream.h`中的`std::fread()`这种`C`标准库函数;前者的读取性能往往更差</mark>
 3. `istreamwrapper.h`默认构造函数(即不传入用户缓冲区)使用的是`Ch`类型较小的`Ch peekBuffer_[4]`缓冲区(`Ch`是根据`StreamType`的字符类型定义的,比如`StreamType`是 `std::istream`时,`Ch`就是`char`,而`StreamType`是`std::wistream`时,`Ch`就是`wchar_t`.这使得`BasicIStreamWrapper`可以支持不同字符类型的输入流).如果用户没有提供自己的缓冲区,那么`BasicIStreamWrapper`就会使用内部定义的`Ch peekBuffer_[4]`作为默认的缓冲区.这个`peekBuffer_`非常小,只有4个`Ch`类型的字符大小,因此在流处理时,效率较低,适合小规模的流操作或简单的`Peek`操作.而用户自定义的缓冲区是一个`char`类型的`char* buffer`,即会将流中的数据从`Ch`类型转换到`char*`的缓冲区中,不管流的字符类型是`char`还是`wchar_t`,或者是其它
 4. <span style="color:red;">本项目中流中所使用的缓冲区和标准输入输出流中对应的输入缓冲区、输出缓冲区是不一样的.对于一个传入的流对象`StreamType& stream`,它本身是有自己的内部缓冲区的(输入流对象就有输入缓冲区、输出流就有输出缓冲区),这个缓冲区通常由`C++`标准库自动管理,这个缓冲区是用于优化系统调用与实际输入设备(如文件、键盘、屏幕等)之间的数据传输(有一个缓冲区作为中介,可以匹配磁盘等的读取速率慢而内存读取速度快的匹配问题).`istreamwrapper.h`中自定义的缓冲区`buffer_`不是传入流对象的对应输入缓冲区,而是一个后一层的缓冲区,它允许用户自己管理缓冲区大小和内存位置,是一个应用级的,不是`C++`标准库自动管理的,可以理解为:`istreamwrapper.h`其实是传入的流对象的输入缓冲区向自定义缓冲区`buffer_`输入数据的过程</span>
@@ -262,3 +262,30 @@
 5. `istreamwrapper.h`输入流:从键盘(`std::iostream`)、文件(`std::ifstream`)等输入到输入缓冲区`buffer_`;`ostreamwrapper.h`输出流:从传入的输出流`stream_`的输出缓冲区输出到目标地方(如文件、屏幕等)
 6. <mark>`ostreamwrapper.h`只是一个输出流的包装器,它本身是没有定义一个类似`istreamwrapper.h`中应用级的缓冲区`buffer_`,因为它是直接将流对象的输出缓冲区数据输出到屏幕、文件等地方的,而不是:自定义缓冲区->流对象输出缓冲区->屏幕、文件,因此`ostreamwrapper.h`只是起到了一个输出流对象的上层封装的作用</mark>
 ![](markdown图像集/2024-10-18-13-44-13.png)
+# stringbuffer.h
+1. `typedef typename Encoding::Ch Ch`:`Encoding`是一个模板参数,`Encoding::Ch`是一个依赖于`Encoding`的嵌套成员,编译器在处理模板时不能提前知道`Ch`是什么——它可能是一个类型,也可能是一个值.因此,如果不使用`typename`,编译器会认为`Encoding::Ch`是一个变量或静态成员,而不是一个类型.所以,这里的`typename`是为了消除歧义
+2. 存储类型`char*`和编码格式的区别:`char*`更像是字符数据的容器,而其编码格式是将字符转换为二进制字节的规则.`char*`是字节的存储方式,它只是存储字节数据,不管这些字节是用哪种编码方式表示的字符.编码包括字节的排列规则,而`char*`只是存储这些字节的容器,`char*`本身不包含关于编码的信息.<mark>字符编码格式可以说是`char*`对应的内存缓冲区中存储的底层编码规则.所以说同样都是`char*`内存缓冲区,其底层编码格式可以不同</mark>
+3. <span style="color:red;">`stringbuffer.h`其实就是增加了字符编码处理能力的`memorybuffer.h`,后者只能处理原始字节流`char*`,此时这个`char*`是可以是任意编码格式的字节数据的,`memorybuffer.h`是没有考虑编码格式的.而`stringbuffer.h`增加了字符编码的支持,通过模板参数`Encoding`来决定缓冲区中存储的字符类型(如`UTF-8`、`UTF-16`等),此时的`Encoding::Ch`指的可能是`UFT8::char`或`UTF16::char`等,这使得`StringBuffer`可以处理多种不同指定的字符编码,即可以指定编码进行存储,虽然从缓冲区存储上看可能都是`char*`,但是底层的编码格式可能是不同的</span>
+4. <mark>为什么`GetString()`函数实现了以`'\0'`结尾的字符串输出,明明`push() pop()`不应该什么都不操作吗?</mark>
+   因为`Push()`操作返回的是栈顶指针,此时把栈顶位置赋值`'\0'`,然后`+1`栈顶指针;而`Pop()`操作不会删除栈顶内容`'\0'`,而只是把栈顶指针往下移,因此实现了以`'\0'`结尾的字符串输出
+5. `PutReserve()  PutUnsafe`是对`GenericStringBuffer::Reserve()  GenericStringBuffer::PutUnsafe()`更高层次API接口的封装
+# cursorstreamwrapper.h
+1. `cursorStreamWrapper`继承自`stream.h`中的`GenericStreamWrapper`,`GenericStreamWrapper`虽然有`Peek() Take() PutBegin() Put() Flush() PutEnd() Peek4() GetType() HasBOM()`接口函数,但是只要在代码中不会实际调用某些方法,那么在传入的时候这个输入流对象可以不用定义这些方法,因此`cursorStreamWrapper`可以接受`istreamwrapper.h`、`filereadstream.h`和`memorystream.h`这些作为参数`InputStream`传入(如接受`istreamwrapper.h`时,在代码中不调用`GetType() HasBOM()`时就可以将`istreamwrapper.h`作为`cursorStreamWrapper`的参数传入)
+2. <mark>`istreamwrapper.h`禁用了拷贝构造,为什么`cursorStreamWrapper()`还可以以`BasicIStreamWrapper`为输入流对象传入呢?
+   因为拷贝构造只有在按值传递时才会被调用,按引用传递时是直接传入对象的引用的操作,而不是拷贝构造.</mark>如:
+   ```C++
+   BasicIStreamWrapper isw;  // 创建一个 BasicIStreamWrapper 对象
+   CursorStreamWrapper(isw);  // 错误：按值传递,触发拷贝构造  因为stream.h的GenericStreamWrapper的构造函数中出现了is_(is)
+   BasicIStreamWrapper isw;  // 创建一个 BasicIStreamWrapper 对象
+   BasicIStreamWrapper& sw = isw;  // sw 是 isw 的引用
+   CursorStreamWrapper(sw);  // 正确：按引用传递，未触发拷贝构造
+   ```
+3. `cursorStreamWrapper.h`的主要作用是为`RapidJSON`提供一个增强的输入流封装器,允许在解析`JSON`数据时跟踪字符的位置(行`line_`和列`col_`),这样就可以在解析`JSON`数据时提供有关错误位置的详细信息,即方便错误定位.在解析`JSON`数据时,通过调用`cursorStreamWrapper::Take()`就能一直更新解析位置,当出错就能迅速定位
+# encodings.h
+1. `C++`标准库本身并没有专门定义针对`UTF8 UTF16`等其它编码格式的类.标准库主要提供了`std::string std::wstring`类型,用于处理字符串,但这些类型并不明确规定内部的编码格式.而因为不同`JSON`数据存储时可能有不同的编码格式,本项目为了支持不同编码格式,因此需要定义如`UTF8 UTF16`等编码格式的类
+2. 在`C++`中,如果不明确指定编码格式,字符串字面量(如`char*`或`std::string`)通常以`UTF-8`编码存储,尤其是在现代应用中,因为`UTF-8`与`ASCII`向后兼容
+3. <mark>不同的编码格式其实就是对于同样的数据在存储的时候按照二进制的编码位数的不同</mark>
+4. 
+# stream.h
+1. `stream.h`中的`GenericStringStream()`其实就和`stringbuffer.h`一样,只是它是对`memorystream.h`的不同字符编码的扩展
+2. `stream.h`的`GenericStreamWrapper`的设计意图是提供一个通用的接口,以支持多种输入流类型和编码方式,它不提供具体的实现,它是一个完全抽象的上层封装接口,它都是被用作基类进行继承(这个输入流包装器和`istreamwrapper.h`这个用于输入流的包装器不一样,后者是提供了具体的实现,并不是完全抽象层)

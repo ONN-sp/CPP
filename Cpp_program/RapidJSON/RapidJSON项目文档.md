@@ -265,7 +265,7 @@
 # stringbuffer.h
 1. `typedef typename Encoding::Ch Ch`:`Encoding`是一个模板参数,`Encoding::Ch`是一个依赖于`Encoding`的嵌套成员,编译器在处理模板时不能提前知道`Ch`是什么——它可能是一个类型,也可能是一个值.因此,如果不使用`typename`,编译器会认为`Encoding::Ch`是一个变量或静态成员,而不是一个类型.所以,这里的`typename`是为了消除歧义
 2. 存储类型`char*`和编码格式的区别:`char*`更像是字符数据的容器,而其编码格式是将字符转换为二进制字节的规则.`char*`是字节的存储方式,它只是存储字节数据,不管这些字节是用哪种编码方式表示的字符.编码包括字节的排列规则,而`char*`只是存储这些字节的容器,`char*`本身不包含关于编码的信息.<mark>字符编码格式可以说是`char*`对应的内存缓冲区中存储的底层编码规则.所以说同样都是`char*`内存缓冲区,其底层编码格式可以不同</mark>
-3. <span style="color:red;">`stringbuffer.h`其实就是增加了字符编码处理能力的`memorybuffer.h`,后者只能处理原始字节流`char*`,此时这个`char*`是可以是任意编码格式的字节数据的,`memorybuffer.h`是没有考虑编码格式的.而`stringbuffer.h`增加了字符编码的支持,通过模板参数`Encoding`来决定缓冲区中存储的字符类型(如`UTF-8`、`UTF-16`等),此时的`Encoding::Ch`指的可能是`UFT8::char`或`UTF16::char`等,这使得`StringBuffer`可以处理多种不同指定的字符编码,即可以指定编码进行存储,虽然从缓冲区存储上看可能都是`char*`,但是底层的编码格式可能是不同的</span>
+3. (单纯从本项目的`stringbuffer.h`和`memorybuffer.h`中出发考虑)<span style="color:red;">`stringbuffer.h`其实可以理解为就是增加了字符编码处理能力的`memorybuffer.h`,后者只能处理原始字节流`char*`,此时这个`char*`是可以是任意编码格式的字节数据的,`memorybuffer.h`是没有考虑编码格式的.而`stringbuffer.h`增加了字符编码的支持,通过模板参数`Encoding`来决定缓冲区中存储的字符类型(如`UTF-8`、`UTF-16`等),此时的`Encoding::Ch`指的可能是`UFT8::char`或`UTF16::char`等,这使得`StringBuffer`可以处理多种不同指定的字符编码,即可以指定编码进行存储,虽然从缓冲区存储上看可能都是`char*`,但是底层的编码格式可能是不同的</span>  `memorybuffer.h`的最初设计目的是为了处理原始二进制数据,如字节流,此时不涉及编码什么的,虽然在多数上层应用场景`stringbuffer.h`是可以代替`memorybuffer.h`进行使用的,但是为了保持类的独立性和每个类的用途,就保留了`memorybuffer.h`
 4. <mark>为什么`GetString()`函数实现了以`'\0'`结尾的字符串输出,明明`push() pop()`不应该什么都不操作吗?</mark>
    因为`Push()`操作返回的是栈顶指针,此时把栈顶位置赋值`'\0'`,然后`+1`栈顶指针;而`Pop()`操作不会删除栈顶内容`'\0'`,而只是把栈顶指针往下移,因此实现了以`'\0'`结尾的字符串输出
 5. `PutReserve()  PutUnsafe`是对`GenericStringBuffer::Reserve()  GenericStringBuffer::PutUnsafe()`更高层次API接口的封装
@@ -285,7 +285,63 @@
 1. `C++`标准库本身并没有专门定义针对`UTF8 UTF16`等其它编码格式的类.标准库主要提供了`std::string std::wstring`类型,用于处理字符串,但这些类型并不明确规定内部的编码格式.而因为不同`JSON`数据存储时可能有不同的编码格式,本项目为了支持不同编码格式,因此需要定义如`UTF8 UTF16`等编码格式的类
 2. 在`C++`中,如果不明确指定编码格式,字符串字面量(如`char*`或`std::string`)通常以`UTF-8`编码存储,尤其是在现代应用中,因为`UTF-8`与`ASCII`向后兼容
 3. <mark>不同的编码格式其实就是对于同样的数据在存储的时候按照二进制的编码位数的不同</mark>
-4. 
+4. `Unicode`:它是一个字符编码标志,旨在为全球所有的文字、符号和字符提供统一的编码方案,其主要特点:
+   * 全球覆盖:`Unicode`支持几乎所有的书写系统,包括拉丁文、汉字、阿拉伯文、希腊文、日文、韩文等
+   * 唯一的代码点:每个字符在`Unicode`中都有一个唯一的代码点`codepoint`,通常表示为`U+XXXX`的形式,其中`XXXX`是4个十六进制数.如,拉丁字母`A`的代码点是`U+0041`,汉字`汉`的代码点是`U+6C49`
+   * 编码方式:`Unicode`有多种编码方式,包括`UTF8 UTF16 UTF32`
+5. <mark>`Unicode`代码点`codepoint`:指的是`Unicode`字符集中每个字符的唯一数字标识符.它们用来表示全球所有文字和符号.代码点是一个非负整数,表示特定字符在`Unicode`标准中的位置.它通常以`U+`后接十六进制数字的形式表示</mark>
+6. 单字节字符=`ASCII`字符
+7. 字节顺序标记`BOM`:它是一种用于指示文本文件的字节顺序和编码格式的特殊字符,它主要用于`UTF`编码,帮助软件识别文件的编码方式.如:在`UTF16`和`UTF32`编码中,`BOM`可以指示字节序(大端或小端).例如,`UTF16`的`BOM`在大端顺序中表示为 `0xFEFF`,在小端顺序中则表示为`0xFFFE`.在`UTF8`编码中,`BOM`为`0xEF 0xBB 0xBF`,虽然`UTF8`中的`BOM`不能表示字节序,但是也可以作为它是`UTF8`编码的标志
+8. <mark>`UTF8`没有字节序(`BOM`)问题,可以直接读入;而`UTF16 UTF32`有字节序问题,需要在读取时把字节转换为字符,以及在写入时把字符转换为字节(如小端字节序下,字符的低字节在前,高字节在后,则字符`U+0041`的小端字节表示为`41 00 00 00`,则写入时要转换为`41 00 00 00`写入)</mark>
+9. 在`C++`中,`char`通常用于表示`UTF8`编码的字符,而`wchar_t`则用于表示`UTF16`编码的字符.这并不是严格的规则,但在许多情况下,它们的使用是这样的
 # stream.h
-1. `stream.h`中的`GenericStringStream()`其实就和`stringbuffer.h`一样,只是它是对`memorystream.h`的不同字符编码的扩展
-2. `stream.h`的`GenericStreamWrapper`的设计意图是提供一个通用的接口,以支持多种输入流类型和编码方式,它不提供具体的实现,它是一个完全抽象的上层封装接口,它都是被用作基类进行继承(这个输入流包装器和`istreamwrapper.h`这个用于输入流的包装器不一样,后者是提供了具体的实现,并不是完全抽象层)
+1. `stream.h`中指出:
+   - 对于只读流:只需要实现 `Peek()`、`Take()` 和 `Tell()` 函数
+   - 对于只写流:只需实现 `Put()` 和 `Flush()` 函数
+   - 对于读写流:需要实现所有函数
+2. <span style="color:red;">`stream.h`定义了一个通用的流接口以及一些具体的流实现.`GenericStringStream`:只读字符串流,用于从内存中的字符串读取数据,通常用于解析内存中的`JSON`文本(常用于`reader.h`的流对象);`GenericInsituStringStream`:就地读写字符串流,允许在解析时直接修改输入字符串.适合需要边解析边修改数据的场景,比如`JSON`文本的就地解析;`GenericStreamWrapper`:通用的流包装器,提供对其他流类型的封装,用于扩展或修改流的行为.`stream.h`中虽然有一些方法的具体实现,但是它实现的是一个通用实现,在具体的场景下的性能需求、内存管理方式以及数据交互方式,还需要特定的流类型,如`memorystream.h  memorybuffer.h`等</span>
+3. `stream.h`中的`GenericStringStream()`其实和`stringbuffer.h`一样,只是它是对`memorystream.h`的不同字符编码的扩展(这是从仅考虑功能的角度说的,`memorystream.h`是针对于内存块的,因此它会多对于内存块的管理(如内存块大小、是否到达内存缓冲区末尾等),并且`memorystream.h`的最初设计目的是用于不涉及编码的原始二进制字节流的,而不是字符串的)(PS:`memorystream.h`和`memorybuffer.h`感觉基本不会被使用,因为它们两个在大多数场景都能被`StringBuffer`和 `GenericStringStream`代替)
+4. `stream.h`的`GenericStreamWrapper`的设计意图是提供一个通用的接口,以支持多种输入流类型和编码方式,它不提供具体的实现,它是一个完全抽象的上层封装接口,它都是被用作基类进行继承(这个输入流包装器和`istreamwrapper.h`这个用于输入流的包装器不一样,后者是提供了具体的实现,并不是完全抽象层)
+5. <mark>`StreamTraits`结构体是用于控制流复制的优化,当`copyOptimization=1`,则支持本地副本的创建,这样会将流复制到本地变量中,以减少频繁的指针访问,从而提高性能;反之亦然</mark>
+   ```C++
+   template<typename Stream, int = StreamTraits<Stream>::copyOptimization>
+   class StreamLocalCopy;
+   template<typename Stream>
+   class StreamLocalCopy<Stream, 1> {
+   public:
+      StreamLocalCopy(Stream& original) : s(original), original_(original) {}
+      ~StreamLocalCopy() { original_ = s; }
+      Stream s;// 非引用类型,因此会创建副本
+   private:
+      StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
+      Stream& original_;
+   };
+   template<typename Stream>
+   class StreamLocalCopy<Stream, 0> {
+   public:
+      StreamLocalCopy(Stream& original) : s(original) {}
+      Stream& s;// 引用类型,不会创建副本
+   private:
+      StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
+   };
+   ```
+6. <mark>`GenericInsituStringStream`实现了就地读写操作,与`GenericStringStream`只能读不同,它可以在原地读写.即可以在同一个内存缓冲区中同时进行读取和写入操作,而不需要为修改后的数据分配额外的内存,这对于减少内存占用和提高性能非常有用.其核心思想:使用同一个内存缓冲区,通过不同的指针(`src_`和`dst_`)来分别管理读取和写入操作;使用`PutBegin()`、`PutEnd()`这样的接口明确写入的开始和结束位置;通过`Push()`和`Pop()`提高了灵活的字符管理</mark>
+   ```C++
+   char json[] = "{\"key\":\"value\"}";  // 原始 JSON 字符串
+   GenericInsituStringStream<UTF8<>> stream(json);  // 创建就地流
+   stream.Take();  // 跳过第一个字符 '{'
+   stream.Take();  // 跳过第二个字符 '"'
+   stream.PutBegin();  // 开始写操作
+   stream.Put('n');    // 替换字符
+   stream.Put('e');
+   stream.Put('w');
+   stream.Put('_');
+   stream.Put('v');
+   stream.Put('a');
+   stream.Put('l');
+   stream.Put('u');
+   stream.Put('e');
+   stream.PutEnd(stream.PutBegin());  // 结束写操作
+   ```
+
+

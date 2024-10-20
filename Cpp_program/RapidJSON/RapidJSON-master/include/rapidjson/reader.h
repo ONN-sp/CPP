@@ -233,7 +233,7 @@ public:
     StreamLocalCopy(Stream& original) : s(original), original_(original) {}
     ~StreamLocalCopy() { original_ = s; }
 
-    Stream s;
+    Stream s;// 非引用类型,因此会创建副本
 
 private:
     StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
@@ -247,7 +247,7 @@ class StreamLocalCopy<Stream, 0> {
 public:
     StreamLocalCopy(Stream& original) : s(original) {}
 
-    Stream& s;
+    Stream& s;// 引用类型,不会创建副本
 
 private:
     StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
@@ -902,6 +902,14 @@ private:
     }
 
     // Helper function to parse four hexadecimal digits in \uXXXX in ParseString().
+    /**
+     * @brief 用于解析Unicode转移序列\uxxxx
+     * 
+     * @tparam InputStream 
+     * @param is 
+     * @param escapeOffset 
+     * @return unsigned 
+     */
     template<typename InputStream>
     unsigned ParseHex4(InputStream& is, size_t escapeOffset) {
         unsigned codepoint = 0;
@@ -1019,7 +1027,8 @@ private:
                     is.Take();
                     os.Put('\'');
                 }
-                else if (RAPIDJSON_LIKELY(e == 'u')) {    // Unicode
+                // \uXXXX：是一种 Unicode 转义序列，XXXX 代表四个十六进制数字，用于表示特定的 Unicode 代码点
+                else if (RAPIDJSON_LIKELY(e == 'u')) {    // Unicode 转义序列\uxxxx
                     is.Take();
                     unsigned codepoint = ParseHex4(is, escapeOffset);
                     RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;

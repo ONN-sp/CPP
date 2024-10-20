@@ -170,11 +170,11 @@ private:
     // Detect encoding type with BOM or RFC 4627
     void DetectType() {
         // BOM (Byte Order Mark):
-        // 00 00 FE FF  UTF-32BE
+        // 00 00 FE FF  UTF-32BE  4个字节用于表示BOM  因此对于UTF32的字节序处理就是is_->Take()*4  后面的就是数据区域了
         // FF FE 00 00  UTF-32LE
-        // FE FF        UTF-16BE
+        // FE FF        UTF-16BE  2个字节用于表示BOM  因此对于UTF16的字节序处理就是is_->Take()*2  后面的就是数据区域了
         // FF FE        UTF-16LE
-        // EF BB BF     UTF-8
+        // EF BB BF     UTF-8     3个字节用于表示BOM  因此对于UTF32的字节序处理就是is_->Take()*3  后面的就是数据区域了
 
         const unsigned char* c = reinterpret_cast<const unsigned char *>(is_->Peek4());
         if (!c)

@@ -15,6 +15,7 @@ namespace RAPIDJSON{
         For write-only stream, only need to implement Put() and Flush().
 
     \code
+    自定义流要考虑以下7种方法
     concept Stream {
         typename Ch;    //!< Character type of the stream.
 

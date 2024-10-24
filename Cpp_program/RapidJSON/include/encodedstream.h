@@ -40,7 +40,7 @@ namespace RAPIDJSON{
             Ch current_;// 当前字符
     };
     /**
-     * @brief 上述类的特化版本  即Encoding=UTF8的特化版本
+     * @brief 上述类的特化版本  专门处理内存中且编码为Encoding=UTF8的数据的特化版本
      * 
      * @param  
      */

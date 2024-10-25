@@ -309,7 +309,7 @@ namespace RAPIDJSON{
             static const typename OutputStream::Ch hexDigits[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
             // 定义转义字符表 该表定义了256个ASCII码字符的转义映射 可以用来查找某个字符是否需要转义(对应表中非0)
             // 不可打印字符(如控制字符) 使用'u'进行Unicode转义
-            // 特殊字符(如\")需要转义,直接赋值'\\'或'"'
+            // 特殊字符(如'\')需要转义,直接赋值'\\'
             // 其余字符不需要转义,值为0
             static const char escape[265] = {
                 #define Z16 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -328,11 +328,11 @@ namespace RAPIDJSON{
                 PutReserve(*os_, 2+length*12);// "\uxxxx\uyyyy...":用两个Unicode转义序列表示一个字符  代理对
             PutUnsafe(*os_, '\"');// JSON中以字符串以双引号包围,因此首先写入起始的双引号
             GenericStringStream<SourceEncoding> is(str);// 创建一个字符串读取流对象  用于从输入字符串str中读取字符
-            while(ScanWriteUnescapedString(is, length){// 扫描并写入非转义字符串
+            while(ScanWriteUnescapedString(is, length){// 扫描输入流中的字符串 检查输入流is的当前位置是否小于指定的长度length,这用于确定字符串是否还有未处理的字符,确保不会超出字符串的边界
                 const Ch c = is.Peek();// 查看当前字符
-                if(!TargetEncoding::supportUnicode&&static_cast<unsigned>(c) >= 0x80){// 不支持Unicode且为非ASCII字符  此时需要将该字符转换为Unicode转义序列(即\uxxxx格式)  如:"世"不是ASCII码,若不支持Unicode,则需要将它转换为Unicode转义码\u4E16写入输出流才行
+                if(!TargetEncoding::supportUnicode&&static_cast<unsigned>(c) >= 0x80){// 目标编码不支持Unicode(如ASCII编码)且为非ASCII字符(如:目标编码为ISO-8859-1)  此时需要将该字符转换为Unicode转义序列(即\uxxxx格式)  如:"世"不是ASCII码,若不支持Unicode,则需要将它转换为Unicode转义码\u4E16写入输出流才行
                     unsigned codepoint;
-                    if(RAPIDJSON_UNLIKELY(!SourceEncoding::Decode(is, &codepoint)))// 解码输入流中的字符 UTF8->Unicode代码点
+                    if(RAPIDJSON_UNLIKELY(!SourceEncoding::Decode(is, &codepoint)))// 解码输入流中的字符,前面判断的是目标编码不支持Unicode,这里是解码输入流,不要弄混了 UTF8->Unicode代码点
                         return false;
                     PutUnsafe(*os_, '\\');// 编译器会将这两个反斜杠视为一个反斜杠字符,因为在字符串中表示一个实际的反斜杠字符,需要使用双反斜杠\\ 
                     PutUnsafe(*os_, 'u');
@@ -342,7 +342,7 @@ namespace RAPIDJSON{
                         PutUnsafe(*os_, hexDigits[(codepoint >>  4) & 15]);
                         PutUnsafe(*os_, hexDigits[(codepoint      ) & 15]);
                     }
-                    else{// ??? (用UTF16处理超出BMP的方式来处理,这与使用UTF8不冲突,因为后面写入输出流是用的UTF8格式)处理代码点超出BMP的Unicode字符  超出BMP的字符需要使用代理对来表示
+                    else{// (用UTF16处理超出BMP的方式来处理,这与使用UTF8不冲突,因为后面写入输出流是用的UTF8格式)处理代码点超出BMP的Unicode字符  超出BMP的字符需要使用代理对来表示
                         RAPIDJSON_ASSERT(codepoint >= 0x010000 && codepoint <= 0x10FFFF);
                         unsigned s = codepoint - 0x010000;
                         unsigned lead = (s >> 10) + 0xD800;
@@ -391,6 +391,28 @@ namespace RAPIDJSON{
         bool WriteEndObject()   { os_->Put('}'); return true; }
         bool WriteStartArray()  { os_->Put('['); return true; }
         bool WriteEndArray()    { os_->Put(']'); return true; }  
+        /**
+         * @brief 将给定的JSON字符串原样写入输出流.这在处理已经格式化好的JSON数据时非常有用
+         * 避免对字符串的二次解析或转义处理
+         * 
+         * @param json 
+         * @param length 
+         * @return true 
+         * @return false 
+         */
+        bool WriteRawValue(const Ch* json, size_t length){
+            PutReserve(*os_, length);
+            GenericStringStream<SourceEncoding> is(json);// 创建一个从json字符串中读取字符的流对象
+            while(RAPIDJSON_LIKELY()is.Tell() < length){// 查当前读取位置是否小于字符串的总长度
+                RAPIDJSON_ASSERT(is.Peek()!='\0');// 确保当前字符不为 null
+                // 如果writeFlags中包含kWriteValidateEncodingFlag,则调用Validate方法来验证字符的编码;否则直接用TranscodeUnsafe将字符写入输出流
+                if(RAPIDJSON_UNLIKELY(!(writeFlags&kWriteValidateEncodingFlag?
+                    Transcoder<SourceEncoding, TargetEncoding>::Validate(is, *os_) :
+                    Transcoder<SourceEncoding, TargetEncoding>::TranscodeUnsafe(is, *os_))))
+                    return false;
+            }
+            return true;
+        }
     };      
 }
 #endif

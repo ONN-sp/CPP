@@ -11,7 +11,7 @@ namespace RAPIDJSON{
         /**
          * @brief 将一个Unicode代码点编码为UTF8字节序列,并将结果写入输出流os中
          * 代码点范围从 0x0 到 0x10FFFF,覆盖了大部分Unicode字符
-         * @tparam OutputStream 
+         * @param OutputStream 
          * @param os 
          * @param codepoint 
          */

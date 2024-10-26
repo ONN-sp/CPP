@@ -75,7 +75,7 @@ namespace RAPIDJSON{
              * @param count 
              * @return Ch* 
              */
-            Ch* Push(size_T count) {return stack_.template Push<Ch>(count);}
+            Ch* Push(size_t count) {return stack_.template Push<Ch>(count);}
             /**
              * @brief 不检查空间是否足够的前提下向缓冲区插入count个字符
              * 

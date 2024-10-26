@@ -32,7 +32,7 @@
 #endif
 #endif
 
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 namespace internal {
 
 #ifdef __GNUC__
@@ -256,6 +256,6 @@ RAPIDJSON_DIAG_OFF(padded)
 #endif
 
 } // namespace internal
-RAPIDJSON_NAMESPACE_END
+}
 
 #endif // RAPIDJSON_DIYFP_H_

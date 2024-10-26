@@ -224,5 +224,101 @@ namespace RAPIDJSON{
             os.Put(static_cast<typename OutputByteStream::Ch>(c));
         }   
     };
+    enum UTFType{
+        kUTF8 = 0,      
+        kUTF16LE = 1,   
+        kUTF16BE = 2,   
+        kUTF32LE = 3,   
+        kUTF32BE = 4   
+    };
+    /**
+     * @brief 输入流和输出流为不同编码的转换  即将输入流数据写到输出流中去  输入流Decode获取码点->输出流Encode写入码点
+     * 
+     * @tparam SourceEncoding 
+     * @tparam TargetEncoding 
+     */
+    template<typename SourceEncoding, typename TargetEncoding>
+    struct Transcoder{
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool Transcode(InputStream& is, OutputStream& os){
+            unsigned codepoint;
+            if (!SourceEncoding::Decode(is, &codepoint))// 尝试从输入流中解码一个Unicode码点
+                return false;
+            // 将解码得到的码点编码到输出流中
+            TargetEncoding::Encode(os, codepoint);
+            return true;
+        }
+        /**
+         * @brief 安全的转码函数,允许不检查转码的有效性
+         * 
+         * @tparam InputStream 
+         * @tparam OutputStream 
+         * @param is 
+         * @param os 
+         * @return RAPIDJSON_FORCEINLINE 
+         */
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool TranscodeUnsafe(InputStream& is, OutputStream& os) {
+            unsigned codepoint;
+            if (!SourceEncoding::Decode(is, &codepoint))
+                return false;
+            TargetEncoding::EncodeUnsafe(os, codepoint);
+            return true;
+        }
+        /**
+         * @brief 由于输入流编码、输出流编码可能不同,因此需要验证转码过程中的有效性  即Transcode()成功就有效
+         * 
+         * @tparam InputStream 
+         * @tparam OutputStream 
+         * @param is 
+         * @param os 
+         * @return RAPIDJSON_FORCEINLINE 
+         */
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool Validate(InputStream& is, OutputStream& os) {
+            return Transcode(is, os);   
+        }
+    };
+    template<typename Stream>
+    inline void PutUnsafe(Stream& stream, typename Stream::Ch c);
+    template<typename Encoding>
+    /**
+     * @brief 输入流和输出流的编码相同的特化版本
+     * 
+     */
+    struct Transcoder<Encoding, Encoding>{
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool Transcode(InputStream& is, OutputStream& os){
+            os.Put(is.Take());// 直接从输入流中获取一个代码单元并写入输出流
+            return true;
+        }
+        /**
+         * @brief 安全的转码函数,允许不检查转码的有效性
+         * 
+         * @tparam InputStream 
+         * @tparam OutputStream 
+         * @param is 
+         * @param os 
+         * @return RAPIDJSON_FORCEINLINE 
+         */
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool TranscodeUnsafe(InputStream& is, OutputStream& os) {
+            PutUnsafe(os, is.Take());
+            return true;
+        }
+        /**
+         * @brief 由于输入流编码、输出流编码可能不同,因此需要验证转码过程中的有效性  即Transcode()成功就有效
+         * 
+         * @tparam InputStream 
+         * @tparam OutputStream 
+         * @param is 
+         * @param os 
+         * @return RAPIDJSON_FORCEINLINE 
+         */
+        template<typename InputStream, typename OutputStream>
+        static RAPIDJSON_FORCEINLINE bool Validate(InputStream& is, OutputStream& os) {
+            return Encoding::Validate(is, os); // 当源/目标编码相同,直接使用编码的验证函数  
+        }
+    };
 }
 #endif

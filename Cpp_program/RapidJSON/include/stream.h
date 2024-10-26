@@ -48,7 +48,7 @@ namespace RAPIDJSON{
     */
     template<typename Stream>
     struct StreamTraits{
-        enum {copyOptimization = 0;}// 不启用复制优化  不进行本地副本的创建
+        enum {copyOptimization = 0};// 不启用复制优化  不进行本地副本的创建
     };
     /**
      * @brief 如果需要,则为写操作保留count个字符的空间
@@ -141,7 +141,7 @@ namespace RAPIDJSON{
      */
     template<typename Encoding>
     struct StreamTraits<GenericStringStream<Encoding>>{
-        enum {copyOptimization = 1;}// 启用复制优化
+        enum {copyOptimization = 1};// 启用复制优化
     };
     typedef GenericStringStream<UTF8<>> StringStream;
     /**

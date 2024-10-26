@@ -173,16 +173,16 @@
 #ifdef RAPIDJSON_DOXYGEN_RUNNING
 #define RAPIDJSON_NO_SIZETYPEDEFINE
 #endif
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 
 typedef unsigned SizeType;
-RAPIDJSON_NAMESPACE_END
+}
 #endif
 
 // always import std::size_t to rapidjson namespace
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 using std::size_t;
-RAPIDJSON_NAMESPACE_END
+}
 
 #ifndef RAPIDJSON_ASSERT
 #include <cassert>
@@ -201,11 +201,11 @@ RAPIDJSON_NAMESPACE_END
 #ifndef __clang__
 //!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN
 #endif
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 template <bool x> struct STATIC_ASSERTION_FAILURE;
 template <> struct STATIC_ASSERTION_FAILURE<true> { enum { value = 1 }; };
 template <size_t x> struct StaticAssertTest {};
-RAPIDJSON_NAMESPACE_END
+}
 
 #if defined(__GNUC__) || defined(__clang__)
 #define RAPIDJSON_STATIC_ASSERT_UNUSED_ATTRIBUTE __attribute__((unused))
@@ -435,7 +435,7 @@ RAPIDJSON_NAMESPACE_END
     \brief main RapidJSON namespace
     \see RAPIDJSON_NAMESPACE
 */
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 
 //! Type of JSON value
 enum Type {
@@ -448,6 +448,6 @@ enum Type {
     kNumberType = 6     //!< number
 };
 
-RAPIDJSON_NAMESPACE_END
+}
 
 #endif // RAPIDJSON_RAPIDJSON_H_

@@ -562,8 +562,4 @@ namespace RAPIDJSON{
     };
     #endif
 }
-
-
-
-
 #endif

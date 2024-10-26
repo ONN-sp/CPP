@@ -26,7 +26,7 @@
 #endif
 #endif
 
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 namespace internal {
 
 class BigInteger {
@@ -292,6 +292,6 @@ private:
 };
 
 } // namespace internal
-RAPIDJSON_NAMESPACE_END
+}
 
 #endif // RAPIDJSON_BIGINTEGER_H_

@@ -18,6 +18,16 @@
    * `JSON XML`都是国际标准或广泛接受的标准格式,确保数据可以在多种应用程序、系统和服务之间无缝交换
    * `JSON XML`都十分易于阅读和理解,适合开发者直接查看和边集
    * 无论`JSON XML`,都有大量的库、工具和框架支持它们的解析和生成
+3. `JSON`中的对象:
+   * 对象用花括号{}包裹:对象内容必须包含在一对大括号内
+   * 对象内的数据以键值对的形式存储,每对键和值之间用冒号分隔
+   * 键必须为字符串类型,放在双引号 "" 内
+   * 值可以是以下几种`JSON`支持的类型:字符串、数字、布尔值、对象、数组或`null`
+   * 键值对之间用逗号分隔:多个键值对按顺序排列,每对之间用逗号分割
+4. `JSON`数组:
+   * 数组用中括号[]包裹
+   * 值之间用逗号分隔
+5. `JSON`使用斜杠`\`来转义字符
 # XML
 1. `XML`:指的是可扩展性标记语言(`XML`格式与`HTML`类似)(`HTML`就是一种标记语言),`XML`的关注焦点是数据的内容(但它也可展示在浏览器中,但通常没有颜色、可视化处理等等,它只关注传输的内容);而`HTML`的关注焦点是数据的展示(通过浏览器打开`HTML`就能看出)  `HTML`旨在显示信息,而`XML`旨在传输信息
 2. `XML`标签只能自定义(`HTML`标签不能自定义):
@@ -350,7 +360,8 @@
    ```
 # Writer.h
 1. `Level`结构体的本质作用就是帮助`Writer`区分当前正在处理的是`JSON`对象({})还是数组([]),并跟踪当前层级的状态
-2. `RawValue()`用于处理已经序列化的`JSON`数据,即将已经序列化的`JSON`数据直接写入输出流:
+2. <mark>`JSON`序列化指的是将数据结构或对象转换为`JSON`格式的过程</mark>
+3. `RawValue()`用于处理已经序列化的`JSON`数据,即将已经序列化的`JSON`数据直接写入输出流:
    ```C++
    1. 序列化前的原始数据结构
    struct Person {
@@ -361,22 +372,28 @@
    2. 序列化后的JSON字符串
    {"name": "Alice", "age": 30}
    ```
-3. 8位字符->`FF`;16位字符->`FFFF`;8位对应一个字节
-4. <mark>`Unicode`代码点的范围为`U+0000`到`U+10FFFF`.`Unicode`大多数常用字符的代码点在`U+0000`到`U+FFFF`之间,这个范围被称为基本多语言平面(BMP)(从`U+0000`到`U+FFFF`,这是`Unicode`中的第一个平面,包含大多数常用字符,如大多数拉丁字符、汉字、阿拉伯数字等).处于BMP范围的字符可以用16位单元表示;从`U+10000`到`U+10FFFF`,这个范围包含了许多不常用的字符,包括某些特殊符号、表情符号等.这部分字符使用代理对进行编码,以适应`UTF-16`</mark>
-5. `PutUnsafe(*os_, '\\');`:在字符串中表示一个实际的反斜杠字符,需要使用双反斜杠`\\`,而编译器会将传入的这两个反斜杠视为一个反斜杠字符
-6. `Unicode`转义序列:`\uxxxx`
-7. </span>`writer`向输出流写入时,对于转义字符且`escape[static_cast<unsigned char>(c)]=='u'`时和不支持`Unicode&&非ASCII码`的两种情况都是转换为`Unicode`转义序列写入输出流;对于常规字符(除了前面两种情况的字符),是直接将其写入到输出流,而不是转换为`Unicode`转义序列</span>
-8. <mark>`static_cast<unsigned char>`:这就是求字符的ASCII码</mark>
-9. <span style="color:red;">对于输入流中显示给出的字符,如`"Hello,\nWorld"`,这个`\n`会被视为两个字符:`\`这是转义字符,`escape[static_cast<unsigned char>('\')]='\'`,`WriteString()`会将其转义为`\\`,而`n`是常规字符,所以在经过`WriteString()`后,向输出流写入的JSON字符串结果为`"Hello,\\nWorld"`</span>
-10. <span style="color:red;">若`"Hello,\nWorld"`末尾有一个不可见的换行符,这个字符是被视为一个字符,而不是两个,它的ASCII码=10,因此`static_cast<unsigned char>('\n')=10`,对应`escape[10]=n`,因此这个不可见的换行符是以`\\n`的方式写入输出流,而不是以JSON转义序列`\uxxxx`的方式写入</span>
-11. 从`escape`数组可知,当字符的`ASCII`码值在`escape`中对应为`u`时才会以`Unicode`转义序列方式写入输出流.`ASCII`码=0-7时对应字符`u`,而这个范围内的`ASCII`码对应的字符是控制字符,如`6->ACK字符`,主要用于控制设备(如打印机等)
-12. <mark>为什么要使用`Unicode`转义序列?</mark>
+4. 8位字符->`FF`;16位字符->`FFFF`;8位对应一个字节
+5. <mark>`Unicode`代码点的范围为`U+0000`到`U+10FFFF`.`Unicode`大多数常用字符的代码点在`U+0000`到`U+FFFF`之间,这个范围被称为基本多语言平面(BMP)(从`U+0000`到`U+FFFF`,这是`Unicode`中的第一个平面,包含大多数常用字符,如大多数拉丁字符、汉字、阿拉伯数字等).处于BMP范围的字符可以用16位单元表示;从`U+10000`到`U+10FFFF`,这个范围包含了许多不常用的字符,包括某些特殊符号、表情符号等.这部分字符使用代理对进行编码,以适应`UTF-16`</mark>
+6. `PutUnsafe(*os_, '\\');`:在字符串中表示一个实际的反斜杠字符,需要使用双反斜杠`\\`,而编译器会将传入的这两个反斜杠视为一个反斜杠字符
+7. `Unicode`转义序列:`\uxxxx`
+8. </span>`writer`向输出流写入时,对于转义字符且`escape[static_cast<unsigned char>(c)]=='u'`时和不支持`Unicode&&非ASCII码`的两种情况都是转换为`Unicode`转义序列写入输出流;对于常规字符(除了前面两种情况的字符),是直接将其写入到输出流,而不是转换为`Unicode`转义序列</span>
+9. <mark>`static_cast<unsigned char>`:这就是求字符的ASCII码</mark>
+10. <span style="color:red;">对于输入流中显示给出的字符,如`"Hello,\nWorld"`,这个`\n`会被视为两个字符:`\`这是转义字符,`escape[static_cast<unsigned char>('\')]='\'`,`WriteString()`会将其转义为`\\`,而`n`是常规字符,所以在经过`WriteString()`后,向输出流写入的JSON字符串结果为`"Hello,\\nWorld"`</span>
+11. <span style="color:red;">若`"Hello,\nWorld"`末尾有一个不可见的换行符,这个字符是被视为一个字符,而不是两个,它的ASCII码=10,因此`static_cast<unsigned char>('\n')=10`,对应`escape[10]=n`,因此这个不可见的换行符是以`\\n`的方式写入输出流,而不是以JSON转义序列`\uxxxx`的方式写入</span>
+12. 从`escape`数组可知,当字符的`ASCII`码值在`escape`中对应为`u`时才会以`Unicode`转义序列方式写入输出流.`ASCII`码=0-7时对应字符`u`,而这个范围内的`ASCII`码对应的字符是控制字符,如`6->ACK字符`,主要用于控制设备(如打印机等)
+13. <mark>为什么要使用`Unicode`转义序列?</mark>
     * `Unicode`转义序列(`\uxxxx`)是一种通用的表示方式,独立于具体的字符编码方式.它可以在各种环境下使用,无论是`Unicode`编码,还是不支持`Unicode`编码
     * 在某些环境中,如果字符编码不支持`Unicode`,直接包含非`ASCII`字符(如中文、阿拉伯文等)可能会导致乱码或解析失败.将字符转换为`Unicode`转义序列,能让解析器在不知道具体编码的情况下仍然能够正确解码并显示原字符
     * `JSON`的规范规定了在`JSON`字符串中可以使用`Unicode`转义序列来表示字符
     * 有些非可打印字符和控制字符会在字符串解析过程中引起歧义或错误(对应`excape`数组中的`u`元素).使用 `Unicode`转义序列将这些字符明确地标识出来,有助于解析器准确地处理它们
     * 对于`JSON`解析器(`reader.h`),处理`Unicode`转义序列相对简单,避免了复杂的字符编码检测和转换逻辑.解析器只需要将`\uXXXX`转换为相应的`Unicode`字符(`XXXX`->`Unicode`码点->`Unicode`字符)无需关心当前环境是否支持`Unicode`
-13. <mark>目标编码不支持`Unicode`:意思是目标系统或格式使用的字符编码无法直接表示或处理`Unicode`字符,如`ASCII`编码和`ISO-8859-1`编码等</mark>
-14. <mark>对于`ASCII`码字符,无论目标编码是否支持`Unicode`,此时都可以直接在目标中解析成功,而不需要`Unicode`转义序列,因为像`ISO-8859-1、UTF8、UTF16、UTF32`等编码都向下兼容`ASCII`,所以就算目标编码不支持`Unicode`,都能解析出`ASCII`字符</mark>
-15. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法
-
+14. <mark>目标编码不支持`Unicode`:意思是目标系统或格式使用的字符编码无法直接表示或处理`Unicode`字符,如`ASCII`编码和`ISO-8859-1`编码等</mark>
+15. <mark>对于`ASCII`码字符,无论目标编码是否支持`Unicode`,此时都可以直接在目标中解析成功,而不需要`Unicode`转义序列,因为像`ISO-8859-1、UTF8、UTF16、UTF32`等编码都向下兼容`ASCII`,所以就算目标编码不支持`Unicode`,都能解析出`ASCII`字符</mar>
+16. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法
+17. <mark>本项目使用了`SIMD`指令集`SSE NEON`,用于实现了特化版本`ScanWriteUnescapedString`函数的并行加速处理,提升性能</mark>
+18. <mark>`SSE`和`NEON`都是`SIMD`指令集,允许在单个指令中并行处理多个数据元素,即一次可以并行处理16字节数据,从而达到加速处理的目的.`SSE`是由`intel`开发的`SIMD`指令集,主要用于`x86 x86-64`架构处理器上;`NEON`是`ARM`架构的`SIMD`指令集,专为移动和嵌入式设计</mark>
+19. <mark>`SSE`处理为什么需要16字节对齐,而不是其它对齐呢?
+   因为`SSE`和`NEON`指令集都是使用128位(16字节)宽的寄存器.这意味着它们可以一次性处理128位的数据,即同时处理16字节.因此,将数据对齐到16字节的边界可以让数据以最快的速度加载到`SIMD`寄存器中</mark>
+20. 对于使用`SSE NEON`中,代码没有进行额外的地址对齐移动操作,只是在遇到未对齐的部分时,逐字节处理并写入输出流,而在处理对齐的部分时,使用了`SIMD`来加速操作
+21. <span style="color:red;">`bool ScanWriteUnescapedString(GenericStringStream<SourceEncoding>& is, size_t length)`和经过`SIMD`指令集加速的`inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length)`,前者只是进行了判断当前读取位置是否小于给定长度,以此确定是否达到了字符串末尾,而没有提前进行任何的写入输出流或检查特殊字符的操作;对于使用`SIMD`加速的后者,它通过字节对齐和`SIMD`指令加速扫描,尽可能快地检查并写入非特殊字符到输出流中,遇到特殊字符就使`is.src_`指向了此位置(利用`SIMD`指令加速的`ScanWriteUnescapedString`函数直接在内层完成了非特殊字符的写入和特殊字符的检测,目的是减少在上层(如`WriteString()`等)的额外处理操作,显著提升解析和写入性能),然后结束函数</span>
+22. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测

@@ -595,68 +595,64 @@ namespace RAPIDJSON{
     #elif defined(RAPIDJSON_NEON)
     template<>
     inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length) {
-        if (length < 16)
+      if(length < 16)// 若字符串长度小于16字节,则直接返回当前字符位置是否小于长度length
             return RAPIDJSON_LIKELY(is.Tell() < length);
-
-        if (!RAPIDJSON_LIKELY(is.Tell() < length))
+        if(!RAPIDJSON_LIKELY(is.Tell() < length))// 当前位置超出指定长度
             return false;
-
-        const char* p = is.src_;
-        const char* end = is.head_ + length;
-        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));
-        const char* endAligned = reinterpret_cast<const char*>(reinterpret_cast<size_t>(end) & static_cast<size_t>(~15));
-        if (nextAligned > end)
+        const char* p =is.src_;
+        const char* end = is.head_ + length;// 字符串结束位置
+        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址
+        const char* endAligned = reinterpret_cast<const char*>(reinterpret_cast<size_t>(end) & static_cast<size_t>(~15));// end末尾对应的16字节对齐的地址,这样就可以指定SIMD批处理的终止位置
+        if(nextAligned > end)// 表示此时剩余数据不足16字节
             return true;
-
-        while (p != nextAligned)
-            if (*p < 0x20 || *p == '\"' || *p == '\\') {
-                is.src_ = p;
-                return RAPIDJSON_LIKELY(is.Tell() < length);
+        // 未对齐部分逐字符单独处理   不用SSE处理
+        while(p!=nextAligned){// p!=nextAligned表示此时是未到16字节对齐的地址的  即未对齐
+            if(*p < 0x20 || *p=='\"' || *p=='\\'){// 如果是控制字符、双引号或反斜杠=>特殊字符
+                is_.src_ = p;
+                return RAPIDJSON_LIKELY(is.Tell() < length);// 若遇到特殊字符,返回当前位置
             }
             else
-                os_->PutUnsafe(*p++);
-
-        // The rest of string using SIMD
-        const uint8x16_t s0 = vmovq_n_u8('"');
-        const uint8x16_t s1 = vmovq_n_u8('\\');
-        const uint8x16_t s2 = vmovq_n_u8('\b');
-        const uint8x16_t s3 = vmovq_n_u8(32);
-
-        for (; p != endAligned; p += 16) {
-            const uint8x16_t s = vld1q_u8(reinterpret_cast<const uint8_t *>(p));
-            uint8x16_t x = vceqq_u8(s, s0);
-            x = vorrq_u8(x, vceqq_u8(s, s1));
-            x = vorrq_u8(x, vceqq_u8(s, s2));
-            x = vorrq_u8(x, vcltq_u8(s, s3));
-
-            x = vrev64q_u8(x);                     // Rev in 64
-            uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);   // extract
-            uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);  // extract
-
+                os_->PutUnsafe(*p++);// 不是特殊字符,则直接写入输出流
+        }
+        // 定义NEON常量
+        const uint8x16_t s0 = vmovq_n_u8('"');// 使用vmovq_n_u8加载双引号到NEON寄存器
+        const uint8x16_t s1 = vmovq_n_u8('\\');// 使用vmovq_n_u8加载反斜杠到NEON寄存器
+        const uint8x16_t s2 = vmovq_n_u8('\b');// 使用vmovq_n_u8加载退格符到NEON寄存器   NEON指令集中对退格符\b单独进行检测了,而不是纳入控制字符中被统一检测
+        const uint8x16_t s3 = vmovq_n_u8(32);// 使用vmovq_n_u8加载控制字符到NEON寄存器  32<=>0x20
+       for(;p!=endAligned;p+=16){
+            const uint8x16_t s = vld1q_u8(reinterpret_cast<const uint8_t*>(p));
+            uint8x16_t x = vceqq_u8(s, s0);// 使用vceqq_u8比较字符是否为特殊字符s0
+            x = vorrq_u8(x, vceqq_u8(s, s1));// 使用vceqq_u8比较字符是否为特殊字符s1
+            x = vorrq_u8(x, vceqq_u8(s, s2));// 使用vceqq_u8比较字符是否为特殊字符s2
+            x = vorrq_u8(x, vceqq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
+            x = vrev64q_u8(x);// 对x进行64位反转并提取每8位的结果
+            uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);// 反转后的64位低位,代表检测结果的掩码
+            uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);// 反转后的64位高位,代表检测结果的掩码
             SizeType len = 0;
-            bool escaped = false;
-            if (low == 0) {
-                if (high != 0) {
+            bool escaped = false;// 标记是否检测到特殊字符
+            // 计算16字节块中特殊字符的索引,即算无特殊字符部分的长度len
+            // SSE指令集用__builtin_ffs()就能完成下面if-else中len1的计算
+           if(low==0){// low为全零,表示低位无特殊字符
+                if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
                     uint32_t lz = internal::clzll(high);
-                    len = 8 + (lz >> 3);
+                    len = 8+(lz>>3);
                     escaped = true;
                 }
-            } else {
+            }
+            else{// low非零,则通过clzll计算零位数,即算无特殊字符部分的长度
                 uint32_t lz = internal::clzll(low);
-                len = lz >> 3;
+                len = lz>>3;
                 escaped = true;
             }
-            if (RAPIDJSON_UNLIKELY(escaped)) {   // some of characters is escaped
+            if(RAPIDJSON_UNLIKELY(escaped)){// 写入无特殊字符的部分并跳出
                 char* q = reinterpret_cast<char*>(os_->PushUnsafe(len));
-                for (size_t i = 0; i < len; i++)
+                for(size_t i=0;i<len;++i)
                     q[i] = p[i];
-
                 p += len;
                 break;
             }
-            vst1q_u8(reinterpret_cast<uint8_t *>(os_->PushUnsafe(16)), s);
+            vst1q_u8(reinterpret_cast<uint8_t *>(os_->PushUnsafe(16)), s);// 这个16字节块无特殊字符 则直接写入
         }
-
         is.src_ = p;
         return RAPIDJSON_LIKELY(is.Tell() < length);
     }

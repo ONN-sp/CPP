@@ -28,6 +28,20 @@
    * 数组用中括号[]包裹
    * 值之间用逗号分隔
 5. `JSON`使用斜杠`\`来转义字符
+6. <mark>在`JSON`中,根元素指的是整个`JSON`数据结构的最外层部分</mark>.每个`JSON`文档有且仅有一个根元素,根元素可以为对象或者数组:
+   ```json
+   [
+    {
+        "name": "Alice",
+        "age": 30
+    },
+    {
+        "name": "Bob",
+        "age": 25
+    }
+   ]
+   ```
+   上述例子的根元素指的是最外层的数组`[]`,包含了两个对象;但是单独看其中一个对象,不能把它叫做根元素,根元素在这里是整个数组,而不是数组中的每个对象.根元素必须指的是最外层的结构
 # XML
 1. `XML`:指的是可扩展性标记语言(`XML`格式与`HTML`类似)(`HTML`就是一种标记语言),`XML`的关注焦点是数据的内容(但它也可展示在浏览器中,但通常没有颜色、可视化处理等等,它只关注传输的内容);而`HTML`的关注焦点是数据的展示(通过浏览器打开`HTML`就能看出)  `HTML`旨在显示信息,而`XML`旨在传输信息
 2. `XML`标签只能自定义(`HTML`标签不能自定义):
@@ -358,7 +372,7 @@
    stream.Put('e');
    stream.PutEnd(stream.PutBegin());  // 结束写操作
    ```
-# Writer.h
+# Writer.h/Prettywriter.h
 1. `Level`结构体的本质作用就是帮助`Writer`区分当前正在处理的是`JSON`对象({})还是数组([]),并跟踪当前层级的状态
 2. <mark>`JSON`序列化指的是将数据结构或对象转换为`JSON`格式的过程</mark>
 3. `RawValue()`用于处理已经序列化的`JSON`数据,即将已经序列化的`JSON`数据直接写入输出流:
@@ -397,3 +411,26 @@
 20. 对于使用`SSE NEON`中,代码没有进行额外的地址对齐移动操作,只是在遇到未对齐的部分时,逐字节处理并写入输出流,而在处理对齐的部分时,使用了`SIMD`来加速操作
 21. <span style="color:red;">`bool ScanWriteUnescapedString(GenericStringStream<SourceEncoding>& is, size_t length)`和经过`SIMD`指令集加速的`inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length)`,前者只是进行了判断当前读取位置是否小于给定长度,以此确定是否达到了字符串末尾,而没有提前进行任何的写入输出流或检查特殊字符的操作;对于使用`SIMD`加速的后者,它通过字节对齐和`SIMD`指令加速扫描,尽可能快地检查并写入非特殊字符到输出流中,遇到特殊字符就使`is.src_`指向了此位置(利用`SIMD`指令加速的`ScanWriteUnescapedString`函数直接在内层完成了非特殊字符的写入和特殊字符的检测,目的是减少在上层(如`WriteString()`等)的额外处理操作,显著提升解析和写入性能),然后结束函数</span>
 22. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测
+23. <mark>`PrettyWriter`相较于`Writer`其实就是多了格式化处理+前缀处理(其实就是在前缀中多了格式化处理),即:多了换行、缩进等格式化美化(可读性增强)处理+`Prefix()->PrettyPrefix()`</mark>
+24. 由`Writer`构建的`JSON`编写器是一个紧凑的编写器,即不会进行格式化输出处理,这样更节省空间、减少解析时间等
+25. `PrettyWriter`与`Writer`的不同展示:
+   ```C++
+   1. 原始输入流数据
+   std::string name = "Alice";
+   int age = 30;
+   std::vector<std::string> hobbies = {"reading", "hiking", "coding"};
+   2. 使用Writer->紧凑的
+   {"name":"Alice","age":30,"hobbies":["reading","hiking","coding"]}
+   3. 使用PrettyWriter->易读的
+   {// 第0级->根元素
+    "name": "Alice",// 第一级
+    "age": 30,// 第一级->对象
+    "hobbies": [// 第一级
+        "reading",// 第二级
+        "hiking",// 第二级
+        "coding"// 第二级
+    ]// 第一级
+   }// 第0级
+   ```
+
+

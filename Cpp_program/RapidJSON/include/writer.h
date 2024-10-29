@@ -38,7 +38,7 @@ namespace RAPIDJSON{
             typedef typename SourceEncoding::Ch Ch;
             static const int kDefaultMaxDecimalPlaces = 324;// 默认的最大十进制位数  在将双精度数转换为JSON字符串时,这个常量限制了小数部分的位数
             /**
-             * @brief Construct a new Writer object
+             * @brief 构建一个紧凑输出到输出流的JSON编写器
              * 
              * @param os 
              * @param StackAllocator 
@@ -128,7 +128,7 @@ namespace RAPIDJSON{
             #endif
             bool StartObject(){
                 Prefix(kObjectType);
-                new (level_stack_.template Push<Level>()) Level(false);
+                new (level_stack_.template Push<Level>()) Level(false);// false表示使一个对象而非数组
                 return WriteStartObject();// 写入开始对象
             }
             bool Key(const Ch* str, SizeType length, bool copy = false){
@@ -149,12 +149,12 @@ namespace RAPIDJSON{
             }
             bool StartArray(){
                 Prefix(kArrayType);
-                new (level_stack_.template Push<Level>())  Level(true);
+                new (level_stack_.template Push<Level>()) Level(true);
                 return WriteStartArray();
             }
             bool EndArray(SizeType elementCount=0){
                 (void)elementCount;
-                RAPIDJSON_ASSERT(level_stack_.GetSize() >= sizeof(Level));
+                RAPIDJSON_ASSERT(level_stack_.GetSize() >= sizeof(Level));// 确保当前栈的大小>=Level大小,即确保当前栈至少包含一个完整的Level(true)结构(对于数组来说)
                 RAPIDJSON_ASSERT(level_stack_.template Top<Level>()->inArray);
                 level_stack_.template Pop<Level>(1);
                 return EndValue(WriteEndArray());

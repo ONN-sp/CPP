@@ -175,7 +175,7 @@ public:
     }
 
     bool Empty() const { return stackTop_ == stack_; }
-    size_t GetSize() const { return static_cast<size_t>(stackTop_ - stack_); }
+    size_t GetSize() const { return static_cast<size_t>(stackTop_ - stack_); }// 返回栈的当前大小,若一个栈元素占4字节,那么若栈有两个元素,那么GetSize()返回的是8字节
     size_t GetCapacity() const { return static_cast<size_t>(stackEnd_ - stack_); }
 
 private:

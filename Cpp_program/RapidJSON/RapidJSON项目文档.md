@@ -432,5 +432,16 @@
     ]// 第一级
    }// 第0级
    ```
+# rapidjson.h/fwd.h
+1. `!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN`:`!@cond`用于`Doxygen`文档生成工具,标记这段代码在生成文档时隐藏.结束位置要用`//!@endcond`
+2. <mark>现代CPU使用分支预测器来预测条件语句的结果,预测成功时,CPU可以继续顺序执行下一条指令;预测失败(预测的结果和实际结果不符)就会导致流水线清空,即此时CPU需要重新加载指令,产生额外的性能开销</mark>
+3. <mark>`RAPIDJSON_LIKELY() RAPIDJSON_UNLIKELY()`:`RAPIDJSON_LIKELY(c)/RAPIDJSON_UNLIKELY(c)`表示的是条件`c`大概率为`true/false`,这是一种帮助提升CPU基于分支预测机制时的性能.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过帮助CPU更好地进行分支预测,从而提升代码执行效率.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过使用`__builtin_expect()`的`GCC/Clang`内建函数,`__builtin_expect(!!(x), 1)`告诉编译器`x`更可能为`true`,即最初的预测为`true`.由于现代处理器是通过分支预测机制来提高指令执行效率的,而分支预测会猜测下一条要执行的是什么指令,对于`RAPIDJSON_LIKELY(x_<=>__builtin_expect(!!(x), 1)`,它会将`true`后的指令预先加载到处理器中,当该条件确实为真时,处理器就可以顺序地执行后续指令,此时就会减少指令取值的延迟,从而实现了性能提升;当条件真实为假时,此时由于错误的预先预测,处理器会清空流水线中的指令,因为此时流水线中的指令大多数是基于错误的预先预测而加载的,此时会造成性能损失,但是由于`RAPIDJSON_LIKELY()`大概率是`true`,因此大多数情况下能提高性能</mark>
+4. `rapidjson.h`的主要作用是:其实就是对一些基本功能和操作定义成了适配本项目的宏的形式,如`RAPIDJSON_MALLOC RAPIDJSON_FREE`等
+   * 类型定义:定义了`JSON`中的基本类型,如`kNullType`、`kFalseType`、`kTrueType`、`kObjectType`、`kArrayType`、`kStringType`和`kNumberType`.这些类型用于表示`JSON`的不同数据结构
+   * 内存管理:提供了自定义的内存分配和释放接口,比如`RAPIDJSON_MALLOC`、`RAPIDJSON_FREE`,允许用户根据需要重定义内存分配策略
+   * 异常处理:定义了断言和静态断言的宏,确保在开发过程中能够捕获错误
+   * 版本信息:提供了版本控制的宏,以便用户在代码中检查项目的版本
+   * 特性检查:检测编译器是否支持某些`C++`特性,如`C++11`、`C++17`的特性,以便进行相应的条件编译
+5. `fwd.h`是为本项目提供前向声明,以便在某些头文件若只是用一个头文件所定义的类(结构体等)这个类型,而不需要知道它的具体定义时为代码之间减少包含依赖,进而提高编译效率
 
 

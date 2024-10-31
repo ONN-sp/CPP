@@ -1584,7 +1584,7 @@ void Swap(AnyType &a, AnyType &b);
         void SetB(B b) { b_ptr = b; }// 这是错的,B b表示的是一个B类对象,此时一定需要B的完整定义
     };
     ```
-17. <mark>以下几种情况函数的声明是不用给的:</mark>
+17. <mark>以下几种情况函数的前向声明(1,2,3)是不用给的:</mark>
     ```C++
     1. 如果函数在调用点前已经完整定义,此时不用前向声明:
     void functionB() {
@@ -1593,7 +1593,7 @@ void Swap(AnyType &a, AnyType &b);
     void functionA() {
         functionB(); // 此时 functionB 已经完整定义，可以直接调用
     }
-    2. 类的成员函数在类内部可以相互调用,不用声明(不管是前还是后):
+    2. 类的成员函数在类内部可以相 互调用,不用声明(不管是前还是后):
     class MyClass {
     public:
         void functionA() {
@@ -1618,8 +1618,8 @@ void Swap(AnyType &a, AnyType &b);
     }
     ```
     ```C++
-    4. 在一个文件中,如果函数A在调用时还没有见过函数B的声明(非类的成员函数),那么就需要提取声明B:
-    void functionB();
+    4. 在一个文件中,如果函数A在调用时还没有见过函数B的声明(非类的成员函数),那么就需要提前声明B:(这个其实是同一文件中的前向声明)
+    void functionB();// 同一文件中的前向声明
     void functionA() {
         std::cout << "In functionA" << std::endl;
         functionB(); // 调用 functionB，但此时 functionB 还没有定义

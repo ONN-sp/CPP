@@ -37,7 +37,7 @@ RAPIDJSON_DIAG_OFF(effc++)
 #define RAPIDJSON_REGEX_VERBOSE 0
 #endif
 
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON {
 namespace internal {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -726,7 +726,7 @@ typedef GenericRegex<UTF8<> > Regex;
 typedef GenericRegexSearch<Regex> RegexSearch;
 
 } // namespace internal
-RAPIDJSON_NAMESPACE_END
+}
 
 #ifdef __GNUC__
 RAPIDJSON_DIAG_POP

@@ -1,7 +1,6 @@
 #ifndef RAPIDJSON_ALLOCATORS_H
 #define RAPIDJSON_ALLOCATORS_H
 
-
 #include "rapidjson.h"
 #include "internal/meta.h"
 #include <memory>// STL

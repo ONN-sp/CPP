@@ -22,7 +22,7 @@
 #include <climits>
 #include <limits>
 
-RAPIDJSON_NAMESPACE_BEGIN
+namespace RAPIDJSON{
 namespace internal {
 
 inline double FastPath(double significand, int exp) {
@@ -288,6 +288,6 @@ inline double StrtodFullPrecision(double d, int p, const Ch* decimals, size_t le
 }
 
 } // namespace internal
-RAPIDJSON_NAMESPACE_END
+}
 
 #endif // RAPIDJSON_STRTOD_

@@ -95,7 +95,7 @@
     * 保护实参的值不被修改:使用`const`修饰函数参数可以确保函数内部不会修改实参的值,这样有助于提高代码的可读性,并防止意外的修改实参导致的错误
     * 提高函数的通用性:形参为`const`类型,则实参可以是`const`类型,也可以是非`const`类型
 37. <mark>标准输出和标准输入是程序的默认输出流,标准输出的文件描述符是`1`,标准输入的文件描述符是`0`</mark>
-13. `char`类型对应的是`ASCII`码:
+38. `char`类型对应的是`ASCII`码:
     ```C++
     char a=k='0';
     a++;
@@ -104,6 +104,7 @@
     a='1'(ascll码:48+1=49->'1')
     k='a'(ascll码:48+49=97->'a')
     ```
+39. `C++`中的续行符(`\`):在宏定义或长代码行中,反斜杠可以用来指示代码在下一行继续
 # 数组
 1. 数组声明应指出以下三点:
     * 存储在每个元素中的值的类型;
@@ -1217,7 +1218,7 @@ void Swap(AnyType &a, AnyType &b);
    ```
    * `push_back`传入的参数(42)会被用来创建一个临时对象,然后将该临时对象拷贝到容器中.在`push_back(42)`中,42会先通过`Myclass`的构造函数创建一个临时对象`Myclass(42)`,然后这个对象会被拷贝到`vector`中
    * `emplace_back`:直接在容器的内部位置构造对象,而不需要创建临时对象.`emplace_back(42)`会直接调用`Myclass`的构造函数在`vector`的内部位置创建对象,而不会进行额外的拷贝
-9. <span style="color:red;">由于`push_back`会创建一个临时对象再拷贝进`vector`,因此它可以`edges.push_back({s, t});`,此时编译器会将`{s,t}`视为一个`std::vector<int>`的临时对象,并自动进行类型推断;而`emplace_back`是直接再容器中构造元素,而不是拷贝或移动一个已有对象.因此,它不会尝试将`{s,t}`转换成`std::vector<int>`,此时必须用`edges.emplace_back(std::vector<int>{s, t});`才行</span>
+9. <span style="color:red;">由于`push_back`会创建一个临时对象再拷贝进`vector`,因此它可以`edges.push_back({s, t});`,此时编译器会将`{s,t}`视为一个`std::vector<int>`的临时对象,并自动进行类型推断;而`emplace_back`是直接在容器中构造元素,而不是拷贝或移动一个已有对象.因此,它不会尝试将`{s,t}`转换成`std::vector<int>`,此时必须用`edges.emplace_back(std::vector<int>{s, t});`才行</span>
 # 命名空间
 1. 变量对程序而言可见的范围被称为作用域
 2. 组织编写程序的策略:

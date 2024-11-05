@@ -1,4 +1,4 @@
-// Writer类用于将C++中的数据序列化为JSON格式
+// Writer类用于将JSON数据序列化为JSON字符串
 #ifndef RAPIDJSON_WRITER_H_
 #define RAPIDJSON_WRITER_H_
 
@@ -178,7 +178,7 @@ namespace RAPIDJSON{
             void Flush(){
                 os_->Flush();
             }
-            static const size_t kDefaultLevelDepth = 32;// 默认生成的JSON数据的嵌套层次深度,即默认可以处理嵌套深度为32层的对象或数组
+            static const size_t kDefaultLevelDepth = 32;// 默认生成的JSON字符串的嵌套层次深度,即默认可以处理嵌套深度为32层的对象或数组
         protected:
             /**
              * @brief 
@@ -186,7 +186,7 @@ namespace RAPIDJSON{
              * 1. 用于在写JSON时维护嵌套层次,跟踪当前的层次状态
              * 2. 区分对象和数组,确保正确写入键值对或数组元素
              * 3. 对于对象,跟踪对象中的键值对数量,确保每个键都有值
-             * 4. 在写入嵌套结构时,确保最终生成的JSON是合法且完整的
+             * 4. 在写入嵌套结构时,确保最终生成的JSON字符串是合法且完整的
              */
             struct Level {
                 Level(bool inArray_) : valueCount(0), inArray(inArray_) {}

@@ -550,8 +550,8 @@ namespace RAPIDJSON{
             return false;
         const char* p =is.src_;
         const char* end = is.head_ + length;// 字符串结束位置
-        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址
-        const char* endAligned = reinterpret_cast<const char*>(reinterpret_cast<size_t>(end) & static_cast<size_t>(~15));// end末尾对应的16字节对齐的地址,这样就可以指定SIMD批处理的终止位置
+        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址    向上对齐
+        const char* endAligned = reinterpret_cast<const char*>(reinterpret_cast<size_t>(end) & static_cast<size_t>(~15));// end末尾对应的16字节对齐的地址,这样就可以指定SIMD批处理的终止位置  向下对齐
         if(nextAligned > end)// 表示此时剩余数据不足16字节
             return true;
         // 未对齐部分逐字符单独处理   不用SSE处理
@@ -585,7 +585,7 @@ namespace RAPIDJSON{
                 for(size_t i=0;i<len;++i)
                     q[i] = p[i];// 拷贝无转义字符的部分 len之前的是普通字符
                 p += len;// 更新p位置以跳过已处理的普通字符部分
-                break;
+                break;// 当扫描到特殊字符,就停止扫描,即退出函数
             }
             _mm_storeu_si128(reinterpret_cast<__m128i*>(os_->PushUnsafe(16), s);// 无特殊字符,则直接写入输出流
         }
@@ -624,8 +624,8 @@ namespace RAPIDJSON{
             uint8x16_t x = vceqq_u8(s, s0);// 使用vceqq_u8比较字符是否为特殊字符s0
             x = vorrq_u8(x, vceqq_u8(s, s1));// 使用vceqq_u8比较字符是否为特殊字符s1
             x = vorrq_u8(x, vceqq_u8(s, s2));// 使用vceqq_u8比较字符是否为特殊字符s2
-            x = vorrq_u8(x, vceqq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
-            x = vrev64q_u8(x);// 对x进行64位反转并提取每8位的结果
+            x = vorrq_u8(x, vcltq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
+            x = vrev64q_u8(x);// 对x进行64位反转(前8字节和后8字节交换)
             uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);// 反转后的64位低位,代表检测结果的掩码
             uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);// 反转后的64位高位,代表检测结果的掩码
             SizeType len = 0;

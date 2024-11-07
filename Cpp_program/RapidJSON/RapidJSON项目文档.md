@@ -339,7 +339,7 @@
    class StreamLocalCopy<Stream, 1> {
    public:
       StreamLocalCopy(Stream& original) : s(original), original_(original) {}
-      ~StreamLocalCopy() { original_ = s; }
+      ~StreamLocalCopy() { original_ = s; }// 在对象销毁时将副本的状态更新回original,确保原流的状态保存一致
       Stream s;// 非引用类型,因此会创建副本
    private:
       StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
@@ -353,6 +353,7 @@
    private:
       StreamLocalCopy& operator=(const StreamLocalCopy&) /* = delete */;
    };
+   // 在构造函数中,会将流保存一个副本,然后可能在后续会对这个流进行各种操作,此时本地副本在访问时能避免Peek()或Take()带来的解引用指针操作,从而提高了性能(通过将流数据复制到栈上的副本中,后续的操作可以直接访问栈上的数据,而不需要每次都解引用指针)
    ```
 6. <mark>`GenericInsituStringStream`实现了就地读写操作,与`GenericStringStream`只能读不同,它可以在原地读写.即可以在同一个内存缓冲区中同时进行读取和写入操作,而不需要为修改后的数据分配额外的内存,这对于减少内存占用和提高性能非常有用.其核心思想:使用同一个内存缓冲区,通过不同的指针(`src_`和`dst_`)来分别管理读取和写入操作;使用`PutBegin()`、`PutEnd()`这样的接口明确写入的开始和结束位置;通过`Push()`和`Pop()`提高了灵活的字符管理</mark>
    ```C++
@@ -462,10 +463,25 @@
    因为`SSE`和`NEON`指令集都是使用128位(16字节)宽的寄存器.这意味着它们可以一次性处理128位的数据,即同时处理16字节.因此,将数据对齐到16字节的边界可以让数据以最快的速度加载到`SIMD`寄存器中</mark>
 27. 对于使用`SSE NEON`中,代码没有进行额外的地址对齐移动操作,只是在遇到未对齐的部分时,逐字节处理并写入输出流,而在处理对齐的部分时,使用了`SIMD`来加速操作
 28. <span style="color:red;">`bool ScanWriteUnescapedString(GenericStringStream<SourceEncoding>& is, size_t length)`和经过`SIMD`指令集加速的`inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length)`,前者只是进行了判断当前读取位置是否小于给定长度,以此确定是否达到了字符串末尾,而没有提前进行任何的写入输出流或检查特殊字符的操作;对于使用`SIMD`加速的后者,它通过字节对齐和`SIMD`指令加速扫描,尽可能快地检查并写入非特殊字符到输出流中,遇到特殊字符就使`is.src_`指向了此位置(利用`SIMD`指令加速的`ScanWriteUnescapedString`函数直接在内层完成了非特殊字符的写入和特殊字符的检测,目的是减少在上层(如`WriteString()`等)的额外处理操作,显著提升解析和写入性能),然后结束函数</span>
-29. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测
-30. <mark>`PrettyWriter`相较于`Writer`其实就是多了格式化处理+前缀处理(其实就是在前缀中多了格式化处理),即:多了换行、缩进等格式化美化(可读性增强)处理+`Prefix()->PrettyPrefix()`</mark>
-31. 由`Writer`构建的`JSON`编写器是一个紧凑的编写器,即不会进行格式化输出处理,这样更节省空间、减少解析时间等
-32. `PrettyWriter`与`Writer`的不同展示:
+29. `ScanWriteUnescapedString`中的特殊字符为双引号、反斜杠、控制字符(`ASCII`码小于`0X1F`(即31)的,如换行符、退格符等)
+30. <mark>`Writer`中利用`SSE/NEON`加速的`ScanWriteUnescapedString`主要用于加速写入未转义的`JSON`字符串内容.它扫描字符串内容,直到遇到需要转义的特殊字符,当遇到这些特殊字符时,`ScanWriteUnescapedString`会停止扫描,即退出函数,因为接下来需要进行转义或特殊处理.`Reader`这利用`SSE/NEON`加速的`SkipWhitespace_SIMD`用于跳过`JSON`字符串开头或中间的空白字符,使得`JSON`解析器可以快速定位到第一个有效字符,当遇到非空白字符时,`SkipWhitespace_SIMD`会停止扫描并返回该字符的位置,以便继续解析操作</mark>
+31. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测
+32. `Writer`中对`SSE4.2/SSE2`一起考虑处理的,其实在处理时用的是`SSE2`的指令(`SSE4.2`指令包括`SSE2`指令),即没有用`SSE4.2`新引入的指令(如`_mm_cmpistri`等),所以`Writer`中的`SSE`加速和`Reader`中的`SSE4.2`加速有点不同
+33. <mark>`PrettyWriter`相较于`Writer`其实就是多了格式化处理+前缀处理(其实就是在前缀中多了格式化处理),即:多了换行、缩进等格式化美化(可读性增强)处理+`Prefix()->PrettyPrefix()`</mark>
+34. `vcltq_u8`:比较是否逐字节小于;`vceqq_u8`:比较是否逐字节相等
+35. <mark>`vrev64q_u8`执行的是位置对调,8字节数据每两字节进行位置对调.
+36. 代码解释:
+    ```C++
+    if(low==0){// low为全零,表示低8字节无特殊字符
+        if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+            uint32_t lz = internal::clzll(high);
+            return p+8+(lz>>3);// 高8字节出现特殊字符,所以这里要+8  lz>>3<=>lz/8(因为p指针直接加减的是字节)
+        }
+    }
+    // lz>>3<=>lz/8
+    ```
+37. 由`Writer`构建的`JSON`编写器是一个紧凑的编写器,即不会进行格式化输出处理,这样更节省空间、减少解析时间等
+38. `PrettyWriter`与`Writer`的不同展示:
    ```C++
    1. 原始输入流数据
    std::string name = "Alice";
@@ -497,7 +513,11 @@
 5. `fwd.h`是为本项目提供前向声明,以便在某些头文件若只是用一个头文件所定义的类(结构体等)这个类型,而不需要知道它的具体定义时为代码之间减少包含依赖,进而提高编译效率
 # reader.h
 1. `reader.h`将`JSON`字符串->内存中的`JSON`数据
-
+2. <mark>`SkipWhitespace_SIMD`是用于加速跳过连续的`JSON`空白字符(包括空格、换行符、回车符和制表符).它利用了`SIMD`指令集来进行并行处理,以一次比较16个字节,从而显著提高性能</mark>
+3. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
+4. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
+   不管是`Writer::ScanWriteUnescapedString`还是`Reader::SkipWhitespace_SIMD`中使用的内存对齐,都是对所处理的字符串的开头进行内存对齐,即与`nextAligned`进行对齐,此时就保证了后续每一次都可以16字节为一批的进行读取成功(`Writer::ScanWriteUnescapedString`中给定了`length`,所以要保证不越界,即`p!=endAligned`).这里不内存对齐的原因是,他直接从开头取16字节为一批进行处理,此时很有可能最后剩小于16字节的数据处理不了(因为形成不了一批),所以此时的`for`循环终止条件为`p<=end-16`,此时剩余的字符用`SkipWhitespace(p, end)`单独处理就行
+5. `SSE4.2`在`SSE2`的基础上引入了新指令,如`_mm_cmpistri`.所以`Reader`中对这两种单独进行讨论了
 # document.h
 1. `Document::Parse()`是用于将`JSON`字符串解析为`JSON DOM`的方法.它接受一个`JSON`字符串,将其解析为树状结构,供用户访问和操作`JSON`数据
 2. <mark>通过`Document/Value`构建的对象一定是树形结构</mark>,所以说`Document/Value`实现了`DOM`编程接口

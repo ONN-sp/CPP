@@ -100,9 +100,9 @@ namespace RAPIDJSON{
             typedef typename Encoding::Ch Ch;
             GenericStreamWrapper(InputStream& is) : is_(is) {}
             Ch Peek() const {return is_.Peen();}
-            Ch Take() {return is_.Take();}
+            Ch Take() {return is_.Take();}// 从数据流中读取当前字符,并将读取光标(current_指针)移至下一个字符
             size_t Tell() {return is_.Tell();}
-            Ch PutBegin() {return is_.PutBegin();}
+            Ch PutBegin() {return is_.PutBegin();}// 将流的写入位置记录为开始位置
             void Put(Ch ch) {is_.Put(ch);}
             void Flush() {is_.Flush();}
             size_t PutEnd(Ch* ch) {return is_.PutEnd(ch);}

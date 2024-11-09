@@ -21,19 +21,20 @@
 #endif
 
 //!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN
-// 定义一个空宏，用于特定目的，避免编译器报错
+// 定义一个空宏,用于特定目的,避免编译器报错
 #define RAPIDJSON_NOTHING /* deliberately empty */
 
 // 如果没有定义 RAPIDJSON_PARSE_ERROR_EARLY_RETURN
 #ifndef RAPIDJSON_PARSE_ERROR_EARLY_RETURN
 // 定义一个宏，用于在解析过程中检测解析错误
+// RAPIDJSON_PARSE_ERROR_EARLY_RETURN(value)<=>if (RAPIDJSON_UNLIKELY(HasParseError())) { return value; }
 #define RAPIDJSON_PARSE_ERROR_EARLY_RETURN(value) \
     RAPIDJSON_MULTILINEMACRO_BEGIN \  
     if (RAPIDJSON_UNLIKELY(HasParseError())) { return value; } \
     RAPIDJSON_MULTILINEMACRO_END // 结束多行宏定义
 #endif
 
-// 定义一个宏，用于在解析错误时返回空值
+// 定义一个宏,用于在解析错误时返回空值
 #define RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID \
     RAPIDJSON_PARSE_ERROR_EARLY_RETURN(RAPIDJSON_NOTHING) // 调用前一个宏，传入空值
 
@@ -81,6 +82,28 @@ namespace RAPIDJSON{
         kParseEscapedApostropheFlag = 512,// 允许在字符串中使用转义的单引号'\'
         kParseDefaultFlags = RAPIDJSON_PARSE_DEFAULT_FLAGS// 使用默认解析标志
     };
+    /*
+    \brief JSON的解析接口函数Handler  最简单的是可以直接让每个接口函数直接输出解析得到的JSON数据
+    \code
+    concept Handler {
+        typename Ch;
+        bool Null();
+        bool Bool(bool b);
+        bool Int(int i);
+        bool Uint(unsigned i);
+        bool Int64(int64_t i);
+        bool Uint64(uint64_t i);
+        bool Double(double d);
+        bool RawNumber(const Ch* str, SizeType length, bool copy);
+        bool String(const Ch* str, SizeType length, bool copy);
+        bool StartObject();
+        bool Key(const Ch* str, SizeType length, bool copy);
+        bool EndObject(SizeType memberCount);
+        bool StartArray();
+        bool EndArray(SizeType elementCount);
+    };
+    \endcode
+    */
     /**
      * @brief BaseReaderHandler 提供了一套默认的 JSON 数据解析处理接口,并通过 Override 机制支持派生类的重载
      * 
@@ -333,7 +356,429 @@ namespace RAPIDJSON{
             return SkipWhitespace(p, end);
         }
         #endif
+        #ifdef RAPIDJSON_SIMD// 指定SIMD指令集时才能在SkipWhitespace调用SkipWhitespace_SIMD()
+        template<> inline void SkipWhitespace(InsituStringStream& is) {// 原地解析流
+            is.src_ = const_cast<char*>(SkipWhitespace_SIMD(is.src_));
+        }
+        template<> inline void SkipWhitespace(StringStream& is) {
+            is.src_ = SkipWhitespace_SIMD(is.src_);
+        }
+        template<> inline void SkipWhitespace(EncodedInputStream<UTF8<>, MemoryStream>& is) {
+            is.is_.src_ = SkipWhitespace_SIMD(is.is_.src_, is.is_.end_);
+        }
+        #endif // RAPIDJSON_SIMD
+        /**
+         * @brief 用于将JSON文本解析为树状结构的对象
+         * 
+         * @tparam SourceEncoding 
+         * @tparam TargetEncoding 
+         * @tparam StackAllocator 
+         */
+        template<typename SourceEncoding, typename TargetEncoding, typename StackAllocator=CrtAllocator>// 输入流编码、输出流编码、栈分配器
+        class GenericReader{
+            public:
+                typedef typename SourceEncoding::Ch Ch;
+                GenericReader(StackAllocator* StackAllocator=nullptr, size_t stackCapacity = kDefaultStackCapacity)
+                    : stack_(StackAllocator, stackCapacity),// 栈用于存储临时数据,如解析过程中需要的字符或字符串
+                      ParseResult_(),// 存储解析结果,如是否成功和错误信息
+                      state_(IterativeParsingStartState)// 保存当前的解析状态  来标志当前解析的是啥,比如:键解析状态
+                    {}
+                /**
+                 * @brief 用于解析JSON文本,并根据parseFlags标志进行不同的处理
+                 * 
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 * @return ParseResult 
+                 */
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                ParseResult Parse(InputStream& is, Handler& handler){// Handler指的是BaseReaderHandler这种,可以自定义解析函数
+                    if(parseFlags&kParseIterativeFlag)// 迭代解析
+                        return IterativeParse<parseFlags>(is, handler);
+                    ParseResult_.Clear();
+                    ClearStackOnExit scope(*this);// 确保在解析完成后栈被清空,防止内存泄漏
+                    SkipWhitespaceAndComments<parseFlags>(is);// 跳过输入流中的空白字符和注释
+                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);// 检查是否出现错误,若出现错误就立刻返回
+                    if (RAPIDJSON_UNLIKELY(is.Peek() == '\0')) {// 检查JSON文档是否为空,为空就抛出kParseErrorDocumentEmpty错误
+                        RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentEmpty, is.Tell());
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                    }
+                    else {// 不为空就调用ParseValue开始解析JSON文本
+                        ParseValue<parseFlags>(is, handler);
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                        if (!(parseFlags & kParseStopWhenDoneFlag)) {// 当 kParseStopWhenDoneFlag 标志位被设置时:解析器会在解析第一个完整的根对象后停止,不会继续向后检查内容.这意味着允许单一根对象解析完成后立即结束,不会报错;当未被设置时解析器会在解析完第一个根对象后继续读取剩余字符,检查是否文档根元素是唯一的
+                            SkipWhitespaceAndComments<parseFlags>(is);
+                            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                            if (RAPIDJSON_UNLIKELY(is.Peek() != '\0')) {// 检查JSON文档的根元素是否唯一  如果此时流中还有剩余字符那么就有多个根元素
+                                RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell());
+                                RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                            }
+                        }
+                    }
+                    return parseResult_;
+                }
+                /**
+                 * @brief 带有默认解析标志的Parse()
+                 * 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 * @return ParseResult 
+                 */
+                template <typename InputStream, typename Handler>
+                ParseResult Parse(InputStream& is, Handler& handler) {
+                    return Parse<kParseDefaultFlags>(is, handler);
+                }
+                /**
+                 * @brief 初始化迭代解析器
+                 * 
+                 */
+                void IterativeParseInit(){
+                    parseResult_.Clear();
+                    state_ = IterativeParsingStartState;
+                }
+                /**
+                 * @brief 迭代模式下的逐步解析
+                 * 
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 * @return true 
+                 * @return false 
+                 */
+                template <unsigned parseFlags, typename InputStream, typename Handler>
+                bool IterativeParseNext(InputStream& is, Handler& handler) {
+                    while (RAPIDJSON_LIKELY(is.Peek() != '\0')) {// 不为空JSON文档
+                        SkipWhitespaceAndComments<parseFlags>(is);
+                        Token t = Tokenize(is.Peek());// 将当前字符转换成Token标记类型  用于算解析状态
+                        IterativeParsingState n = Predict(state_, t);// 根据当前状态state_和标记t来预测下一个解析状态
+                        IterativeParsingState d = Transit<parseFlags>(state_, t, n, is, handler);// 这是实际的解析过程    根据当前状态 state_、标记 t、预测状态 n 以及输入流 is 和处理器 handler 来解析内容,解析完成后,状态结果保存在d
+                        if (RAPIDJSON_UNLIKELY(IsIterativeParsingCompleteState(d))) {// 检查d是否是一个完成解析的状态
+                            // 解析完成
+                            if (d == IterativeParsingErrorState) {
+                                HandleError(state_, is);
+                                return false;
+                            }
+                            RAPIDJSON_ASSERT(d == IterativeParsingFinishState);
+                            state_ = d;
+                            if (!(parseFlags & kParseStopWhenDoneFlag)) {// 检查是否还有剩余内容  此时的剩余内容就表示JSON文档有多个根元素,返回错误
+                                SkipWhitespaceAndComments<parseFlags>(is);
+                                if (is.Peek() != '\0') {
+                                    HandleError(state_, is);
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        state_ = d;// 解析未完成,也更新状态  解析完成会在前面已经return了
+                        if (!IsIterativeParsingDelimiterState(n))// 不是分隔符状态则直接返回true,此时没有解析完成,若要继续解析用户可以继续下一次迭代解析.此时可以在解析一个JSON片段后就返回,如解析一个字符串就可以返回了
+                            return true;
+                    }
+                    stack_.Clear();// 解析完成就清空栈
+                    if (state_ != IterativeParsingFinishState) {
+                        HandleError(state_, is);
+                        return false;
+                    }
+                    return true;
+                }
+                // 判断解析过程是否完成
+                RAPIDJSON_FORCEINLINE bool IterativeParseComplete() const {
+                    return IsIterativeParsingCompleteState(state_);
+                }
+                // 检查解析过程是否发生错误
+                bool HasParseError() const { return parseResult_.IsError(); }
+                // 获取解析错误代码
+                ParseErrorCode GetParseErrorCode() const { return parseResult_.Code(); }
+                // 获取解析错误的具体位置
+                size_t GetErrorOffset() const { return parseResult_.Offset(); }
+            protected:
+                // 在解析过程中设置错误代码和错误位置  发生错误时会被调用,传入错误代码和错误位置
+                void SetParseError(ParseErrorCode code, size_t offset) { parseResult_.Set(code, offset); }   
+            private:
+                GenericReader(const GenericReader&) = delete;
+                GenericReader& operator=(const GenericReader&) = delete;
+                void ClearStack() { stack_.Clear();}
+                struct ClearStackOnExit{
+                    explicit ClearStackOnExit(GenericReader& r) : r_(r) {}
+                    ~ClearStackOnExit() {r_.ClearStack();}
+                    private:
+                        GenericReader& r_;
+                        ClearStackOnExit(const ClearStackOnExit&) = delete;
+                        ClearStackOnExit& operator=(const ClearStackOnExit&) = delete;
+                };
+                /**
+                 * @brief 用于跳过输入流中的空白字符和注释  
+                 * 单行注释://  多行注释
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @param is 
+                 */
+                template<unsigned parseFlags, typename InputStream>
+                void SkipWhitespaceAndComments(InputStream& is){
+                    SkipWhitespace(is);// 跳过空白字符
+                    if(parseFlags & kParseCommentsFlag){// 需要解析注释内容
+                        while(RAPIDJSON_UNLIKELY(Consume(is, '/'))){
+                            if(Consume(is, '*')){// 多行注释的开始  处理多行注释  /*
+                                while(true){
+                                    if(RAPIDJSON_UNLIKELY(is.Peek()=='\0'))// 到达文件末尾却没有找到注释结束符,则注释语法有错
+                                        RAPIDJSON_PARSE_ERROR(kParseErrorUnspecificSyntaxError, is.Tell());
+                                    else if(Consume(is, '*')){// 注释结束
+                                        if(Consume(is, '/'))
+                                            break;
+                                    }
+                                    else
+                                        is.Take();// 一个一个读取跳过注释内容
+                                }
+                            }
+                            else if(RAPIDJSON_LIKELY(Consume(is, '/')))// 单行注释的开始  处理单行注释 //
+                                while(is.Peek()!='\0'&&is.Take()!='\n'){}// is.Peek()!='\0'是为了确保有内容  单行注释不能有换行符
+                            else// 不正确的注释格式,可能写成了如:\/等形式
+                                RAPIDJSON_PARSE_ERROR(kParseErrorUnspecificSyntaxError, is.Tell());
+                            SkipWhitespace(is);// 在成功跳过注释后,再次调用SkipWhitespace,确保空白字符被完全跳过,使解析器可以准确地从下一个有效字符继续解析
+                        }
+                    }
+                }
+                /**
+                 * @brief 解析JSON对象
+                 * 
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 */
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseObject(InputStream& is, Handler& handler){
+                    RAPIDJSON_ASSERT(is.Peek()=='{');
+                    is.Take();// 跳过'{'
+                    if(RAPIDJSON_UNLIKELY(!handler.StartObject()))
+                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                    SkipWhitespaceAndComments<parseFlags>(is);// 跳过对象开始后的空白字符和注释
+                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                    if(Consume(is, '}')){// 当前字符为},则表示对象为空
+                        if(RAPIDJSON_UNLIKELY(!handler.EndObject(0)))
+                            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                        return;
+                    }
+                    for(SizeType memberCount=0;;){// 初始化对象的键值对成员为0
+                        if(RAPIDJSON_UNLIKELY(is.Peek()!='"')// 键必须是字符串
+                            RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissName, is.Tell());
+                        ParseString<parseFlags>(is, handler, true);// 解析键  true表明这个字符串是对象中的键值对的键
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;// 检查错误
+                        SkipWhitespaceAndComments<parseFlags>(is);// 跳过空白字符和注释
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        if(RAPIDJSON_UNLIKELY(!Consume(is, ':'))// 如果键解析后的字符不是冒号,则报错
+                            RAPIDJSON_PARSE_ERROR(KParseErroObjectMissColon, is.Tell());
+                        SkipWhitespaceAndComments<parseFlags>(is);
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        ParseValue<parseFlags>(is, handler);// 解析值
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        SkipWhitespaceAndComments<parseFlags>(is);
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        ++memberCount;
+                        switch(is.Peek()){
+                            case ',':// 一个键值对结束
+                                is.Take();
+                                SkipWhitespaceAndComments<parseFlags>(is);
+                                RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                                break;
+                            case '}':// 对象结束标志
+                                is.Take();
+                                if(RAPIDJSON_UNLIKELY(!handler.EndObject(memberCount)))// EndObject()执行失败
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                                return;
+                            default:
+                                RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissCommaOrCurlyBracket, is.Tell());
+                        }
+                        if(parseFlags&kParseTrailingCommasFlag){// 处理尾随逗号,即设置了kParseTrailingCommasFlag,则允许对象最后一个成员后带有逗号
+                            if(is.Peek()=='}'){
+                                if (RAPIDJSON_UNLIKELY(!handler.EndObject(memberCount)))
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                                is.Take();
+                                return;
+                            }
+                        }
+                    }
+                } 
+                /**
+                 * @brief 和ParseObject()基本一样  只是一个是对于对象,一个是对于数组
+                 * 
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 */
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseArray(InputStream& is, Handler& handler){
+                    RAPIDJSON_ASSERT(is.Peek()=='[');
+                    is.Take();// 跳过'['
+                    if(RAPIDJSON_UNLIKELY(!handler.StartArray()))
+                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                    SkipWhitespaceAndComments<parseFlags>(is);// 跳过数组开始后的空白字符和注释
+                    RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                    if(Consume(is, ']')){// 当前字符为],则表示数组为空
+                        if(RAPIDJSON_UNLIKELY(!handler.EndArray(0)))
+                            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                        return;
+                    }
+                    for(SizeType elementCount=0;;){
+                        ParseValue<parseFlags>(is, handler);// 解析数组元素
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        ++elementCount;
+                        SkipWhitespaceAndComments<parseFlags>(is);
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        switch(is.Peek()){
+                            case ',':// 一个数组元素结束
+                                is.Take();
+                                SkipWhitespaceAndComments<parseFlags>(is);
+                                RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                                break;
+                            case ']':
+                                is.Take();
+                                if(RAPIDJSON_UNLIKELY(!handler.EndArray(memberCount)))// EndObject()执行失败
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                                return;
+                            default:
+                                RAPIDJSON_PARSE_ERROR(kParseErrorArrayMissCommaOrSquareBracket, is.Tell());
+                        }
+                        if(parseFlags&kParseTrailingCommasFlag){// 处理尾随逗号,即设置了kParseTrailingCommasFlag,则允许数组最后一个元素后带有逗号
+                            if(is.Peek()==']'){
+                                if (RAPIDJSON_UNLIKELY(!handler.EndArray(elementCount)))
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                                is.Take();
+                                return;
+                            }
+                        }
+                    }
+                }
+                /**
+                 * @brief 解析JSON中的Null
+                 * 
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 */
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseNull(InputStream& is, Handler& handler){
+                    RAPIDJSON_ASSERT(is.Peek()=='n');// null第一个为'n'
+                    is.Take();
+                    if(RAPIDJSON_LIKELY(Consume(is, 'u')&&Consume(is, 'l')&&Consume(is, 'l'))){
+                        if(RAPIDJSON_UNLIKELY(!handler.Null()))
+                            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                    }
+                    else
+                        RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());
+                }
+                // 和ParseNull同理,只是把null变为了true
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseTrue(InputStream& is, Handler& handler){
+                    RAPIDJSON_ASSERT(is.Peek()=='t');// true第一个为't'
+                    is.Take();
+                    if(RAPIDJSON_LIKELY(Consume(is, 'r')&&Consume(is, 'u')&&Consume(is, 'e'))){
+                        if(RAPIDJSON_UNLIKELY(!handler.Bool(true)))
+                            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                    }
+                    else
+                        RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());
+                }
+                // 和ParseTrue同理,只是把true变为了false
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseFalse(InputStream& is, Handler& handler){
+                    RAPIDJSON_ASSERT(is.Peek()=='f');// false第一个为'f'
+                    is.Take();
+                    if(RAPIDJSON_LIKELY(Consume(is, 'a')&&Consume(is, 'l')&&Consume(is, 's')&&Consume(is, 'e'))){
+                        if(RAPIDJSON_UNLIKELY(!handler.Bool(false)))
+                            RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
+                    }
+                    else
+                        RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell());
+                }
+                /**
+                 * @brief 用于从输入流InputStream中读取一个字符,并检查是否于期望字符相等.如果相等,就把它从输入流中移除,返回true;不匹配就返回false
+                 * 
+                 * @tparam InputStream 
+                 * @param is 
+                 * @param expect 
+                 * @return RAPIDJSON_FORCEINLINE 
+                 */
+                template<typename InputStream>
+                RAPIDJSON_FORCEINLINE static bool Consume(InputStream& is, typename InputStream::Ch expect){
+                    if(RAPIDJSON_LIKELY(is.Peek()==expect)){
+                        is.Take();
+                        return true;
+                    }
+                    else
+                        return false;
+                }
+                /**
+                 * @brief 用于解析一个4位16进制的Unicode转义序列(如\uXXXX的XXXX).
+                 * 它从输入流中读取4个16进制字符,并将它们转换位一个unsigned类型的Unicode代码点
+                 * @tparam InputStream 
+                 * @param is 
+                 * @param escapeOffset 
+                 * @return unsigned 
+                 */
+                template<typename InputStream>
+                unsigned ParseHex4(InputStream& is, size_t escapeOffset){
+                    unsigned codepoint = 0;// 用于存储4个16进制字符解析后的结果
+                    for(int i=0;i<4;i++){// 循环4次,解析4个16进制字符
+                        Ch c = is.Peek();// 查看输入流中的当前字符,不移除它
+                        codepoint <<= 4;// 将codepoint左移4位,为下一个16进制位腾出空间  每个16进制位解析后会占据4位,所以要左移4位
+                        codepoint += static_cast<unsigned>(c);// 将当前字符转为数字,并加到codepoint中
+                        if(c>='0'&&c<='9')// 数字字符
+                            codepoint -= '0';// 将字符转换为数字
+                        else if(c>='A'&&c<='F')// 大写字母A-F
+                            codepoint -= 'A'-10;// 将字符转换位10到15的数字
+                        else if(c>='a'&&c<='f')// 小写字母a-f
+                            codepoint -= 'a'-10;// 将字符转换位10-16的数字
+                        else{// 非法的16进制字符
+                            RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorStringUnicodeEscapeInvalidHex, escapeOffset);
+                            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(0);
+                        }
+                        is.Take();
+                    }
+                    return codepoint;// 返回解析得到的Unicode代码点
+                }
+                /**
+                 * @brief 提供一种基于栈的临时存储机制,用于存储字符或其它数据,并在需要时可以弹出这些数据
+                 * 通常用于JSON解析器在非原地解析时构建字符串、数字或其它值时临时存放数据
+                 * @tparam CharType 
+                 */
+                template<typename CharType>
+                class StackStream{
+                    public:
+                        typedef CharType Ch;
+                        StackStream(internal::Stack<StackAllocator>& stack) 
+                            : stack_(stack),
+                              length(0)// 记录当前在栈中存放的字符数量
+                            {}
+                        RAPIDJSON_FORCEINLINE void Put(Ch c){
+                            *stack_.template Push<Ch>() = c;
+                            ++length_++;
+                        }
+                        RAPIDJSON_FORCEINLINE void* Push(SizeType count){
+                            length_ += count;
+                            return stack_.template Push<Ch>(count);
+                        }
+                        size_t Length() const {return length_;}
+                        Ch* Pop(){
+                            return stack_.template Pop<Ch>(length_);// 弹出length_,即将栈恢复到调用Put和Push之前的状态
+                        }
+                    private:
+                        StackStream(const StackStream&) = delete;
+                        StackStream& operator=(const StackStream&) = delete;
+                        internal::Stack<StackAllocator>& stack_;
+                        SizeType length_;
+                };
+        };
     }
-
 }
 #endif

@@ -419,16 +419,19 @@
    address.AddMember("city", "New York", allocator);
    address.AddMember("zip", "10001", allocator);
    d.AddMember("address", address, allocator);
+   StringBuffer buffer;
+   Writer<StringBuffer> writer(buffer);
+   d.Accept(writer);
+   // 输出 JSON 字符串
+   std::cout << buffer.GetString() << std::endl;
    ```
 3. `JSON`数据通常使用树形结构来表示,但并不是必须采用严格的树形数据结构.其关键在于`JSON`数据具有层次化、嵌套的特性,这使树形结构成为实现`JSON`数据表示的一种自然选择
 4. <mark>本项目中的`Writer`和`Reader`都是一种事件驱动的解析方式,它们不会将整个文档加载到内存中,而是通过触发不同的事件(如`Reader::StartObject()`:遇到对象开始`{` 时调用;`Writer`对于每个元素会触发相应的写入事件,如`null`元素就会触发`Writer::NUll()`),因此`Writer`和`Reader`都是采用的`SAX`风格的解析和序列化方式,事件驱动,不会一次性加载整个`JSON`文档到内存中,而不是采用`DOM`风格</mark>
-5. `DOM`解析:`Document::Parse()`;`SAX`解析:`Reader::Parse()`
-6. <mark>本项目中的`DOM`的解析`Document::Parse()`,`Document::Parse()`使用`DOM`风格的解析.它将整个`JSON`文档(在本项目中,`JSON`文档就是`JSON`字符串)解析并构建成一个树形的内存结构,也就是`Document`对象(即`JSON`数据).在这个解析过程中,整个`JSON`文档会被加载到内存中并转化为一个数据结构,可以通过`Document`提供的接口进行访问(如:`Document d;...;d["name"];`,直接访问这个树形结构的`JSON`数据).`Reader::Parse()`使用`SAX`风格的解析,它采用事件驱动的方式解析`JSON`数据.这意味着它逐步处理`JSON`数据,遇到`JSON`数据的不同部分时,触发相应的事件并调用 `Handler`中定义的回调函数.`SAX`解析不会将整个`JSON`文档加载到内存中,而是根据输入流逐个触发事件(如遇到`null`就触发`Null()`)来处理数据.在`Reader::Parse()`的回调函数中,你可以选择将每个解析到的部分数据存储到内存中.如:对于每个对象或数组,可以通过回调函数将它们存储在`std::map`或`std::vector`等数据结构中,即可以单独处理每一段`JSON`数据</mark>
-7. `Writer`在项目使用中往往是通过`Document/Value`来进行传入`JSON`数据的
-8. <mark>本项目中的`JSON`数据是通过`Document/Value`对象创建的</mark>
-9. `Level`结构体的本质作用就是帮助`Writer`区分当前正在处理的是`JSON`对象({})还是数组([]),并跟踪当前层级的状态
-10. <mark>`JSON`序列化指的是将程序中的数据结构(如对象、数组、字典等)转换为`JSON`字符串的过程(`Writer`并不实现`JSON`序列化的完整过程,因为它不负责构建或管理`JSON`数据的树形结构——这些工作由`Document`(或`Value`对象完成)</mark>
-11. `RawValue()`用于处理已经序列化的`JSON`数据,即将已经序列化的`JSON`数据直接写入输出流:
+5. `Writer`在项目使用中往往是通过`Document/Value`来进行传入`JSON`数据的
+6. <mark>本项目中的`JSON`数据是通过`Document/Value`对象创建的</mark>
+7. `Level`结构体的本质作用就是帮助`Writer`区分当前正在处理的是`JSON`对象({})还是数组([]),并跟踪当前层级的状态
+8.  <mark>`JSON`序列化指的是将程序中的数据结构(如对象、数组、字典等)转换为`JSON`字符串的过程(`Writer`并不实现`JSON`序列化的完整过程,因为它不负责构建或管理`JSON`数据的树形结构——这些工作由`Document`(或`Value`对象完成)</mark>
+9.  `RawValue()`用于处理已经序列化的`JSON`数据,即将已经序列化的`JSON`数据直接写入输出流:
    ```C++
    1. 序列化前的原始数据结构
    struct Person {
@@ -439,38 +442,38 @@
    2. 序列化后的JSON字符串
    {"name": "Alice", "age": 30}
    ```
-11. 8位字符->`FF`;16位字符->`FFFF`;8位对应一个字节
-12. <mark>`Unicode`代码点的范围为`U+0000`到`U+10FFFF`.`Unicode`大多数常用字符的代码点在`U+0000`到`U+FFFF`之间,这个范围被称为基本多语言平面(BMP)(从`U+0000`到`U+FFFF`,这是`Unicode`中的第一个平面,包含大多数常用字符,如大多数拉丁字符、汉字、阿拉伯数字等).处于BMP范围的字符可以用16位单元表示;从`U+10000`到`U+10FFFF`,这个范围包含了许多不常用的字符,包括某些特殊符号、表情符号等.这部分字符使用代理对进行编码,以适应`UTF-16`</mark>
-13. `PutUnsafe(*os_, '\\');`:在字符串中表示一个实际的反斜杠字符,需要使用双反斜杠`\\`,而编译器会将传入的这两个反斜杠视为一个反斜杠字符
-14. `Unicode`转义序列:`\uxxxx`
-15. </span>`writer`向输出流写入时,对于转义字符且`escape[static_cast<unsigned char>(c)]=='u'`时和不支持`Unicode&&非ASCII码`的两种情况都是转换为`Unicode`转义序列写入输出流;对于常规字符(除了前面两种情况的字符),是直接将其写入到输出流,而不是转换为`Unicode`转义序列</span>
-16. <mark>`static_cast<unsigned char>`:这就是求字符的ASCII码</mark>
-17. <span style="color:red;">对于输入流中显示给出的字符,如`"Hello,\nWorld"`,这个`\n`会被视为两个字符:`\`这是转义字符,`escape[static_cast<unsigned char>('\')]='\'`,`WriteString()`会将其转义为`\\`,而`n`是常规字符,所以在经过`WriteString()`后,向输出流写入的JSON字符串结果为`"Hello,\\nWorld"`</span>
-18. <span style="color:red;">若`"Hello,\nWorld"`末尾有一个不可见的换行符,这个字符是被视为一个字符,而不是两个,它的ASCII码=10,因此`static_cast<unsigned char>('\n')=10`,对应`escape[10]=n`,因此这个不可见的换行符是以`\\n`的方式写入输出流,而不是以JSON转义序列`\uxxxx`的方式写入</span>
-19. 从`escape`数组可知,当字符的`ASCII`码值在`escape`中对应为`u`时才会以`Unicode`转义序列方式写入输出流.`ASCII`码=0-7时对应字符`u`,而这个范围内的`ASCII`码对应的字符是控制字符,如`6->ACK字符`,主要用于控制设备(如打印机等)
-20. <mark>为什么要使用`Unicode`转义序列?</mark>
+10. 8位字符->`FF`;16位字符->`FFFF`;8位对应一个字节
+11. <mark>`Unicode`代码点的范围为`U+0000`到`U+10FFFF`.`Unicode`大多数常用字符的代码点在`U+0000`到`U+FFFF`之间,这个范围被称为基本多语言平面(BMP)(从`U+0000`到`U+FFFF`,这是`Unicode`中的第一个平面,包含大多数常用字符,如大多数拉丁字符、汉字、阿拉伯数字等).处于BMP范围的字符可以用16位单元表示;从`U+10000`到`U+10FFFF`,这个范围包含了许多不常用的字符,包括某些特殊符号、表情符号等.这部分字符使用代理对进行编码,以适应`UTF-16`</mark>
+12. `PutUnsafe(*os_, '\\');`:在字符串中表示一个实际的反斜杠字符,需要使用双反斜杠`\\`,而编译器会将传入的这两个反斜杠视为一个反斜杠字符
+13. `Unicode`转义序列:`\uxxxx`
+14. </span>`writer`向输出流写入时,对于转义字符且`escape[static_cast<unsigned char>(c)]=='u'`时和不支持`Unicode&&非ASCII码`的两种情况都是转换为`Unicode`转义序列写入输出流;对于常规字符(除了前面两种情况的字符),是直接将其写入到输出流,而不是转换为`Unicode`转义序列</span>
+15. <mark>`static_cast<unsigned char>`:这就是求字符的ASCII码</mark>
+16. <span style="color:red;">对于输入流中显示给出的字符,如`"Hello,\nWorld"`,这个`\n`会被视为两个字符:`\`这是转义字符,`escape[static_cast<unsigned char>('\')]='\'`,`WriteString()`会将其转义为`\\`,而`n`是常规字符,所以在经过`WriteString()`后,向输出流写入的JSON字符串结果为`"Hello,\\nWorld"`</span>
+17. <span style="color:red;">若`"Hello,\nWorld"`末尾有一个不可见的换行符,这个字符是被视为一个字符,而不是两个,它的ASCII码=10,因此`static_cast<unsigned char>('\n')=10`,对应`escape[10]=n`,因此这个不可见的换行符是以`\\n`的方式写入输出流,而不是以JSON转义序列`\uxxxx`的方式写入</span>
+18. 从`escape`数组可知,当字符的`ASCII`码值在`escape`中对应为`u`时才会以`Unicode`转义序列方式写入输出流.`ASCII`码=0-7时对应字符`u`,而这个范围内的`ASCII`码对应的字符是控制字符,如`6->ACK字符`,主要用于控制设备(如打印机等)
+19. <mark>为什么要使用`Unicode`转义序列?</mark>
     * `Unicode`转义序列(`\uxxxx`)是一种通用的表示方式,独立于具体的字符编码方式.它可以在各种环境下使用,无论是`Unicode`编码,还是不支持`Unicode`编码
     * 在某些环境中,如果字符编码不支持`Unicode`,直接包含非`ASCII`字符(如中文、阿拉伯文等)可能会导致乱码或解析失败.将字符转换为`Unicode`转义序列,能让解析器在不知道具体编码的情况下仍然能够正确解码并显示原字符
     * `JSON`的规范规定了在`JSON`字符串中可以使用`Unicode`转义序列来表示字符
     * 有些非可打印字符和控制字符会在字符串解析过程中引起歧义或错误(对应`excape`数组中的`u`元素).使用 `Unicode`转义序列将这些字符明确地标识出来,有助于解析器准确地处理它们
     * 对于`JSON`解析器(`reader.h`),处理`Unicode`转义序列相对简单,避免了复杂的字符编码检测和转换逻辑.解析器只需要将`\uXXXX`转换为相应的`Unicode`字符(`XXXX`->`Unicode`码点->`Unicode`字符)无需关心当前环境是否支持`Unicode`
-21. <mark>目标编码不支持`Unicode`:意思是目标系统或格式使用的字符编码无法直接表示或处理`Unicode`字符,如`ASCII`编码和`ISO-8859-1`编码等</mark>
-22. <mark>对于`ASCII`码字符,无论目标编码是否支持`Unicode`,此时都可以直接在目标中解析成功,而不需要`Unicode`转义序列,因为像`ISO-8859-1、UTF8、UTF16、UTF32`等编码都向下兼容`ASCII`,所以就算目标编码不支持`Unicode`,都能解析出`ASCII`字符</mar>
-23. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法
-24. <mark>本项目使用了`SIMD`指令集`SSE NEON`,用于实现了特化版本`ScanWriteUnescapedString`函数的并行加速处理,提升性能</mark>
-25. <mark>`SSE`和`NEON`都是`SIMD`指令集,允许在单个指令中并行处理多个数据元素,即一次可以并行处理16字节数据,从而达到加速处理的目的.`SSE`是由`intel`开发的`SIMD`指令集,主要用于`x86 x86-64`架构处理器上;`NEON`是`ARM`架构的`SIMD`指令集,专为移动和嵌入式设计</mark>
-26. <mark>`SSE`处理为什么需要16字节对齐,而不是其它对齐呢?
+20. <mark>目标编码不支持`Unicode`:意思是目标系统或格式使用的字符编码无法直接表示或处理`Unicode`字符,如`ASCII`编码和`ISO-8859-1`编码等</mark>
+21. <mark>对于`ASCII`码字符,无论目标编码是否支持`Unicode`,此时都可以直接在目标中解析成功,而不需要`Unicode`转义序列,因为像`ISO-8859-1、UTF8、UTF16、UTF32`等编码都向下兼容`ASCII`,所以就算目标编码不支持`Unicode`,都能解析出`ASCII`字符</mar>
+22. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法
+23. <mark>本项目使用了`SIMD`指令集`SSE NEON`,用于实现了特化版本`ScanWriteUnescapedString`函数的并行加速处理,提升性能</mark>
+24. <mark>`SSE`和`NEON`都是`SIMD`指令集,允许在单个指令中并行处理多个数据元素,即一次可以并行处理16字节数据,从而达到加速处理的目的.`SSE`是由`intel`开发的`SIMD`指令集,主要用于`x86 x86-64`架构处理器上;`NEON`是`ARM`架构的`SIMD`指令集,专为移动和嵌入式设计</mark>
+25. <mark>`SSE`处理为什么需要16字节对齐,而不是其它对齐呢?
    因为`SSE`和`NEON`指令集都是使用128位(16字节)宽的寄存器.这意味着它们可以一次性处理128位的数据,即同时处理16字节.因此,将数据对齐到16字节的边界可以让数据以最快的速度加载到`SIMD`寄存器中</mark>
-27. 对于使用`SSE NEON`中,代码没有进行额外的地址对齐移动操作,只是在遇到未对齐的部分时,逐字节处理并写入输出流,而在处理对齐的部分时,使用了`SIMD`来加速操作
-28. <span style="color:red;">`bool ScanWriteUnescapedString(GenericStringStream<SourceEncoding>& is, size_t length)`和经过`SIMD`指令集加速的`inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length)`,前者只是进行了判断当前读取位置是否小于给定长度,以此确定是否达到了字符串末尾,而没有提前进行任何的写入输出流或检查特殊字符的操作;对于使用`SIMD`加速的后者,它通过字节对齐和`SIMD`指令加速扫描,尽可能快地检查并写入非特殊字符到输出流中,遇到特殊字符就使`is.src_`指向了此位置(利用`SIMD`指令加速的`ScanWriteUnescapedString`函数直接在内层完成了非特殊字符的写入和特殊字符的检测,目的是减少在上层(如`WriteString()`等)的额外处理操作,显著提升解析和写入性能),然后结束函数</span>
-29. `ScanWriteUnescapedString`中的特殊字符为双引号、反斜杠、控制字符(`ASCII`码小于`0X1F`(即31)的,如换行符、退格符等)
-30. <mark>`Writer`中利用`SSE/NEON`加速的`ScanWriteUnescapedString`主要用于加速写入未转义的`JSON`字符串内容.它扫描字符串内容,直到遇到需要转义的特殊字符,当遇到这些特殊字符时,`ScanWriteUnescapedString`会停止扫描,即退出函数,因为接下来需要进行转义或特殊处理.`Reader`这利用`SSE/NEON`加速的`SkipWhitespace_SIMD`用于跳过`JSON`字符串开头或中间的空白字符,使得`JSON`解析器可以快速定位到第一个有效字符,当遇到非空白字符时,`SkipWhitespace_SIMD`会停止扫描并返回该字符的位置,以便继续解析操作</mark>
-31. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测
-32. `Writer`中对`SSE4.2/SSE2`一起考虑处理的,其实在处理时用的是`SSE2`的指令(`SSE4.2`指令包括`SSE2`指令),即没有用`SSE4.2`新引入的指令(如`_mm_cmpistri`等),所以`Writer`中的`SSE`加速和`Reader`中的`SSE4.2`加速有点不同
-33. <mark>`PrettyWriter`相较于`Writer`其实就是多了格式化处理+前缀处理(其实就是在前缀中多了格式化处理),即:多了换行、缩进等格式化美化(可读性增强)处理+`Prefix()->PrettyPrefix()`</mark>
-34. `vcltq_u8`:比较是否逐字节小于;`vceqq_u8`:比较是否逐字节相等
-35. <mark>`vrev64q_u8`执行的是位置对调,8字节数据每两字节进行位置对调.
-36. 代码解释:
+26. 对于使用`SSE NEON`中,代码没有进行额外的地址对齐移动操作,只是在遇到未对齐的部分时,逐字节处理并写入输出流,而在处理对齐的部分时,使用了`SIMD`来加速操作
+27. <span style="color:red;">`bool ScanWriteUnescapedString(GenericStringStream<SourceEncoding>& is, size_t length)`和经过`SIMD`指令集加速的`inline bool Writer<StringBuffer>::ScanWriteUnescapedString(StringStream& is, size_t length)`,前者只是进行了判断当前读取位置是否小于给定长度,以此确定是否达到了字符串末尾,而没有提前进行任何的写入输出流或检查特殊字符的操作;对于使用`SIMD`加速的后者,它通过字节对齐和`SIMD`指令加速扫描,尽可能快地检查并写入非特殊字符到输出流中,遇到特殊字符就使`is.src_`指向了此位置(利用`SIMD`指令加速的`ScanWriteUnescapedString`函数直接在内层完成了非特殊字符的写入和特殊字符的检测,目的是减少在上层(如`WriteString()`等)的额外处理操作,显著提升解析和写入性能),然后结束函数</span>
+28. `ScanWriteUnescapedString`中的特殊字符为双引号、反斜杠、控制字符(`ASCII`码小于`0X1F`(即31)的,如换行符、退格符等)
+29. <mark>`Writer`中利用`SSE/NEON`加速的`ScanWriteUnescapedString`主要用于加速写入未转义的`JSON`字符串内容.它扫描字符串内容,直到遇到需要转义的特殊字符,当遇到这些特殊字符时,`ScanWriteUnescapedString`会停止扫描,即退出函数,因为接下来需要进行转义或特殊处理.`Reader`这利用`SSE/NEON`加速的`SkipWhitespace_SIMD`用于跳过`JSON`字符串开头或中间的空白字符,使得`JSON`解析器可以快速定位到第一个有效字符,当遇到非空白字符时,`SkipWhitespace_SIMD`会停止扫描并返回该字符的位置,以便继续解析操作</mark>
+30. `NEON`指令集中对退格符`\b`单独进行检测了,而不是像`SSE`纳入控制字符中被统一检测
+31. `Writer`中对`SSE4.2/SSE2`一起考虑处理的,其实在处理时用的是`SSE2`的指令(`SSE4.2`指令包括`SSE2`指令),即没有用`SSE4.2`新引入的指令(如`_mm_cmpistri`等),所以`Writer`中的`SSE`加速和`Reader`中的`SSE4.2`加速有点不同
+32. <mark>`PrettyWriter`相较于`Writer`其实就是多了格式化处理+前缀处理(其实就是在前缀中多了格式化处理),即:多了换行、缩进等格式化美化(可读性增强)处理+`Prefix()->PrettyPrefix()`</mark>
+33. `vcltq_u8`:比较是否逐字节小于;`vceqq_u8`:比较是否逐字节相等
+34. <mark>`vrev64q_u8`执行的是位置对调,8字节数据每两字节进行位置对调.
+35. 代码解释:
     ```C++
     if(low==0){// low为全零,表示低8字节无特殊字符
         if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
@@ -480,8 +483,8 @@
     }
     // lz>>3<=>lz/8
     ```
-37. 由`Writer`构建的`JSON`编写器是一个紧凑的编写器,即不会进行格式化输出处理,这样更节省空间、减少解析时间等
-38. `PrettyWriter`与`Writer`的不同展示:
+36. 由`Writer`构建的`JSON`编写器是一个紧凑的编写器,即不会进行格式化输出处理,这样更节省空间、减少解析时间等
+37. `PrettyWriter`与`Writer`的不同展示:
    ```C++
    1. 原始输入流数据
    std::string name = "Alice";
@@ -503,7 +506,7 @@
 # rapidjson.h/fwd.h
 1. `!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN`:`!@cond`用于`Doxygen`文档生成工具,标记这段代码在生成文档时隐藏.结束位置要用`//!@endcond`
 2. <mark>现代CPU使用分支预测器来预测条件语句的结果,预测成功时,CPU可以继续顺序执行下一条指令;预测失败(预测的结果和实际结果不符)就会导致流水线清空,即此时CPU需要重新加载指令,产生额外的性能开销</mark>
-3. <mark>`RAPIDJSON_LIKELY() RAPIDJSON_UNLIKELY()`:`RAPIDJSON_LIKELY(c)/RAPIDJSON_UNLIKELY(c)`表示的是条件`c`大概率为`true/false`,这是一种帮助提升`CPU`基于分支预测机制时的性能.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过帮助`CPU`更好地进行分支预测,从而提升代码执行效率.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过使用`__builtin_expect()`的`GCC/Clang`内建函数,`__builtin_expect(!!(x), 1)`告诉编译器`x`更可能为`true`,即最初的预测为`true`.由于现代处理器是通过分支预测机制来提高指令执行效率的,而分支预测会猜测下一条要执行的是什么指令,对于`RAPIDJSON_LIKELY(x_<=>__builtin_expect(!!(x), 1)`,它会将`true`后的指令预先加载到处理器中,当该条件确实为真时,处理器就可以顺序地执行后续指令,此时就会减少指令取值的延迟,从而实现了性能提升;当条件真实为假时,此时由于错误的预先预测,处理器会清空流水线中的指令,因为此时流水线中的指令大多数是基于错误的预先预测而加载的,此时会造成性能损失,但是由于`RAPIDJSON_LIKELY()`大概率是`true`,因此大多数情况下能提高性能</mark>
+3. <mark>`RAPIDJSON_LIKELY() RAPIDJSON_UNLIKELY()`:`RAPIDJSON_LIKELY(c)/RAPIDJSON_UNLIKELY(c)`表示的是条件`c`大概率为`true/false`,这是一种帮助提升`CPU`基于分支预测机制时的性能.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过帮助`CPU`更好地进行分支预测,从而提升代码执行效率.`RAPIDJSON_LIKELY`和`RAPIDJSON_UNLIKELY`通过使用`__builtin_expect()`的`GCC/Clang`内建函数,`__builtin_expect(!!(x), 1)`告诉编译器`x`更可能为`true`,即最初的预测为`true`.由于现代处理器是通过分支预测机制来提高指令执行效率的,而分支预测会猜测下一条要执行的是什么指令,对于`RAPIDJSON_LIKELY(x_<=>__builtin_expect(!!(x), 1)`,它会将`true`后的指令预先加载到处理器中,当该条件确实为真时,处理器就可以顺序地执行后续指令,此时就会减少指令取值的延迟,从而实现了性能提升;当条件真实为假时,此时由于错误的预先预测,处理器会清空流水线中的指令,因为此时流水线中的指令大多数是基于错误的预先预测而加载的,此时会造成性能损失,但是由于`RAPIDJSON_LIKELY()`大概率是`true`,因此大多数情况下能提高性能.`if(RAPIDJSON_UNLIKELY(condition)`:表示条件`condition`确实为`true`,即`RAPIDJSON_UNLIKELY`预测正确,则`if(RAPIDJSON_UNLIKELY(condition))`此时就是`true`.需要注意的是`RAPIDJSON_UNLIKELY/RAPIDJSON_LIKELY`只是在编译器的优化层面影响,具体`if`语句的真假,还是直接有`condition`决定</mark>
 4. `rapidjson.h`的主要作用是:其实就是对一些基本功能和操作定义成了适配本项目的宏的形式,如`RAPIDJSON_MALLOC RAPIDJSON_FREE`等
    * 类型定义:定义了`JSON`中的基本类型,如`kNullType`、`kFalseType`、`kTrueType`、`kObjectType`、`kArrayType`、`kStringType`和`kNumberType`.这些类型用于表示`JSON`的不同数据结构
    * 内存管理:提供了自定义的内存分配和释放接口,比如`RAPIDJSON_MALLOC`、`RAPIDJSON_FREE`,允许用户根据需要重定义内存分配策略
@@ -512,12 +515,77 @@
    * 特性检查:检测编译器是否支持某些`C++`特性,如`C++11`、`C++17`的特性,以便进行相应的条件编译
 5. `fwd.h`是为本项目提供前向声明,以便在某些头文件若只是用一个头文件所定义的类(结构体等)这个类型,而不需要知道它的具体定义时为代码之间减少包含依赖,进而提高编译效率
 # reader.h
-1. `reader.h`将`JSON`字符串->内存中的`JSON`数据
-2. <mark>`SkipWhitespace_SIMD`是用于加速跳过连续的`JSON`空白字符(包括空格、换行符、回车符和制表符).它利用了`SIMD`指令集来进行并行处理,以一次比较16个字节,从而显著提高性能</mark>
-3. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
-4. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
+1. `reader.h`将`JSON`字符串->内存中的`JSON`数据(如:在`Reader.Parse()`解析时,当解析到一个数组,然后将这个数组元素通过`Handler`的接口函数将其存储到`vector`内存中,即实现了`JSON`字符串到`JSON`数据的转换)
+2. <mark>最后解析完的`JSON`数据怎么表示出来,取决于`Handler`,如:</mark>
+   ```C++
+   1. 直接输出每一步的解析得到的JSON数据:此时解析到的数据不会存储在内存中,而会直接输出
+   class MyHandler : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>, MyHandler> {
+   public:
+      bool StartObject() {
+         std::cout << "Start Object\n";
+         return true;
+      }
+      bool EndObject(size_t memberCount) {
+         std::cout << "End Object, member count: " << memberCount << "\n";
+         return true;
+      }
+      bool StartArray() {
+         std::cout << "Start Array\n";
+         return true;
+      }
+      bool EndArray(size_t elementCount) {
+         std::cout << "End Array, element count: " << elementCount << "\n";
+         return true;
+      }
+      bool Key(const char* str, rapidjson::SizeType length, bool copy) {
+         std::cout << "Key: " << std::string(str, length) << "\n";
+         return true;
+      }
+      bool String(const char* str, rapidjson::SizeType length, bool copy) {
+         std::cout << "String Value: " << std::string(str, length) << "\n";
+         return true;
+      }
+      bool Int(int i) {
+         std::cout << "Int Value: " << i << "\n";
+         return true;
+      }
+      bool Uint(unsigned u) {
+         std::cout << "Uint Value: " << u << "\n";
+         return true;
+      }
+      bool Bool(bool b) {
+         std::cout << "Bool Value: " << (b ? "true" : "false") << "\n";
+         return true;
+      }
+      bool Null() {
+         std::cout << "Null Value\n";
+         return true;
+      }
+   };
+   2. 直接利用writer作为Handler,进而此时Reader解析到的JSON数据会传递到writer的输出流中保存,可能保存为一个字符串形式
+   StringStream s(json); 
+   StringBuffer buffer;
+   Writer<StringBuffer> writer(buffer);
+   Reader reader; 
+   reader.Parse<kParseFullPrecisionFlag>(s, writer); 
+   ```
+3. 一般来说,`Reader`不会直接输出`JSON`数据结构;而是需要一个`Handler`类来接收/处理解析的内容,`Reader`解析的`JSON`数据怎样形式展示出来取决于这个`Handler`   
+4. `DOM`解析:`Document::Parse()`;`SAX`解析:`Reader::Parse()`
+5. <mark>本项目中的`DOM`的解析`Document::Parse()`,`Document::Parse()`使用`DOM`风格的解析.它将整个`JSON`文档(在本项目中,`JSON`文档就是`JSON`字符串)解析并构建成一个树形的内存结构,也就是`Document`对象(即`JSON`数据).在这个解析过程中,整个`JSON`文档会被加载到内存中并转化为一个数据结构,可以通过`Document`提供的接口进行访问(如:`Document d;...;d["name"];`,直接访问这个树形结构的`JSON`数据).`Reader::Parse()`使用`SAX`风格的解析,它采用事件驱动的方式解析`JSON`数据.这意味着它逐步处理`JSON`数据,遇到`JSON`数据的不同部分时,触发相应的事件并调用 `Handler`中定义的回调函数.`SAX`解析不会将整个`JSON`文档加载到内存中,而是根据输入流逐个触发事件(如遇到`null`就触发`Null()`)来处理数据.在`Reader::Parse()`的回调函数中,你可以选择将每个解析到的部分数据存储到内存中.如:对于每个对象或数组,可以通过回调函数将它们存储在`std::map`或`std::vector`等数据结构中,即可以单独处理每一段`JSON`数据</mark>
+6. <mark>`SkipWhitespace_SIMD`是用于加速跳过连续的`JSON`空白字符(包括空格、换行符、回车符和制表符).它利用了`SIMD`指令集来进行并行处理,以一次比较16个字节,从而显著提高性能</mark>
+8. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
+9. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
    不管是`Writer::ScanWriteUnescapedString`还是`Reader::SkipWhitespace_SIMD`中使用的内存对齐,都是对所处理的字符串的开头进行内存对齐,即与`nextAligned`进行对齐,此时就保证了后续每一次都可以16字节为一批的进行读取成功(`Writer::ScanWriteUnescapedString`中给定了`length`,所以要保证不越界,即`p!=endAligned`).这里不内存对齐的原因是,他直接从开头取16字节为一批进行处理,此时很有可能最后剩小于16字节的数据处理不了(因为形成不了一批),所以此时的`for`循环终止条件为`p<=end-16`,此时剩余的字符用`SkipWhitespace(p, end)`单独处理就行
-5. `SSE4.2`在`SSE2`的基础上引入了新指令,如`_mm_cmpistri`.所以`Reader`中对这两种单独进行讨论了
+10. `SSE4.2`在`SSE2`的基础上引入了新指令,如`_mm_cmpistri`.所以`Reader`中对这两种单独进行讨论了
+11. <mark>`stack_`主要作用是用于存储临时数据,而不是直接用来跟踪层次结构.具体来说,它在处理复杂的`JSON`值时提供临时存储(如非原地解析(非原地解析才会用`stack_`来构建中间解析结果)的字符串中的转义字符/非转义字符(如`\n`转为`'\n'`)会暂存到`stack_`中,`ParseStringToStream`对普通字符也压入`stack_`(通过`Transcode`)中)</mark>
+12. 在本项目中一个`JSON`文档只能有一个根对象,不然会出错.在`Reader::Parse()`中,当`kParseStopWhenDoneFlag`标志位被设置时,解析器会在解析第一个完整的根对象后停止,不会继续向后检查内容.这意味着允许单一根对象解析完成后立即结束,不会报错.而`kParseStopWhenDoneFlag`标志位未被设置时(即`!(parseFlags & kParseStopWhenDoneFlag)`为`true`),解析器会在解析第一个完整根对象后继续读取剩余字符,当发现多余非空字符,即此时有多个根元素,所以解析器返回错误(假设输入`JSON`为`{ "name": "John" } { "age": 30 }`,包含两个根对象`{ "name": "John" }`和`{ "age": 30 }`:解析器首先调用`ParseValue`解析第一个对象`{ "name": "John" }`.跳过空白和注释后,`is.Peek()`读取到第二个`{`,导致 `RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell())`被触发.错误被记录到`parseResult_`,解析提前终止)
+13. <span style="color:red;">`if (!IsIterativeParsingDelimiterState(n))`:不是分隔符状态则直接返回`true`,此时没有解析完成,若要继续解析用户可以继续执行下一次迭代解析.此时可以在解析一个`JSON`片段后就返回,如解析一个字符串就可以返回,这样为用户带来了灵活性.这种设计允许用户在迭代模式下逐步解析`JSON`,解析出一个完整的片段(如一个键、一个值、一个数组元素)后暂停解析.用户可以基于每个独立片段做一些中间处理,再继续调用 `IterativeParseNext`进行后续解析.这对于流式解析、增量解析,或处理较大的 JSON 文档时非常实用</span>
+14. `ParseValue()`是一个通用解析函数,它可以解析`null true false string object array number`,由于对象的键必须是字符串,所以直接用`ParseString()`,而没有用`ParseValue()`
+15. <mark>`RAPIDJSON_FORCEINLINE`提示编译器尽量将此函数内联化(`inline`),优化性能</mark>
+16. <mark>为什么`ParseHex4()`要`codepoint <<= 4;`?</mark>
+    因为每个16进制字符表示4位,所以解析了一个字符后,需要左移4位,来为后面的16进制字符腾出位置
+17. `ParseHex4()`举个例:
+   ![](markdown图像集/2024-11-09-15-49-41.png)
 # document.h
 1. `Document::Parse()`是用于将`JSON`字符串解析为`JSON DOM`的方法.它接受一个`JSON`字符串,将其解析为树状结构,供用户访问和操作`JSON`数据
 2. <mark>通过`Document/Value`构建的对象一定是树形结构</mark>,所以说`Document/Value`实现了`DOM`编程接口

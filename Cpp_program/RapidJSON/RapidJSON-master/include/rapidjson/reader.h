@@ -972,16 +972,16 @@ private:
         s.Take();  // Skip '\"'
 
         bool success = false;
-        if (parseFlags & kParseInsituFlag) {
+        if (parseFlags & kParseInsituFlag) {// 就地解析直接在输入流上处理,不会使用stack_
             typename InputStream::Ch *head = s.PutBegin();
-            ParseStringToStream<parseFlags, SourceEncoding, SourceEncoding>(s, s);
+            ParseStringToStream<parseFlags, SourceEncoding, SourceEncoding>(s, s);// 就地解析不用stackStream
             RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
             size_t length = s.PutEnd(head) - 1;
             RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
-            const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);
+            const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);// 提取出了这个字符串
             success = (isKey ? handler.Key(str, SizeType(length), false) : handler.String(str, SizeType(length), false));
         }
-        else {
+        else {// 非就地解析要用stackStream
             StackStream<typename TargetEncoding::Ch> stackStream(stack_);
             ParseStringToStream<parseFlags, SourceEncoding, TargetEncoding>(s, stackStream);
             RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;

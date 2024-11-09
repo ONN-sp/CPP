@@ -60,7 +60,7 @@ namespace RAPIDJSON{
              */
             Ch Take(){
                 Ch c= *current_;
-                Read();
+                Read();// 让current加1或重置位置了
                 return c;
             }
             /**
@@ -113,7 +113,7 @@ namespace RAPIDJSON{
             Ch peekBuffer_[4], *buffer_;// peekBuffer_用于小型缓冲区 buffer_指向用户提供的缓冲区或默认缓冲区
             size_t bufferSize_;// 缓冲区大小
             Ch* bufferLast_;// 指向缓冲区中最后一个字符
-            Ch* current_;// 当前读取指针
+            Ch* current_;// 当前缓冲区的读取位置的指针
             size_t readCount_;// 当前缓冲区中已读取的字符数
             size_t count_;// 已经从缓冲区中读取走的字节总数
             bool eof_;// 是否到达流的末尾

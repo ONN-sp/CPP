@@ -778,6 +778,134 @@ namespace RAPIDJSON{
                         internal::Stack<StackAllocator>& stack_;
                         SizeType length_;
                 };
+                /**
+                 * @brief 解析JSON字符串值(键或值)
+                 * 可以就地解析(直接修改原始输入流)也可以非就地解析(使用栈临时存储数据)
+                 * @tparam parseFlags 
+                 * @tparam InputStream 
+                 * @tparam Handler 
+                 * @param is 
+                 * @param handler 
+                 * @param isKey 
+                 */
+                template<unsigned parseFlags, typename InputStream, typename Handler>
+                void ParseString(InputStream& is, Handler& handler, bool isKey=false){
+                    internal::StreamLocalCopy<InputStream> copy(is);
+                    InputStream& s(copy.s);
+                    RAPIDJSON_ASSERT(s.Peek()=='\"');
+                    s.Take();// 跳过'\"'
+                    bool success = false;
+                    if(parseFlags & kParseInsituFlag){// 就地解析  不会用栈来存储临时数据
+                        typename InputStream::Ch *head = s.PutBegin();// 获取就地解析的起始位置
+                        ParseStringToStream<parseFlags, SourceEncoding, SourceEncoding>(s, s);// 从输入流中逐个读取字符进行解析  就地解析的源编码和目标编码一致
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        size_t length = s.PutEnd(head)-1;// 获取字符串结束位置
+                        RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
+                        const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);
+                        success = (isKey ? handler.Key(str, SizeType(length), false):handler.String(str, SizeType(length), false));// 如果是键就回调.Key();否则回调.String()
+                    }
+                    else{// 非就地解析  需要用栈->StackStream
+                        StackStream<typename TargetEncoding::Ch> stackStream(stack_);
+                        ParseStringToStream<parseFlags, SourceEncoding, TargetEncoding>(s, stackStream);
+                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                        SizeType length = static_cast<SizeType>(stackStream.Length());
+                        RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
+                        const typename TargetEncoding::Ch* const str = stackStream.Pop();
+                        success = (isKey ? handler.Key(str, SizeType(length), true):handler.String(str, SizeType(length), true));// 用栈空间了,所以handler接口函数的copy=true
+                    }
+                    if(RAPIDJSON_UNLIKELY(!success))
+                        RAPIDJSON_PARSE_ERROR(kParseErrorTermination, s.Tell());
+                }
+                /**
+                 * @brief 用于处理JSON字符串的函数,它会解析输入流中的JSON字符串,处理转义字符,并将解析后的字符写入输出流
+                 * ParseString()是ParseStringToStream()的上层封装
+                 * @tparam parseFlags 
+                 * @tparam SourceEncoding 
+                 * @tparam TargetEncoding 
+                 * @tparam OutputStream 
+                 * @param is 
+                 * @param os 
+                 * @return RAPIDJSON_FORCEINLINE 
+                 */
+                template<unsigned parseFlags, typename SourceEncoding, typename TargetEncoding, typename OutputStream>
+                RAPIDJSON_FORCEINLINE void ParseStringToStream(InputStream& is, OutputStream& os){
+                    //!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN
+                    #define Z16 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+                            static const char escape[256] = {
+                                Z16, Z16, 0, 0,'\"', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '/',
+                                Z16, Z16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,'\\', 0, 0, 0,
+                                0, 0,'\b', 0, 0, 0,'\f', 0, 0, 0, 0, 0, 0, 0,'\n', 0,
+                                0, 0,'\r', 0,'\t', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                Z16, Z16, Z16, Z16, Z16, Z16, Z16, Z16
+                            };
+                    #undef Z16
+                    //!@endcond
+                    while(true){
+                        if(!(parseFlags&kParseValidateEncodingFlag))// 如果没有启用字符编码验证(即不会考虑转义字符这些),则快速复制非转义字符
+                            ScanCopyUnescapedString(is, os);
+                        Ch c = is.Peek();
+                        // 处理转义字符  转义字符前肯定有个\\  这从Writer::WriteString()中的PutUnsafe(*os_, '\\');也可看出
+                        if(RAPIDJSON_UNLIKELY(c=='\\')){
+                            size_t escapeOffset = is.Tell();
+                            is.Take();
+                            Ch e = is.Peek();
+                            // 检查并处理简单转义字符(即不包括Unicode转义序列和小于0x20的控制字符)
+                            if((sizeof(Ch)==1)||unsigned(e)<256)&&RAPIDJSON_LIKELY(escape[static_cast<unsigned char>(e)]){// 非转义字符且支持ASCII码
+                                is.Take();
+                                os.Put(static_cast<typename TargetEncoding::Ch>(escape[static_cast<unsigned char>(e)]));
+                            }
+                            // 检查是否启用解析单引号的转义字符
+                            else if((parseFlags&kParseEscapedApostropheFlag)&&RAPIDJSON_LIKELY(e=='\'')){
+                                is.Take();
+                                os.Put('\'');
+                            }
+                            // 处理Unicode转义序列
+                            else if(RAPIDJSON_LIKELY(e=='u')){
+                                is.Take();
+                                unsigned codepoint = ParseHex4(is, escapeOffset); // 解析4位十六进制数字为Unicode码点
+                                RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                                // 检查是否为UTF16的代理对  UTF16中:高代理:0xD800-0xDBFF;低代理:0xDC00-0xDFFF
+                                if(RAPIDJSON_UNLIKELY(codepoint>=0xD800&&codepoint<=0xDFFF)){// 代理对范围
+                                    if(RAPIDJSON_LIKELY(codepoint<=0xD8FF)){// 高代理
+                                        if(RAPIDJSON_UNLIKELY(!Consume(is, '\\')||!Consume(is, 'u')))// 确保是以\u开始
+                                            RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);
+                                        unsigned codepoint2 = ParseHex4(is, escapeOffset);// 解析第二个\uxxx序列以获得低代理
+                                        RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
+                                        if(RAPIDJSON_UNLIKELY(codepoint2<0xDC00||codepoint2>0xDFFF))// 检查codepoint2是否处于低代理范围
+                                            RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);
+                                        codepoint = (((codepoint-0xD800)<<10)|(codepoint2-0xDC00))+0x10000;// 合并低代理和高代理
+                                    }
+                                    else// 只有低代理而没有匹配的高代理,报错   在Unicode转义序列中高代理在低代理前面,所以不可能只有单独的低代理
+                                        RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);
+                                    TargetEncoding::Encode(os, codepoint);// codepoint->os中
+                                }
+                                else
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringEscapeInvalid, escapeOffset);    
+                            }
+                            else if(RAPIDJSON_UNLIKELY(c=='"')){// 检查结束双引号
+                                is.Take();
+                                os.Put('\0');
+                                return;
+                            }
+                            else if(RAPIDJSON_UNLIKELY(static_cast<unsigned>(c)<0x20)){// 检查控制字符(非法字符)
+                                if(c=='\0')
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringMissQuotationMark, is.Tell());
+                                else
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, is.Tell());
+                            }
+                            else{// 非转义字符或普通字符
+                                size_t offset = is.Tell();
+                                if (RAPIDJSON_UNLIKELY((parseFlags & kParseValidateEncodingFlag ?
+                                    !Transcoder<SEncoding, TEncoding>::Validate(is, os) :
+                                    !Transcoder<SEncoding, TEncoding>::Transcode(is, os))))
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, offset);
+                            }
+                        }
+                    }  
+                }
+                template<typename InputStream, typename OutputStream>
+                static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InputStream&, OutputStream&) {}
+
         };
     }
 }

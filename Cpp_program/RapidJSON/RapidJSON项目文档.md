@@ -459,7 +459,8 @@
     * 对于`JSON`解析器(`reader.h`),处理`Unicode`转义序列相对简单,避免了复杂的字符编码检测和转换逻辑.解析器只需要将`\uXXXX`转换为相应的`Unicode`字符(`XXXX`->`Unicode`码点->`Unicode`字符)无需关心当前环境是否支持`Unicode`
 20. <mark>目标编码不支持`Unicode`:意思是目标系统或格式使用的字符编码无法直接表示或处理`Unicode`字符,如`ASCII`编码和`ISO-8859-1`编码等</mark>
 21. <mark>对于`ASCII`码字符,无论目标编码是否支持`Unicode`,此时都可以直接在目标中解析成功,而不需要`Unicode`转义序列,因为像`ISO-8859-1、UTF8、UTF16、UTF32`等编码都向下兼容`ASCII`,所以就算目标编码不支持`Unicode`,都能解析出`ASCII`字符</mar>
-22. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法
+22. 对于目标编码不支持`Unicode&&!ASCII`,此时要使用`Unicode`转义序列来表示输入流中的`Unicode`字符,进而写入不支持`Unicode`的目标输出流.对于`BMP`内的字符,直接使用`JSON`标准的定义的一个`\uxxxx`表示字符就行,而对于超出`BMP`的字符,不能直接用`\uxxxx`表示,此时为了符合`JSON`标准对`Unicode`字符的转义要求符合特定的格式.在`JSON`中,所有`Unicode`字符的编码形式(即使是超出`BMP`的字符)都需要转成`\uXXXX`格式才能写入字符串,因此超出`BMP`的字符需要分解成两个`\uxxxx`来表示,即一个高代理一个低代理,所以这里使用了`UTF16`中的代理对的方法.<mark>在输入流和输出流都是`UTF-8`的情况下,使用`UTF-16`作为中间步骤的编码处理(`UTF16`来处理`codepoint`的高低代理对)并不会影响最终的输出结果,`Unicode`码点是中立的,它与具体的编码方式无关</mark>
+    ![](markdown图像集/2024-11-10-11-07-52.png)
 23. <mark>本项目使用了`SIMD`指令集`SSE NEON`,用于实现了特化版本`ScanWriteUnescapedString`函数的并行加速处理,提升性能</mark>
 24. <mark>`SSE`和`NEON`都是`SIMD`指令集,允许在单个指令中并行处理多个数据元素,即一次可以并行处理16字节数据,从而达到加速处理的目的.`SSE`是由`intel`开发的`SIMD`指令集,主要用于`x86 x86-64`架构处理器上;`NEON`是`ARM`架构的`SIMD`指令集,专为移动和嵌入式设计</mark>
 25. <mark>`SSE`处理为什么需要16字节对齐,而不是其它对齐呢?
@@ -573,19 +574,22 @@
 4. `DOM`解析:`Document::Parse()`;`SAX`解析:`Reader::Parse()`
 5. <mark>本项目中的`DOM`的解析`Document::Parse()`,`Document::Parse()`使用`DOM`风格的解析.它将整个`JSON`文档(在本项目中,`JSON`文档就是`JSON`字符串)解析并构建成一个树形的内存结构,也就是`Document`对象(即`JSON`数据).在这个解析过程中,整个`JSON`文档会被加载到内存中并转化为一个数据结构,可以通过`Document`提供的接口进行访问(如:`Document d;...;d["name"];`,直接访问这个树形结构的`JSON`数据).`Reader::Parse()`使用`SAX`风格的解析,它采用事件驱动的方式解析`JSON`数据.这意味着它逐步处理`JSON`数据,遇到`JSON`数据的不同部分时,触发相应的事件并调用 `Handler`中定义的回调函数.`SAX`解析不会将整个`JSON`文档加载到内存中,而是根据输入流逐个触发事件(如遇到`null`就触发`Null()`)来处理数据.在`Reader::Parse()`的回调函数中,你可以选择将每个解析到的部分数据存储到内存中.如:对于每个对象或数组,可以通过回调函数将它们存储在`std::map`或`std::vector`等数据结构中,即可以单独处理每一段`JSON`数据</mark>
 6. <mark>`SkipWhitespace_SIMD`是用于加速跳过连续的`JSON`空白字符(包括空格、换行符、回车符和制表符).它利用了`SIMD`指令集来进行并行处理,以一次比较16个字节,从而显著提高性能</mark>
-8. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
-9. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
+7. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
+8. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
    不管是`Writer::ScanWriteUnescapedString`还是`Reader::SkipWhitespace_SIMD`中使用的内存对齐,都是对所处理的字符串的开头进行内存对齐,即与`nextAligned`进行对齐,此时就保证了后续每一次都可以16字节为一批的进行读取成功(`Writer::ScanWriteUnescapedString`中给定了`length`,所以要保证不越界,即`p!=endAligned`).这里不内存对齐的原因是,他直接从开头取16字节为一批进行处理,此时很有可能最后剩小于16字节的数据处理不了(因为形成不了一批),所以此时的`for`循环终止条件为`p<=end-16`,此时剩余的字符用`SkipWhitespace(p, end)`单独处理就行
-10. `SSE4.2`在`SSE2`的基础上引入了新指令,如`_mm_cmpistri`.所以`Reader`中对这两种单独进行讨论了
-11. <mark>`stack_`主要作用是用于存储临时数据,而不是直接用来跟踪层次结构.具体来说,它在处理复杂的`JSON`值时提供临时存储(如非原地解析(非原地解析才会用`stack_`来构建中间解析结果)的字符串中的转义字符/非转义字符(如`\n`转为`'\n'`)会暂存到`stack_`中,`ParseStringToStream`对普通字符也压入`stack_`(通过`Transcode`)中)</mark>
-12. 在本项目中一个`JSON`文档只能有一个根对象,不然会出错.在`Reader::Parse()`中,当`kParseStopWhenDoneFlag`标志位被设置时,解析器会在解析第一个完整的根对象后停止,不会继续向后检查内容.这意味着允许单一根对象解析完成后立即结束,不会报错.而`kParseStopWhenDoneFlag`标志位未被设置时(即`!(parseFlags & kParseStopWhenDoneFlag)`为`true`),解析器会在解析第一个完整根对象后继续读取剩余字符,当发现多余非空字符,即此时有多个根元素,所以解析器返回错误(假设输入`JSON`为`{ "name": "John" } { "age": 30 }`,包含两个根对象`{ "name": "John" }`和`{ "age": 30 }`:解析器首先调用`ParseValue`解析第一个对象`{ "name": "John" }`.跳过空白和注释后,`is.Peek()`读取到第二个`{`,导致 `RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell())`被触发.错误被记录到`parseResult_`,解析提前终止)
-13. <span style="color:red;">`if (!IsIterativeParsingDelimiterState(n))`:不是分隔符状态则直接返回`true`,此时没有解析完成,若要继续解析用户可以继续执行下一次迭代解析.此时可以在解析一个`JSON`片段后就返回,如解析一个字符串就可以返回,这样为用户带来了灵活性.这种设计允许用户在迭代模式下逐步解析`JSON`,解析出一个完整的片段(如一个键、一个值、一个数组元素)后暂停解析.用户可以基于每个独立片段做一些中间处理,再继续调用 `IterativeParseNext`进行后续解析.这对于流式解析、增量解析,或处理较大的 JSON 文档时非常实用</span>
-14. `ParseValue()`是一个通用解析函数,它可以解析`null true false string object array number`,由于对象的键必须是字符串,所以直接用`ParseString()`,而没有用`ParseValue()`
-15. <mark>`RAPIDJSON_FORCEINLINE`提示编译器尽量将此函数内联化(`inline`),优化性能</mark>
-16. <mark>为什么`ParseHex4()`要`codepoint <<= 4;`?</mark>
+9.  `SSE4.2`在`SSE2`的基础上引入了新指令,如`_mm_cmpistri`.所以`Reader`中对这两种单独进行讨论了
+10. <mark>`stack_`主要作用是用于存储临时数据,而不是直接用来跟踪层次结构.具体来说,它在处理复杂的`JSON`值时提供临时存储(如非原地解析(非原地解析才会用`stack_`来构建中间解析结果)的字符串中的转义字符/非转义字符(如`\n`转为`'\n'`)会暂存到`stack_`中,`ParseStringToStream`对普通字符也压入`stack_`(通过`Transcode`)中)</mark>
+11. 在本项目中一个`JSON`文档只能有一个根对象,不然会出错.在`Reader::Parse()`中,当`kParseStopWhenDoneFlag`标志位被设置时,解析器会在解析第一个完整的根对象后停止,不会继续向后检查内容.这意味着允许单一根对象解析完成后立即结束,不会报错.而`kParseStopWhenDoneFlag`标志位未被设置时(即`!(parseFlags & kParseStopWhenDoneFlag)`为`true`),解析器会在解析第一个完整根对象后继续读取剩余字符,当发现多余非空字符,即此时有多个根元素,所以解析器返回错误(假设输入`JSON`为`{ "name": "John" } { "age": 30 }`,包含两个根对象`{ "name": "John" }`和`{ "age": 30 }`:解析器首先调用`ParseValue`解析第一个对象`{ "name": "John" }`.跳过空白和注释后,`is.Peek()`读取到第二个`{`,导致 `RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell())`被触发.错误被记录到`parseResult_`,解析提前终止)
+12. <span style="color:red;">`if (!IsIterativeParsingDelimiterState(n))`:不是分隔符状态则直接返回`true`,此时没有解析完成,若要继续解析用户可以继续执行下一次迭代解析.此时可以在解析一个`JSON`片段后就返回,如解析一个字符串就可以返回,这样为用户带来了灵活性.这种设计允许用户在迭代模式下逐步解析`JSON`,解析出一个完整的片段(如一个键、一个值、一个数组元素)后暂停解析.用户可以基于每个独立片段做一些中间处理,再继续调用 `IterativeParseNext`进行后续解析.这对于流式解析、增量解析,或处理较大的 JSON 文档时非常实用</span>
+13. `ParseValue()`是一个通用解析函数,它可以解析`null true false string object array number`,由于对象的键必须是字符串,所以直接用`ParseString()`,而没有用`ParseValue()`
+14. <mark>`RAPIDJSON_FORCEINLINE`提示编译器尽量将此函数内联化(`inline`),优化性能</mark>
+15. <mark>为什么`ParseHex4()`要`codepoint <<= 4;`?</mark>
     因为每个16进制字符表示4位,所以解析了一个字符后,需要左移4位,来为后面的16进制字符腾出位置
-17. `ParseHex4()`举个例:
+16. `ParseHex4()`举个例:
    ![](markdown图像集/2024-11-09-15-49-41.png)
+17. `ParseString()`实现了就地解析和非就地解析,对于非就地解析,需要借助`stackStream`对象中的栈来临时存储数据
+18. `ParseStringToStream()`中将`Writer::WriteString()`中的转义字符分成了三种情况处理:简单转义字符、`Unicode`转义字符和控制字符,并且`ParseStringToStream()`将控制字符视为非法字符
+19. <mark>在`Unicode`的`UTF16`编码中(当`Unicode`码点超出基本多语言平面就会使用`UTF16`代理对来处理了),代理对必须遵循高代理在前、低代理在后的顺序,因此不会出现只有低代理而没有高代理的情况(出现了,就是错的)</mark>
 # document.h
 1. `Document::Parse()`是用于将`JSON`字符串解析为`JSON DOM`的方法.它接受一个`JSON`字符串,将其解析为树状结构,供用户访问和操作`JSON`数据
 2. <mark>通过`Document/Value`构建的对象一定是树形结构</mark>,所以说`Document/Value`实现了`DOM`编程接口

@@ -903,10 +903,158 @@ namespace RAPIDJSON{
                         }
                     }  
                 }
+                // 什么都不做的ScanCopyUnescapedString()函数
                 template<typename InputStream, typename OutputStream>
                 static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InputStream&, OutputStream&) {}
+                #if defined(RAPIDJSON_SSE2) || defined(RAPIDJSON_SSE42)
+                    /**
+                     * @brief 批量读取输入流中的字符,检测是否包含特殊字符(双引号、反斜杠、控制字符),并将无特殊字符的部分直接写入输出流.遇到特殊字符直接返回
+                     * 这个函数其实和Writer::ScanWriteUnescapedString()基本一模一样
+                     * @param is 
+                     * @param os 
+                     * @return RAPIDJSON_FORCEINLINE 
+                     */
+                    static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(StringStream& is, StackStream<char>& os){
+                        // StringStream -> StackStream<char>
+                        const char* p = is.src_;
+                        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址    向上对齐
+                        while (p != nextAligned)// 未对齐部分逐字符单独处理   不用SSE处理
+                            if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {// 如果是控制字符、双引号或反斜杠=>特殊字符
+                                is.src_ = p;
+                                return;
+                            }
+                            else
+                                os.Put(*p++);// 不是特殊字符,则直接写入输出流
+                        // 定义SIMD常量
+                        static const char dquote[16] = { '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"' };// 双引号对应的SSE常量
+                        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };// 反斜杠对应的SSE常量
+                        static const char space[16]  = { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F };// 控制字符上限  即小于0x1F的都是控制字符
+                        const __m128i dq = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&dquote[0]));// 加载dquote这个16字节常量到SIMD寄存器中,以便于后续用于批量比较
+                        const __m128i bs = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&bslash[0]));
+                        const __m128i sp = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&space[0]));
+                        // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                        for (;; p += 16) {// 每次读取16个字节的数据块
+                            const __m128i s = _mm_load_si128(reinterpret_cast<const __m128i *>(p));// 从p加载16字节数据到寄存器s中
+                            const __m128i t1 = _mm_cmpeq_epi8(s, dq);// 逐字节比较比较是否为双引号
+                            const __m128i t2 = _mm_cmpeq_epi8(s, bs);// 逐字节比较比较是否为反斜杠
+                            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp);// 逐字节比较比较是否为控制字符
+                            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);// 合并比较结果
+                            unsigned short r = static_cast<unsigned short>(_mm_movemask_epi8(x));// 生成掩码  如果掩码r中某位=1,则表示对应的字符是特殊字符
+                            if (RAPIDJSON_UNLIKELY(r != 0)) {// r不为0,则表示合并的结果中出现了特殊字符
+                                SizeType len;
+                                len = static_cast<SizeType>(__builtin_ffs(r) - 1);// 查找第一个非零位 则非零位前都是无转义字符
+                                char* q = reinterpret_cast<char*>(os_->PutUnsafe(len));
+                                for(size_t i=0;i<len;++i)
+                                    q[i] = p[i];// 拷贝无转义字符的部分 len之前的是普通字符
+                                p += len;// 更新p位置以跳过已处理的普通字符部分
+                                break;// 当扫描到特殊字符,就停止扫描,即退出函数
+                            }
+                            _mm_storeu_si128(reinterpret_cast<__m128i*>(os_->PushUnsafe(16), s);// 无特殊字符,则直接写入输出流
+                        }
+                        is.src_ = p;
+                    }
+                    /**
+                     * @brief 用于在源和目标流相同的情况下(即原地解析)复制字符串内容(原地处理也可能需要拷贝,即此时的is.src_可能和is.dst_可能不相同)
+                     * 
+                     * @param is 
+                     * @param os 
+                     * @return RAPIDJSON_FORCEINLINE 
+                     */
+                    static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InsituStringStream& is, InsituStringStream& os){
+                        // InsituStringStream -> InsituStringStream
+                        RAPIDJSON_ASSERT(&is==&os);// 确保输入流和输出流是同一个流对象
+                        (void)os;
+                        if(is.src_==is.dst_){// 如果输入流的读取数据位置和目标写入位置一样,则此时无需拷贝,直接SkipUnescapedString进行跳过未转义的字符串就行
+                            SkipUnescapedString(is);
+                            return;
+                        }
+                        // 源流的读取位置和写入位置不一致,则需要拷贝操作(就算是输入流对象和输出流对象一致也需要,因为这是对于流对象内的内存位置不一致)
+                        char* p = is.src_;// 指向源字符串的起始位置,即读取位置
+                        char *q = is.dst_;// 指向目标位置,即写入位置
+                        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址    向上对齐
+                        while (p != nextAligned)// 未对齐部分逐字符单独处理   不用SSE处理
+                            if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {// 如果是控制字符、双引号或反斜杠=>特殊字符
+                                is.src_ = p;
+                                is.dst_ = q;
+                                return;
+                            }
+                            else
+                                *q++ = *p++;// 不是特殊字符,则直接写入输出流
+                        // 定义SIMD常量
+                        static const char dquote[16] = { '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"' };// 双引号对应的SSE常量
+                        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };// 反斜杠对应的SSE常量
+                        static const char space[16]  = { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F };// 控制字符上限  即小于0x1F的都是控制字符
+                        const __m128i dq = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&dquote[0]));// 加载dquote这个16字节常量到SIMD寄存器中,以便于后续用于批量比较
+                        const __m128i bs = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&bslash[0]));
+                        const __m128i sp = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&space[0]));
+                        // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                        for (;; p+=16,q+=16) {// 每次读取16个字节的数据块
+                            const __m128i s = _mm_load_si128(reinterpret_cast<const __m128i *>(p));// 从p加载16字节数据到寄存器s中
+                            const __m128i t1 = _mm_cmpeq_epi8(s, dq);// 逐字节比较比较是否为双引号
+                            const __m128i t2 = _mm_cmpeq_epi8(s, bs);// 逐字节比较比较是否为反斜杠
+                            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp);// 逐字节比较比较是否为控制字符
+                            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);// 合并比较结果
+                            unsigned short r = static_cast<unsigned short>(_mm_movemask_epi8(x));// 生成掩码  如果掩码r中某位=1,则表示对应的字符是特殊字符
+                            if (RAPIDJSON_UNLIKELY(r != 0)) {// r不为0,则表示合并的结果中出现了特殊字符
+                                SizeType len;
+                                len = static_cast<SizeType>(__builtin_ffs(r) - 1);// 查找第一个非零位 则非零位前都是无转义字符
+                                for(const char* pend=p+len;p!=pend;)// 从源指针p到目标指针q的逐字节拷贝,直到p达到pend
+                                    *q++ = *p++;// 逐字节拷贝
+                                break;// 当扫描到特殊字符,就停止扫描,即退出函数
+                            }
+                            _mm_storeu_si128(reinterpret_cast<__m128i*>(q, s);// 无特殊字符,则直接复制到q
+                        }
+                        is.src_ = p;
+                        is.dst_ = q;
+                    }
+                    /**
+                     * @brief 跳过字符串中的非转义字符并寻找特殊字符.当找到特殊字符时,就停止扫描并将流的当前指针更新为该位置
+                     * 
+                     * @param is 
+                     * @return RAPIDJSON_FORCEINLINE 
+                     */
+                    static RAPIDJSON_FORCEINLINE void SkipUnescapedString(InsituStringStream& is) {
+                        RAPIDJSON_ASSERT(is.src_==is.dst_);// 确保流is的读取位置和写入位置一致
+                        char* p = is.src_;
+                        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));
+                        while(p != nextAligned)
+                            if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {
+                                is.src_ = is.dst_ = p;
+                                return;
+                            else
+                                p++;
+                            }
+                        // 定义SIMD常量
+                        static const char dquote[16] = { '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"', '\"' };// 双引号对应的SSE常量
+                        static const char bslash[16] = { '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\', '\\' };// 反斜杠对应的SSE常量
+                        static const char space[16]  = { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F };// 控制字符上限  即小于0x1F的都是控制字符
+                        const __m128i dq = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&dquote[0]));// 加载dquote这个16字节常量到SIMD寄存器中,以便于后续用于批量比较
+                        const __m128i bs = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&bslash[0]));
+                        const __m128i sp = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&space[0]));
+                        // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                        for (;; p += 16) {// 每次读取16个字节的数据块
+                            const __m128i s = _mm_load_si128(reinterpret_cast<const __m128i *>(p));// 从p加载16字节数据到寄存器s中
+                            const __m128i t1 = _mm_cmpeq_epi8(s, dq);// 逐字节比较比较是否为双引号
+                            const __m128i t2 = _mm_cmpeq_epi8(s, bs);// 逐字节比较比较是否为反斜杠
+                            const __m128i t3 = _mm_cmpeq_epi8(_mm_max_epu8(s, sp), sp);// 逐字节比较比较是否为控制字符
+                            const __m128i x = _mm_or_si128(_mm_or_si128(t1, t2), t3);// 合并比较结果
+                            unsigned short r = static_cast<unsigned short>(_mm_movemask_epi8(x));// 生成掩码  如果掩码r中某位=1,则表示对应的字符是特殊字符
+                            if (RAPIDJSON_UNLIKELY(r != 0)) {// r不为0,则表示合并的结果中出现了特殊字符
+                                SizeType len;
+                                len = static_cast<SizeType>(__builtin_ffs(r) - 1);// 查找第一个非零位 则非零位前都是无转义字符
+                                p += len;// 更新p位置以跳过已处理的普通字符部分
+                                break;// 当扫描到特殊字符,就停止扫描,即退出函数
+                            }
+                            is.src_ = is.dst_ = p;
+                    }
+                    #elif defined(RAPIDJSON_NEON)
 
-        };
+                    #endif
+
+                    };
+
+
+
     }
 }
 #endif

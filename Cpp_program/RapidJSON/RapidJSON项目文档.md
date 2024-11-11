@@ -590,6 +590,8 @@
 17. `ParseString()`实现了就地解析和非就地解析,对于非就地解析,需要借助`stackStream`对象中的栈来临时存储数据
 18. `ParseStringToStream()`中将`Writer::WriteString()`中的转义字符分成了三种情况处理:简单转义字符、`Unicode`转义字符和控制字符,并且`ParseStringToStream()`将控制字符视为非法字符
 19. <mark>在`Unicode`的`UTF16`编码中(当`Unicode`码点超出基本多语言平面就会使用`UTF16`代理对来处理了),代理对必须遵循高代理在前、低代理在后的顺序,因此不会出现只有低代理而没有高代理的情况(出现了,就是错的)</mark>
+20. <mark>`ScanCopyUnescapedString(InsituStringStream& is, InsituStringStream& os)`中明明前面已经判断了输入流对象和输出流对象是否一致,从而知道是原地解析了,那为什么还需要判断`if(is.src_==is.dst_)`?</mark>
+    即使是同一对象(原地解析),`is.src_`和`is.dst_`可能在具体位置上不同.`src_`和`dst_`分别表示当前读取和写入的位置,随着字符串的解析,它们可能会错开.即使输入流对象`is`和输出流对象`os`相同(即原地处理),如果读取位置`is.src_`和写入位置`is.dst_`不同,那么确实需要执行拷贝操作.这种情况下,字符串解析的过程中会将`src_`指向的内容逐字复制到`dst_`,直到遇到特殊字符或整个字符串解析完毕
 # document.h
 1. `Document::Parse()`是用于将`JSON`字符串解析为`JSON DOM`的方法.它接受一个`JSON`字符串,将其解析为树状结构,供用户访问和操作`JSON`数据
 2. <mark>通过`Document/Value`构建的对象一定是树形结构</mark>,所以说`Document/Value`实现了`DOM`编程接口

@@ -572,7 +572,7 @@
    ```
 3. 一般来说,`Reader`不会直接输出`JSON`数据结构;而是需要一个`Handler`类来接收/处理解析的内容,`Reader`解析的`JSON`数据怎样形式展示出来取决于这个`Handler`   
 4. `DOM`解析:`Document::Parse()`;`SAX`解析:`Reader::Parse()`
-5. <mark>本项目中的`DOM`的解析`Document::Parse()`,`Document::Parse()`使用`DOM`风格的解析.它将整个`JSON`文档(在本项目中,`JSON`文档就是`JSON`字符串)解析并构建成一个树形的内存结构,也就是`Document`对象(即`JSON`数据).在这个解析过程中,整个`JSON`文档会被加载到内存中并转化为一个数据结构,可以通过`Document`提供的接口进行访问(如:`Document d;...;d["name"];`,直接访问这个树形结构的`JSON`数据).`Reader::Parse()`使用`SAX`风格的解析,它采用事件驱动的方式解析`JSON`数据.这意味着它逐步处理`JSON`数据,遇到`JSON`数据的不同部分时,触发相应的事件并调用 `Handler`中定义的回调函数.`SAX`解析不会将整个`JSON`文档加载到内存中,而是根据输入流逐个触发事件(如遇到`null`就触发`Null()`)来处理数据.在`Reader::Parse()`的回调函数中,你可以选择将每个解析到的部分数据存储到内存中.如:对于每个对象或数组,可以通过回调函数将它们存储在`std::map`或`std::vector`等数据结构中,即可以单独处理每一段`JSON`数据</mark>
+5. <mark>本项目中的`DOM`的解析`Document::Parse()`,`Document::Parse()`使用`DOM`风格的解析.它将整个`JSON`文档(在本项目中,`JSON`文档就是`JSON`字符串)解析并构建成一个树形的内存结构,也就是`Document`对象(即`JSON`数据).在这个解析过程中,整个`JSON`文档会被加载到内存中并转化为一个数据结构,可以通过`Document`提供的接口进行访问(如:`Document d;...;d["name"];`,直接访问这个树形结构的`JSON`数据).`Reader::Parse()`使用`SAX`风格的解析,它采用事件驱动的方式解析`JSON`数据.这意味着它逐步处理`JSON`数据,遇到`JSON`数据的不同部分时,触发相应的事件并调用`Handler`中定义的回调函数(`Null() RawNumber()`等).`SAX`解析不会将整个`JSON`文档加载到内存中,而是根据输入流逐个触发事件(如遇到`null`就触发`Null()`)来处理数据.在`Reader::Parse()`的回调函数中,你可以选择将每个解析到的部分数据存储到内存中.如:对于每个对象或数组,可以通过回调函数将它们存储在`std::map`或`std::vector`等数据结构中,即可以单独处理每一段`JSON`数据</mark>
 6. <mark>`SkipWhitespace_SIMD`是用于加速跳过连续的`JSON`空白字符(包括空格、换行符、回车符和制表符).它利用了`SIMD`指令集来进行并行处理,以一次比较16个字节,从而显著提高性能</mark>
 7. 在本项目中,`Writer::ScanWriteUnescapedString`和`Reader::SkipWhitespace_SIMD`函数的确是使用`SSE`指令来加速字符串处理,并且在遇到特定字符时终止循环或返回
 8. <mark>为什么`inline const char *SkipWhitespace_SIMD(const char* p, const char* end)`没有内存对齐?</mark>
@@ -592,6 +592,10 @@
 19. <mark>在`Unicode`的`UTF16`编码中(当`Unicode`码点超出基本多语言平面就会使用`UTF16`代理对来处理了),代理对必须遵循高代理在前、低代理在后的顺序,因此不会出现只有低代理而没有高代理的情况(出现了,就是错的)</mark>
 20. <mark>`ScanCopyUnescapedString(InsituStringStream& is, InsituStringStream& os)`中明明前面已经判断了输入流对象和输出流对象是否一致,从而知道是原地解析了,那为什么还需要判断`if(is.src_==is.dst_)`?</mark>
     即使是同一对象(原地解析),`is.src_`和`is.dst_`可能在具体位置上不同.`src_`和`dst_`分别表示当前读取和写入的位置,随着字符串的解析,它们可能会错开.即使输入流对象`is`和输出流对象`os`相同(即原地处理),如果读取位置`is.src_`和写入位置`is.dst_`不同,那么确实需要执行拷贝操作.这种情况下,字符串解析的过程中会将`src_`指向的内容逐字复制到`dst_`,直到遇到特殊字符或整个字符串解析完毕
+21. `NumberStream()`的三个特化版本:
+    * `class NumberStream<InputStream, StackCharacter, false, false>`:无备份、无推入,适合纯解析,不需要存储数据
+    * `class NumberStream<InputStream, StackCharacter, true, false>`:备份、无推入,适合解析时需要备份,但不是立即存储到栈中(即不是立即解析完一个数值字符串就存入栈中)
+    * `class NumberStream<InputStream, StackCharacter, true, true>`:备份、即时推入,适合边解析边备份的需求(即在此特化版本中在`ParseNumber()`解析数值字符串时,调用`Take()`就会起到`TakePush()`的作用(但是本项目的`ParseNumber()`还是直接调用的`TakePush()`))
 # document.h
 1. `Document::Parse()`是用于将`JSON`字符串解析为`JSON DOM`的方法.它接受一个`JSON`字符串,将其解析为树状结构,供用户访问和操作`JSON`数据
 2. <mark>通过`Document/Value`构建的对象一定是树形结构</mark>,所以说`Document/Value`实现了`DOM`编程接口

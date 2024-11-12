@@ -581,7 +581,7 @@ namespace RAPIDJSON{
             if(RAPIDJSON_UNLIKELY(r!=0)){// r不为0,则表示合并的结果中出现了特殊字符
                 SizeType len;
                 len = static_cast<SizeType>(__builtin_ffs(r) - 1);// 查找第一个非零位 则非零位前都是无转义字符
-                char* q = reinterpret_cast<char*>(os_->PutUnsafe(len));
+                char* q = reinterpret_cast<char*>(os_->PushUnsafe(len));
                 for(size_t i=0;i<len;++i)
                     q[i] = p[i];// 拷贝无转义字符的部分 len之前的是普通字符
                 p += len;// 更新p位置以跳过已处理的普通字符部分

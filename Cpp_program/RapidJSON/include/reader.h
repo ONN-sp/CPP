@@ -943,13 +943,13 @@ namespace RAPIDJSON{
                             if (RAPIDJSON_UNLIKELY(r != 0)) {// r不为0,则表示合并的结果中出现了特殊字符
                                 SizeType len;
                                 len = static_cast<SizeType>(__builtin_ffs(r) - 1);// 查找第一个非零位 则非零位前都是无转义字符
-                                char* q = reinterpret_cast<char*>(os_->PutUnsafe(len));
+                                char* q = reinterpret_cast<char*>(os.Push(len));
                                 for(size_t i=0;i<len;++i)
                                     q[i] = p[i];// 拷贝无转义字符的部分 len之前的是普通字符
                                 p += len;// 更新p位置以跳过已处理的普通字符部分
                                 break;// 当扫描到特殊字符,就停止扫描,即退出函数
                             }
-                            _mm_storeu_si128(reinterpret_cast<__m128i*>(os_->PushUnsafe(16), s);// 无特殊字符,则直接写入输出流
+                            _mm_storeu_si128(reinterpret_cast<__m128i*>(os.Push(16), s);// 无特殊字符,则直接写入输出流
                         }
                         is.src_ = p;
                     }
@@ -1048,13 +1048,270 @@ namespace RAPIDJSON{
                             is.src_ = is.dst_ = p;
                     }
                     #elif defined(RAPIDJSON_NEON)
-
-                    #endif
-
+                        /**
+                         * @brief 利用NEON指令集批量读取输入流中的字符,检测是否包含特殊字符(双引号、反斜杠、控制字符),并将无特殊字符的部分直接写入输出流.遇到特殊字符直接返回
+                         * 
+                         * @param is 
+                         * @param os 
+                         * @return RAPIDJSON_FORCEINLINE 
+                         */
+                        static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(StringStream& is, StackStream<char>& os){
+                            // StringStream -> StackStream<char>
+                            const char* p = is.src_;
+                            const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址    向上对齐
+                            while (p != nextAligned)// 未对齐部分逐字符单独处理   不用SSE处理
+                                if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {// 如果是控制字符、双引号或反斜杠=>特殊字符
+                                    is.src_ = p;
+                                    return;
+                                }
+                                else
+                                    os.Put(*p++);// 不是特殊字符,则直接写入输出流
+                            // 定义NEON常量
+                            const uint8x16_t s0 = vmovq_n_u8('"');// 使用vmovq_n_u8加载双引号到NEON寄存器
+                            const uint8x16_t s1 = vmovq_n_u8('\\');// 使用vmovq_n_u8加载反斜杠到NEON寄存器
+                            const uint8x16_t s2 = vmovq_n_u8('\b');// 使用vmovq_n_u8加载退格符到NEON寄存器   NEON指令集中对退格符\b单独进行检测了,而不是纳入控制字符中被统一检测
+                            const uint8x16_t s3 = vmovq_n_u8(32);// 使用vmovq_n_u8加载控制字符到NEON寄存器  32<=>0x20
+                            // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                            for (;; p += 16) {// 每次读取16个字节的数据块
+                                 const uint8x16_t s = vld1q_u8(reinterpret_cast<const uint8_t*>(p));
+                                uint8x16_t x = vceqq_u8(s, s0);// 使用vceqq_u8比较字符是否为特殊字符s0
+                                x = vorrq_u8(x, vceqq_u8(s, s1));// 使用vceqq_u8比较字符是否为特殊字符s1
+                                x = vorrq_u8(x, vceqq_u8(s, s2));// 使用vceqq_u8比较字符是否为特殊字符s2
+                                x = vorrq_u8(x, vcltq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
+                                x = vrev64q_u8(x);// 对x进行64位反转(前8字节和后8字节交换)
+                                uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);// 反转后的64位低位,代表检测结果的掩码
+                                uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);// 反转后的64位高位,代表检测结果的掩码
+                                SizeType len = 0;
+                                bool escaped = false;// 标记是否检测到特殊字符
+                                // 计算16字节块中特殊字符的索引,即算无特殊字符部分的长度len
+                                // SSE指令集用__builtin_ffs()就能完成下面if-else中len1的计算
+                                if(low==0){// low为全零,表示低位无特殊字符
+                                    if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                        uint32_t lz = internal::clzll(high);
+                                        len = 8+(lz>>3);
+                                        escaped = true;
+                                    }
+                                }
+                                else{// low非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                    uint32_t lz = internal::clzll(low);
+                                    len = lz>>3;
+                                    escaped = true;
+                                }
+                                if(RAPIDJSON_UNLIKELY(escaped)){// 写入无特殊字符的部分并跳出
+                                    char* q = reinterpret_cast<char*>(os.Push(len));
+                                    for(size_t i=0;i<len;++i)
+                                        q[i] = p[i];
+                                    p += len;
+                                    break;
+                                }
+                                vst1q_u8(reinterpret_cast<uint8_t *>(os.Push(16)), s);// 这个16字节块无特殊字符 则直接写入
+                            }
+                            is.src_ = p;
+                        }
+                        /**
+                         * @brief 利用NEON指令集,用于在源和目标流相同的情况下(即原地解析)复制字符串内容(原地处理也可能需要拷贝,即此时的is.src_可能和is.dst_可能不相同)
+                         * 
+                         * @param is 
+                         * @param os 
+                         * @return RAPIDJSON_FORCEINLINE 
+                         */
+                        static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InsituStringStream& is, InsituStringStream& os){
+                            // InsituStringStream -> InsituStringStream
+                            RAPIDJSON_ASSERT(&is==&os);// 确保输入流和输出流是同一个流对象
+                            (void)os;
+                            if(is.src_==is.dst_){// 如果输入流的读取数据位置和目标写入位置一样,则此时无需拷贝,直接SkipUnescapedString进行跳过未转义的字符串就行
+                                SkipUnescapedString(is);
+                                return;
+                            }
+                            // 源流的读取位置和写入位置不一致,则需要拷贝操作(就算是输入流对象和输出流对象一致也需要,因为这是对于流对象内的内存位置不一致)
+                            char* p = is.src_;// 指向源字符串的起始位置,即读取位置
+                            char *q = is.dst_;// 指向目标位置,即写入位置
+                            const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));// 计算下一个16字节对齐的地址    向上对齐
+                            while (p != nextAligned)// 未对齐部分逐字符单独处理   不用SSE处理
+                                if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {// 如果是控制字符、双引号或反斜杠=>特殊字符
+                                    is.src_ = p;
+                                    is.dst_ = q;
+                                    return;
+                                }
+                                else
+                                    *q++ = *p++;// 不是特殊字符,则直接写入输出流
+                            // 定义NEON常量
+                            const uint8x16_t s0 = vmovq_n_u8('"');// 使用vmovq_n_u8加载双引号到NEON寄存器
+                            const uint8x16_t s1 = vmovq_n_u8('\\');// 使用vmovq_n_u8加载反斜杠到NEON寄存器
+                            const uint8x16_t s2 = vmovq_n_u8('\b');// 使用vmovq_n_u8加载退格符到NEON寄存器   NEON指令集中对退格符\b单独进行检测了,而不是纳入控制字符中被统一检测
+                            const uint8x16_t s3 = vmovq_n_u8(32);// 使用vmovq_n_u8加载控制字符到NEON寄存器  32<=>0x20
+                            // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                            for (;; p += 16,q += 16) {// 每次读取16个字节的数据块
+                                const uint8x16_t s = vld1q_u8(reinterpret_cast<const uint8_t*>(p));
+                                uint8x16_t x = vceqq_u8(s, s0);// 使用vceqq_u8比较字符是否为特殊字符s0
+                                x = vorrq_u8(x, vceqq_u8(s, s1));// 使用vceqq_u8比较字符是否为特殊字符s1
+                                x = vorrq_u8(x, vceqq_u8(s, s2));// 使用vceqq_u8比较字符是否为特殊字符s2
+                                x = vorrq_u8(x, vcltq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
+                                x = vrev64q_u8(x);// 对x进行64位反转(前8字节和后8字节交换)
+                                uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);// 反转后的64位低位,代表检测结果的掩码
+                                uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);// 反转后的64位高位,代表检测结果的掩码
+                                SizeType len = 0;
+                                bool escaped = false;// 标记是否检测到特殊字符
+                                // 计算16字节块中特殊字符的索引,即算无特殊字符部分的长度len
+                                // SSE指令集用__builtin_ffs()就能完成下面if-else中len1的计算
+                                if(low==0){// low为全零,表示低位无特殊字符
+                                    if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                        uint32_t lz = internal::clzll(high);
+                                        len = 8+(lz>>3);
+                                        escaped = true;// 检测到特殊字符
+                                    }
+                                }
+                                else{// low非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                    uint32_t lz = internal::clzll(low);
+                                    len = lz>>3;
+                                    escaped = true;// 检测到特殊字符
+                                }
+                                if(RAPIDJSON_UNLIKELY(escaped)){// 写入无特殊字符的部分并跳出
+                                    for(const char* pend=p+len;p!=pend;)
+                                        *q++ = *p++;
+                                    break;
+                                }
+                                vst1q_u8(reinterpret_cast<uint8_t *>(q, s);// 这个16字节块无特殊字符 则直接写入
+                            }
+                            is.src_ = p;
+                            is.dst_ = q;
+                        } 
+                    /**
+                     * @brief 利用NEON指令集跳过字符串中的非转义字符并寻找特殊字符.当找到特殊字符时,就停止扫描并将流的当前指针更新为该位置
+                     * 
+                     * @param is 
+                     * @return RAPIDJSON_FORCEINLINE 
+                     */
+                    static RAPIDJSON_FORCEINLINE void SkipUnescapedString(InsituStringStream& is) {
+                        RAPIDJSON_ASSERT(is.src_==is.dst_);// 确保流is的读取位置和写入位置一致
+                        char* p = is.src_;
+                        const char* nextAligned = reinterpret_cast<const char*>((reinterpret_cast<size_t>(p) + 15) & static_cast<size_t>(~15));
+                        while(p != nextAligned)
+                            if (RAPIDJSON_UNLIKELY(*p == '\"') || RAPIDJSON_UNLIKELY(*p == '\\') || RAPIDJSON_UNLIKELY(static_cast<unsigned>(*p) < 0x20)) {
+                                is.src_ = is.dst_ = p;
+                                return;
+                            else
+                                p++;
+                            }
+                        // 定义NEON常量
+                        const uint8x16_t s0 = vmovq_n_u8('"');// 使用vmovq_n_u8加载双引号到NEON寄存器
+                        const uint8x16_t s1 = vmovq_n_u8('\\');// 使用vmovq_n_u8加载反斜杠到NEON寄存器
+                        const uint8x16_t s2 = vmovq_n_u8('\b');// 使用vmovq_n_u8加载退格符到NEON寄存器   NEON指令集中对退格符\b单独进行检测了,而不是纳入控制字符中被统一检测
+                        const uint8x16_t s3 = vmovq_n_u8(32);// 使用vmovq_n_u8加载控制字符到NEON寄存器  32<=>0x20
+                        // 对16字节对齐的部分进行SSE批量处理 即一次处理16字节
+                        for (;; p += 16) {// 每次读取16个字节的数据块
+                            const uint8x16_t s = vld1q_u8(reinterpret_cast<const uint8_t*>(p));
+                            uint8x16_t x = vceqq_u8(s, s0);// 使用vceqq_u8比较字符是否为特殊字符s0
+                            x = vorrq_u8(x, vceqq_u8(s, s1));// 使用vceqq_u8比较字符是否为特殊字符s1
+                            x = vorrq_u8(x, vceqq_u8(s, s2));// 使用vceqq_u8比较字符是否为特殊字符s2
+                            x = vorrq_u8(x, vcltq_u8(s, s3));// 使用vceqq_u8比较字符是否小于控制字符界限s3(小于控制字符界限就说明它是控制字符)
+                            x = vrev64q_u8(x);// 对x进行64位反转(前8字节和后8字节交换)
+                            uint64_t low = vgetq_lane_u64(vreinterpretq_u64_u8(x), 0);// 反转后的64位低位,代表检测结果的掩码
+                            uint64_t high = vgetq_lane_u64(vreinterpretq_u64_u8(x), 1);// 反转后的64位高位,代表检测结果的掩码
+                            // 计算16字节块中特殊字符的索引,即算无特殊字符部分的长度len
+                            // SSE指令集用__builtin_ffs()就能完成下面if-else中len1的计算
+                            if(low==0){// low为全零,表示低位无特殊字符
+                                if(high!=0){// high非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                    uint32_t lz = internal::clzll(high);
+                                    len = 8+(lz>>3);
+                                    break;// 因为is.src_=is.dst_,所以对于检测到了特殊字符,也不需要去处理非特殊字符的拷贝,因为此时不会涉及拷贝操作,因此直接在这break
+                                }
+                            }
+                            else{// low非零,则通过clzll计算零位数,即算无特殊字符部分的长度
+                                uint32_t lz = internal::clzll(low);
+                                len = lz>>3;
+                                break;
+                            }
+                        }
+                        is.src_ = is.dst_ = p;
+                    }
+                    #endif// RAPIDJSON_NEON
+                    /**
+                     * @brief 用于高效地解析数值字符串
+                     * 
+                     * @tparam InputStream 
+                     * @tparam StackCharacter:栈字符类型
+                     * @tparam backup:是否需要备份  为true表示解析的数值字符串需要被保存到一个栈中,false则不备份解析后的数据
+                     * @tparam pushOnTake:是否在获取字符时同时将字符推入栈   为true表示解析获取到的数字字符就立刻将字符存入栈,false则不立刻存入
+                     */
+                    template<typename InputStream, typename StackCharacter, bool backup, bool pushOnTake>
+                    class NumberStream;// 通用版本
+                    /**
+                     * @brief 特化版本   不备份数据,不推入栈,适用于无需存储解析数据的情况
+                     * 
+                     * @tparam InputStream 
+                     * @tparam StackCharacter 
+                     */
+                    template<typename InputStream, typename StackCharacter>
+                    class NumberStream<InputStream, StackCharacter, false, false>{
+                        public:
+                            typedef typename InputStream::Ch Ch;
+                            NumberStream(GenericReader& reader, InputStream& s) : is(s) {(void)reader;}
+                            RAPIDJSON_FORCEINLINE Ch Peek() const {return is.Peek();}
+                            RAPIDJSON_FORCEINLINE Ch TakePush() {return is.Take();}
+                            RAPIDJSON_FORCEINLINE Ch Take() {return is.Take();}
+                            RAPIDJSON_FORCEINLINE void Push(char) {}
+                            size_t Tell() {return is.Tell();}
+                            size_t Length() {return 0;}
+                            const StackCharacter* Pop() {return 0;}
+                        protected:
+                            NumberStream& operator=(const NumberStream&) = delete;
+                            InputStream& is;
+                    };
+                    /**
+                     * @brief 特化版本 备份数据,但不立刻在解析完数据就推入栈中,此时的推入是由手动控制
+                     * 
+                     * @tparam InputStream 
+                     * @tparam StackCharacter 
+                     */
+                    template<typename InputStream, typename StackCharacter>
+                    class NumberStream<InputStream, StackCharacter, true, false> : public NumberStream<InputStream, StackCharacter, false, false>{
+                        typedef NumberStream<InputStream, StackCharacter, false, false> Base;
+                        public:
+                            NumberStream(GenericReader& reader, InputStream& s) 
+                                : Base(reader, s),
+                                  stackStream(reader.stack_)
+                                {}
+                            // 将当前字符推入栈并越过它
+                            RAPIDJSON_FORCEINLINE Ch TakePush(){
+                                stackStream.Put(static_cast<StackCharacter>(Base::is.Peek()));
+                                return Base::is.Take();
+                            }
+                            // 手动推入字符c入栈
+                            RAPIDJSON_FORCEINLINE void Push(StackCharacter c){
+                                StackStream.Put(c);
+                            }
+                            size_t Length() { return StackStream.Length();}
+                            const StackCharacter* Pop(){
+                                StackStream.Put('\0');
+                                return StackStream.Pop();
+                            }
+                    };
+                    /**
+                     * @brief 特化版本 备份数据,且立刻在解析一个字符后就会把它推入栈中(注意:解析的动作在这不会体现,在ParseNumber()体现)
+                     * 
+                     * @tparam InputStream 
+                     * @tparam StackCharacter 
+                     */
+                    template<typename InputStream, typename StackCharacter>
+                    class NumberStream<InputStream, StackCharacter, true, true> : public NumberStream<InputStream, StackCharacter, true, false>{
+                        typedef NumberStream<InputStream, StackCharacter, true, false> Base;
+                        public:
+                            NumberStream(GenericReader& reader, InputStream& s) 
+                                : Base(reader, s),
+                                  stackStream(reader.stack_)
+                                {}
+                            // 每次在解析时会调用Take(),而此特化版本确保了在每次解析一个数值字符调用Take()时就会立刻把它压入栈中
+                            RAPIDJSON_FORCEINLINE Ch Take() {return Base::TakePush();}
                     };
 
 
 
+
+
+
+
+                    };
     }
 }
 #endif

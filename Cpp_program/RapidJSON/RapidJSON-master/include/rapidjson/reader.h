@@ -1691,7 +1691,7 @@ private:
         // Finish parsing, call event according to the type of number.
         bool cont = true;
 
-        if (parseFlags & kParseNumbersAsStringsFlag) {
+        if (parseFlags & kParseNumbersAsStringsFlag) {// 将原始数值字符串中的数字作为字符串处理,而不是转换为数值.此时只关心原始输入流中的数值字符串,不会将其转换
             if (parseFlags & kParseInsituFlag) {
                 s.Pop();  // Pop stack no matter if it will be used or not.
                 typename InputStream::Ch* head = is.PutBegin();

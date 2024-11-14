@@ -123,7 +123,7 @@ namespace RAPIDJSON{
         bool Int64(int64_t) { return static_cast<Override&>(*this).Default(); }
         bool Uint64(uint64_t) { return static_cast<Override&>(*this).Default(); }
         bool Double(double) { return static_cast<Override&>(*this).Default(); }
-        bool RawNumber(const Ch* str, SizeType len, bool copy) { return static_cast<Override&>(*this).String(str, len, copy);}// 在启用kParseNumbersAsStringsFlag时被调用,将数字作为字符串处理
+        bool RawNumber(const Ch* str, SizeType len, bool copy) { return static_cast<Override&>(*this).String(str, len, copy);}// 在启用kParseNumbersAsStringsFlag时被调用,传入的是一个输入流的原始数值字符串
         bool String(const Ch*, SizeType, bool) { return static_cast<Override&>(*this).Default(); }
         bool StartObject() { return static_cast<Override&>(*this).Default(); }
         bool Key(const Ch* str, SizeType len, bool copy) { return static_cast<Override&>(*this).String(str, len, copy); }
@@ -1304,7 +1304,208 @@ namespace RAPIDJSON{
                             // 每次在解析时会调用Take(),而此特化版本确保了在每次解析一个数值字符调用Take()时就会立刻把它压入栈中
                             RAPIDJSON_FORCEINLINE Ch Take() {return Base::TakePush();}
                     };
+                    /**
+                     * @brief 解析输入流InputStream中的数值字符串到i,i64,d中,并根据Handler接口调用相应的回调函数
+                     * 
+                     * @tparam parseFlags 
+                     * @tparam InputStream 
+                     * @tparam Handler 
+                     * @param is 
+                     * @param handler 
+                     */
+                    template<unsigned parseFlags, typename InputStream, typename Handler>
+                    void ParseNumber(InputStream& is, Handler& handler){
+                        // 如果parseFlags包含kParseNumbersAsStringsFlag,则使用TargetEncoding::Ch
+                        typedef typename internal::SelectIf<internal::BoolType<(parseFlags&kParseNumbersAsStringsFlag)!=0>, typename TargetEncoding::Ch, char>::Type NumberCharacter;
+                        internal::StreamLocalCopy<InputStream> copy(is);// 创建InputStream的本地副本copy(如StringStream(其copyOptimization=1,因此会创建副本))
+                        // 根据parseFlags确定是否解析成字符串、是否原地解析、是否使用全精度等的NumberStream对象
+                        NumberStream<InputStream, NumberCharacter,
+                            ((parseFlags&kParseNumbersAsStringsFlag)!=0) ?
+                                ((parseFlags&kParseInsituFlag)==0) : 
+                                ((parseFlags&kParseFullPrecisionFlag)!=0),
+                            (parseFlags&kParseNumbersAsStringsFlag)!=0 &&
+                                (parseFlags&kParseInsituFlag)==0> s(*this, copy.s);
+                        size_t startOffset = s.Tell();// 起始偏移量
+                        double d = 0.0;
+                        bool useNanOrInf = false;// 标记是否解析到NaN或无穷大
+                        bool mins = Consume(s, '-');// 检查是否有负号'-'
+                        unsigned i = 0;// 用于存储较小的整数
+                        uint64_t i64 = 0;// 用于存储较大的整数
+                        bool use64bit = false;// 表示是否需要使用64位整数
+                        int significandDigit = 0;// 用来跟踪有效数字的位数
+                        if(RAPIDJSON_UNLIKELY(s.Peek()=='0')){// 检查第一个字符是否为'0'.如果是,则解析为0并推进栈中
+                            i = 0;
+                            s.TakePush();
+                        }
+                        else if(RAPIDJSON_LIKELY(s.Peek()>='1'&&s.Peek()<='9')){// 如果第一个字符是1到9之间的数字,则解析该数字并存储到i中
+                            i = static_cast<unsigned>(s.TakePush()-'0');
+                            if(minus)
+                                while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                    // 32位负数的上限 2^31 = 2147483648
+                                    if(RAPIDJSON_UNLIKELY(i>=214748364)){// 检查是否接近-2^31.判断214748364的原因是此时再读入一个大于等于8的字符将使数值超出范围
+                                        if(RAPIDJSON_LIKELY(i!=214748364||s.Peek()>'8')){// 如果i已达到214748364,若再读入一个字符大于等于'8'的字符,就超出32位的上限,就要用64位来存储了
+                                            i64 = i;
+                                            use64bit = true;
+                                            break;
+                                        }
+                                    }
+                                    i = i*10+static_cast<unsigned>(s.TakePush()-'0');
+                                    significandDigit++;
+                                }
+                            else
+                                while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                    // 32位正数的上限 2^32-1 = 4294967295
+                                    if(RAPIDJSON_UNLIKELY(i>=429496729)){// 检查是否接近2^32-1.判断429496729的原因是此时再读入一个大于等于5的字符将使数值超出范围
+                                        if(RAPIDJSON_LIKELY(i!=429496729||s.Peek()>'5')){// 如果i已达到429496729,若再读入一个字符大于等于'5'的字符,就超出32位的上限,就要用64位来存储了
+                                            i64 = i;
+                                            use64bit = true;
+                                            break;
+                                        }
+                                    }
+                                    i = i*10+static_cast<unsigned>(s.TakePush()-'0');// 没有超过32位的存储上限,就继续解析数值字符,然后将其累积到32位的i中
+                                    significandDigit++;
+                                }
+                        }
+                        // 处理NaN或Infinity
+                        else if((parseFlags&kParseNanAndInfFlag)&&RAPIDJSON_LIKELY((s.Peek()=='I'||s.Peek()=='N'))){
+                            if(Consume(s. 'N')){
+                                if(Consume(s, 'a')&&Consume(s, 'N')){
+                                    d = std::numeric_limits<double>::quiet_NaN();
+                                    useNanOrInf = true;
+                                }
+                            }
+                            else if(RAPIDJSON_LIKELY(Consume(s, 'I'))){
+                                if(Consume(s, 'n')&&Consume(s, 'f')){
+                                    d = (minus ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity());// 负无穷和正无穷
+                                    useNanOrInf = true;
+                                    if (RAPIDJSON_UNLIKELY(s.Peek() == 'i' && !(Consume(s, 'i') && Consume(s, 'n')
+                                        && Consume(s, 'i') && Consume(s, 't') && Consume(s, 'y')))){
+                                            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+                                    }
+                                }
+                            }
+                            if(RAPIDJSON_UNLIKELY(!useNanOrInf))
+                                RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+                        }
+                        else
+                            RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, s.Tell());
+                        bool useDouble = false;// 标志是否将数值转换为double类型(如果超出64位范围就会用double)
+                        if(use64bit){// 使用64位的i64来继续存储后续解析的数值字符
+                            if(minus)
+                                while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                    // 64位负数的上限  2^63 = 9223372036854775808
+                                    if(RAPIDJSON_UNLIKELY(i64>=RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC))){// 检查是否接近-2^63.判断922337203685477580的原因是此时再读入一个大于等于8的字符将使数值超出范围
+                                        if(RAPIDJSON_LIKELY(i64!=RAPIDJSON_UINT64_C2(0x0CCCCCCC, 0xCCCCCCCC)||s.Peek()>'8')){// 如果i已达到922337203685477580,若再读入一个字符大于等于'8'的字符,就超出64位的上限,就要用double来存储了
+                                            d = static_cast<double>(i64);
+                                            useDouble = true;// 超出64位就用double
+                                            break;
+                                        }
+                                    }
+                                    i64 = i64*10+static_cast<unsigned>(s.TakePush()-'0');// 没有超过64位的存储上限,就继续解析数值字符,然后将其累积到64位的i64中
+                                    significandDigit++;
+                                }
+                            else
+                                while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                    // 32位正数的上限 2^64-1 = 18446744073709551615
+                                    if(RAPIDJSON_UNLIKELY(i64>=RAPIDJSON_UINT64_C2(0x19999999, 0x99999999))){// 检查是否接近2^64-1.判断1844674407370955161的原因是此时再读入一个大于等于5的字符将使数值超出范围
+                                        if(RAPIDJSON_LIKELY(i64!=RAPIDJSON_UINT64_C2(0x19999999, 0x99999999)||s.Peek()>'5')){// 如果i已达到1844674407370955161,若再读入一个字符大于等于'5'的字符,就超出64位的上限,就要用double来存储了
+                                            d = static_cast<double>(i64);
+                                            useDouble = true;// 超出64位就用double
+                                            break;
+                                        }
+                                    }
+                                    i64 = i64*10+static_cast<unsigned>(s.TakePush()-'0');// 没有超过64位的存储上限,就继续解析数值字符,然后将其累积到64位的i64中
+                                    significandDigit++;
+                                }  
+                        }
+                        if(useDouble){// 转换为double继续累积输入流的数值字符串的解析结果
+                            while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9'))
+                                d = d*10+(s.TakePush()-'0');
+                        }
+                        int expFrac = 0;// 记录小数点后的位数
+                        size_t decimalPosition;// 记录小数点的位置,用于将小数部分转换为double
+                        if(Consume(s, '.')){// 检查当前字符是否是小数点
+                            decimalPosition = s.Length();
+                            if(RAPIDJSON_UNLIKELY(!(s.Peek()>='0')&&s.Peek()<='9'))// 小数点后没有有效数字字符则报错
+                                RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissFraction, s.Tell());
+                                // 这里的if中是在d中保存精确值,即double中最多53位
+                                if(!useDouble){// 如果小数点前的整数部分没用double类型,就将其转换为double类型(i->i64->double,不是从32位的i直接转换为double)
+                                    #if RAPIDJSON_64BIT
+                                        if(!use64bit)// 没用使用64位的时候,就将原来的整数部分i赋值给i64,以便后面转换为double
+                                            i64 = i;
+                                        while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                            if(i64>RAPIDJSON_UINT64_C2(0x1FFFFF, 0xFFFFFFFF))// RAPIDJSON_UINT64_C2(0x1FFFFF, 0xFFFFFFFF)表示2^53-1,double类型的尾数最大为53位,因此对于超过53位的数double就不能精确表示,因为这里的d保存的是精确值,因此当大于53位时就直接break
+                                                break;
+                                            else{// 当有效数字位数不达53位,那么可以直接把小数部分往之前的整数部分i64中累积
+                                                i64 = i64*10+static_cast<unsigned>(s.TakePush()-'0');
+                                                --expFrac;
+                                                if(i64!=0)
+                                                    significandDigit++;
+                                            }
+                                        }
+                                        d = static_cast<double>(i64);
+                                    #else
+                                        d = static_cast<double>(use64bit ? i64 : i);
+                                    #endif
+                                        useDouble = true;
+                                }
+                                // 前面d保存的是精确的,不会大于53位   如果前面不大于53位,那么s.Peek()就不会是数值字符
+                                // 如果前面的整数部分直接用double存储了,此时就也是类似处理  十进制有效位数不超过 17 位的情况(等价于二进制不超过53位)
+                                while(RAPIDJSON_LIKELY(s.Peek()>='0'&&s.Peek()<='9')){
+                                    if(significandDigit < 17){// double类型一般十进制精度最大为17
+                                        d = d*10.0+(s.TakePush()-'0');
+                                        --expFrac;
+                                        if(RAPIDJSON_LIKELY(d > 0.0))
+                                            significandDigit++;
+                                    }
+                                    else// 如果小数点后的十进制位数超过17位,则使用TakePush()消耗字符但不存储,以忽略超出部分
+                                        s.TakePush();
+                                }
+                        }
+                        else
+                            decimalPosition = s.Length();
+                        int exp = 0;// 用于存储解析到的指数值
+                        if(Consume(s, 'e') || Consume(s, 'E')){// 如果找到e||E,则进入指数部分的逻辑
+                            if(!useDouble){
+                                d = static_cast<double>(use64bit ? i64:i);
+                                useDouble = true;
+                            }
+                            bool expMinus = false;
+                            if(Consume(s, '+'))
+                                ;
+                            else if(Consume(s, '-'))
+                                expMinus = true;
+                            if(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
+                                exp = static_cast<int>(s.Take()-'0');
+                                if(expMinus){
+                                    RAPIDJSON_ASSERT(expFrac <= 0);
+                                    int maxExp = (expFrac + 2147483639)/10;
+                                    while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
+                                        exp = exp*10+static_cast<int>(s.Take()-'0');
+                                        if(RAPIDJSON_UNLIKELY(exp>maxExp)){
+                                            while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9'))
+                                                s.Take();
+                                        }
+                                    }
+                                }
+                                else{
+                                    int maxExp = 308-expFrac;
+                                    while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
+                                        exp = exp*10+static_cast<int>(s.Take()-'0');
+                                        if (RAPIDJSON_UNLIKELY(exp > maxExp))
+                                            RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
+                                        }
+                                    }
+                                }
+                                else
+                                    RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissExponent, s.Tell());
+                                if(expMinus)
+                                    exp = -exp;
+                            }
+                        }
 
+
+                    }
 
 
 

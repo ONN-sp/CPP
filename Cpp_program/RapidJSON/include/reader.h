@@ -1466,53 +1466,99 @@ namespace RAPIDJSON{
                             decimalPosition = s.Length();
                         int exp = 0;// 用于存储解析到的指数值
                         if(Consume(s, 'e') || Consume(s, 'E')){// 如果找到e||E,则进入指数部分的逻辑
-                            if(!useDouble){
+                            if(!useDouble){// 如果没有使用double来存储数值,则将整数部分先转换为double,便于直接将后续的指数部分转换为double,并累积上去
                                 d = static_cast<double>(use64bit ? i64:i);
                                 useDouble = true;
                             }
-                            bool expMinus = false;
-                            if(Consume(s, '+'))
+                            bool expMinus = false;// 用于记录指数的符号是否为负号
+                            if(Consume(s, '+'))// 正数指数
                                 ;
-                            else if(Consume(s, '-'))
+                            else if(Consume(s, '-'))// 负数指数
                                 expMinus = true;
                             if(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
-                                exp = static_cast<int>(s.Take()-'0');
-                                if(expMinus){
+                                exp = static_cast<int>(s.Take()-'0');// 将指数的第一个数字字符转换为整数并存储到exp中
+                                if(expMinus){// 检查为负指数
                                     RAPIDJSON_ASSERT(expFrac <= 0);
-                                    int maxExp = (expFrac + 2147483639)/10;
+                                    int maxExp = (expFrac + 2147483639)/10;// 负数时对应的负指数最大值,以防止溢出   maxExp用于防止exp的值变得过大(避免整数下溢),以确保-exp不会超出int的范围
                                     while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
                                         exp = exp*10+static_cast<int>(s.Take()-'0');
-                                        if(RAPIDJSON_UNLIKELY(exp>maxExp)){
+                                        if(RAPIDJSON_UNLIKELY(exp>maxExp)){// 如果exp超过maxExp的值,则停止解析,防止exp变得过大
                                             while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9'))
                                                 s.Take();
                                         }
                                     }
                                 }
-                                else{
-                                    int maxExp = 308-expFrac;
+                                else{// 检查为正指数
+                                    int maxExp = 308-expFrac;// 正数时对应的正指数最大值,以防指数溢出
                                     while(RAPIDJSON_LIKELY(s.Peek() >= '0' && s.Peek() <= '9')){
                                         exp = exp*10+static_cast<int>(s.Take()-'0');
-                                        if (RAPIDJSON_UNLIKELY(exp > maxExp))
+                                        if (RAPIDJSON_UNLIKELY(exp > maxExp))// 如果exp超过maxExp的值,则停止解析,防止exp变得过大
                                             RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
                                         }
                                     }
                                 }
-                                else
+                                else// 如果在'e'或'E'后没有数字字符,则报错
                                     RAPIDJSON_PARSE_ERROR(kParseErrorNumberMissExponent, s.Tell());
                                 if(expMinus)
                                     exp = -exp;
                             }
+                            bool cont = true;// 用于标识解析是否成功
+                            if(parseFlags&kParseNumbersAsStringsFlag){// 将原始字符串中的数字作为字符串处理,而不是转换为数值再后续处理
+                                if(parseFlags&kParseInsituFlag){// 在原始输入流上直接进行操作,而不是复制数据再进行后续操作
+                                    s.Pop();// 清理栈,因为此时是原地处理,所以只会涉及输入流is,而为了将栈的状态恢复到解析数字之前的状态,避免数据残留,就要Pop()
+                                    typename InputStream::Ch* head = is.PutBegin();// 获取输入流的起始位置
+                                    const size_t length = s.Tell()-startOffset;// 返回当前已解析的数值字符串的长度
+                                    RAPIDJSON_ASSERT(length<=0xFFFFFFFF);// 确保计算得到的字符串长度不会超过0xFFFFFFFF,即最大为4GB
+                                    const typename TargetEncoding::Ch* const str = reinterpret_cast<typename TargetEncoding::Ch*>(head);// 将head指针转换为输出流中的目标编码格式的指针,即将原始数值字符传递给目标编码器处理
+                                    cont = handler.RawNumber(str, SizeType(length), false);// 将原始数组字符串传递给回调函数,false表示这是一个原地的字符串
+                                }
+                                else{// 没有原地解析,则需要复制字符串到目标缓冲区
+                                    SizeType numCharsToCopy = static_cast<SizeType>(s.Length());// 获取输入流中剩余的字符数
+                                    GenericStringStream<UTF8<NumberCharacter>> srcStream(s.Pop());// 它将使用输入流s.Pop()中的数据
+                                    StackStream<typename TargetEncoding::Ch> dstStream(stack_);// 用于将srcStream转换为目标编码类型,stack_是用于目标编码的缓冲区
+                                    while(numCharsToCopy--)// 逐个字符从源流srcStream转换并写入目标流dstStream中
+                                        Transcoder<UTF8<typename TargetEncoding::Ch>, TargetEncoding>::Transcode(srcStream, dstStream);
+                                    dstStream.Put('\0');// 向目标流中写入一个'\0'字符,表示字符串的结束
+                                    const typename TargetEncoding::Ch* str = dstStream.Pop();// 从目标流中弹出已转换的字符串,并将其指向str  注意这里返回的不是'\0'字符,这和默认的栈Pop()不同,这个Pop()返回的是栈的起始位置
+                                    const SizeType length = static_cast<SizeType>(dstStream.Length())-1;// 计算转换后的字符串长度(去掉结束符)
+                                    cont = handler.RawNumber(str, SizeType(length), true);// 将转换后的字符串传递给回调函数,true表示这是一个副本的字符串
+                                }
+                            }
+                            else{// 数字不是作为原始字符串直接处理
+                                size_t length = s.Length();// 获取当前流的长度,表示数字字符串的长度
+                                const NumberCharacter* decimal = s.Pop();// 获取栈中原数字字符串的起始地址
+                                if(useDouble){// 使用double类型来解析数值时,回调Double()
+                                    int p = exp+expFrac;// 指数部分和小数部分的合成(小数对应的expFrac就是负数)
+                                    if(parseFlags&kParseFullPrecisionFlag)// 尽可能保留精度
+                                        d = internal::StrtodFullPrecision(d, p, decimal, length, decimalPosition, exp);
+                                    else
+                                        d = internal::StrtodNormalPrecision(d, p);
+                                    if(d > (std::numeric_limits<double>::max)())// 解析后的浮点数如果超过double的最大值就报错
+                                        RAPIDJSON_PARSE_ERROR(kParseErrorNumberTooBig, startOffset);
+                                    cont = handler.Double(minus ? -d:d);
+                                }
+                                else if(useNanOrInf)// 处理NaN或Inf
+                                    cont = handler.Double(d);
+                                else{// 不使用double,又不处理NaN或Inf
+                                    if(use64bit){// 使用了64位整数来解析
+                                        if(minus)
+                                            cont = handler.Int64(static_cast<int64_t>(~i64+1));
+                                        else
+                                            cont = handler.Uint64(i64);
+                                    }
+                                    else{// 32位来解析
+                                        if(minus)
+                                            cont = handler.Int(static_cast<int32_t>(~i+1));
+                                        else
+                                            cont = handler.Uint(i);
+                                    }
+                                }
+                            }
+                            if (RAPIDJSON_UNLIKELY(!cont))// 回调失败,即可以理解为解析失败
+                                RAPIDJSON_PARSE_ERROR(kParseErrorTermination, startOffset);
                         }
-
-
-                    }
-
-
-
-
-
-
+                        
                     };
     }
 }
-#endif
+#endif+++ 

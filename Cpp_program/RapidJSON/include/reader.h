@@ -1325,7 +1325,7 @@ namespace RAPIDJSON{
                                 ((parseFlags&kParseFullPrecisionFlag)!=0),
                             (parseFlags&kParseNumbersAsStringsFlag)!=0 &&
                                 (parseFlags&kParseInsituFlag)==0> s(*this, copy.s);
-                        size_t startOffset = s.Tell();// 起始偏移量
+                        size_t startOffset = s.Tell();// 处理数值字符串时的起始偏移量
                         double d = 0.0;
                         bool useNanOrInf = false;// 标记是否解析到NaN或无穷大
                         bool mins = Consume(s, '-');// 检查是否有负号'-'
@@ -1557,8 +1557,450 @@ namespace RAPIDJSON{
                             if (RAPIDJSON_UNLIKELY(!cont))// 回调失败,即可以理解为解析失败
                                 RAPIDJSON_PARSE_ERROR(kParseErrorTermination, startOffset);
                         }
-                        
+                        /**
+                         * @brief 根据字符来解析JSON值
+                         * 
+                         * @tparam parseFlags 
+                         * @tparam InputStream 
+                         * @tparam Handler 
+                         * @param is 
+                         * @param handler 
+                         */
+                        template<unsigned parseFlags, typename InputStream, typename Handler>
+                        void ParseValue(InputStream& is, Handler& handler){
+                            switch(is.Peek()){
+                                case 'n': ParseNull<parseFlags>(is, handler);
+                                          break;
+                                case 't': ParseTrue<parseFlags>(is, handler);
+                                          break;
+                                case 'f': ParseFalse<parseFlags>(is, handler);
+                                          break;
+                                case '"': ParseString<parseFlags>(is, handler);
+                                          break;
+                                case '{': ParseObject<parseFlags>(is, handler);
+                                          break;
+                                case '[': ParseArray<parseFlags>(is, handler);
+                                          break;
+                                default :
+                                          ParseNumber<parseFlags>(is, handler);
+                                          break;
+                            }
+                        }
+                        /**
+                         * @brief 定义解析器的状态机中的各种状态
+                         * 
+                         */
+                        enum IterativeParsingState{
+                            IterativeParsingFinishState = 0,// 解析完成的状态
+                            IterativeParsingErrorState,// 解析错误的状态
+                            IterativeParsingStartState,// 标志解析的起始点
+                            // Object states
+                            IterativeParsingObjectInitialState,// 对象解析的初始状态
+                            IterativeParsingMemberKeyState,// 等待对象的键的状态
+                            IterativeParsingMemberValueState,// 等待键的值的状态
+                            IterativeParsingObjectFinishState,// 对象解析完成的状态
+                            // Array states
+                            IterativeParsingArrayInitialState,// 数组解析的初始状态
+                            IterativeParsingElementState,// 等待数组元素的状态
+                            IterativeParsingArrayFinishState,// 数组解析完成的状态
+                            // Single value state
+                            IterativeParsingValueState,// 等待解析一个JSON值的状态
+                            // 用于解析JSON分隔符
+                            IterativeParsingElementDelimiterState,// 等待数组元素之间的逗号的状态
+                            IterativeParsingMemberDelimiterState,// 等待对象成员之间的逗号的状态
+                            IterativeParsingKeyValueDelimiterState,// 等待键值对之间的冒号的状态
+                            cIterativeParsingStateCount// 记录枚举值的总数,用于状态机实现中快速检验合法状态
+                        };
+                        /**
+                         * @brief 定义一个表示JSON文本中的符号或关键字的令牌枚举类
+                         * 其实就是一个字符对应的标记
+                         */
+                        enum Token{
+                            // 括号令牌
+                            LeftBracketToken = 0,// [
+                            RightBracketToken,// ]
+                            LeftCurlyBracketToken,// {
+                            RightCurlyBracketToken,// }
+                            // 分隔符令牌
+                            CommaToken,// ,
+                            ColonToken,// :
+                            // 数据类型的令牌
+                            StringToken,// 字符串
+                            FalseToken,// false
+                            TrueToken,// true
+                            NullToken,// null
+                            NumberToken,// 数字
+                            // 令牌总数
+                            kTokenCount// 记录令牌的总数,方便在状态机实现中快速校验合法令牌
+                        };
+                        /**
+                         * @brief 将单个字符 (c) 映射为对应的令牌 (Token) 类型
+                         * 
+                         * @param c 
+                         * @return RAPIDJSON_FORCEINLINE 
+                         */
+                        RAPIDJSON_FORCEINLINE Token Tokenize(Ch c) const {
+                            //!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN
+                            #define N NumberToken
+                            #define N16 N,N,N,N,N,N,N,N,N,N,N,N,N,N,N,N
+                                    // ASCII码到令牌的映射表
+                                    static const unsigned char tokenMap[256] = {
+                                        N16, // 00~0F
+                                        N16, // 10~1F
+                                        N, N, StringToken, N, N, N, N, N, N, N, N, N, CommaToken, N, N, N, // 20~2F
+                                        N, N, N, N, N, N, N, N, N, N, ColonToken, N, N, N, N, N, // 30~3F
+                                        N16, // 40~4F
+                                        N, N, N, N, N, N, N, N, N, N, N, LeftBracketToken, N, RightBracketToken, N, N, // 50~5F
+                                        N, N, N, N, N, N, FalseToken, N, N, N, N, N, N, N, NullToken, N, // 60~6F
+                                        N, N, N, N, TrueToken, N, N, N, N, N, N, LeftCurlyBracketToken, N, RightCurlyBracketToken, N, N, // 70~7F
+                                        N16, N16, N16, N16, N16, N16, N16, N16 // 80~FF
+                                    };
+                            #undef N
+                            #undef N16
+                            //!@endcond
+                            if(sizeof(Ch)==1||static_cast<unsigned>(c)<256)
+                                return static_cast<Token>(tokenMap[static_cast<unsigned char>(c)]);
+                            else
+                                return NumberToken;
+                        }
+                        /**
+                         * @brief 基于当前的解析状态和令牌类型,预测下一步的解析状态.使用了一个预定义的状态转移表G
+                         * 
+                         * @param state 
+                         * @param token 
+                         * @return RAPIDJSON_FORCEINLINE 
+                         */
+                        RAPIDJSON_FORCEINLINE IterativeParsingState Predict(IterativeParsingState state, Token token) const {
+                            // G[state][token]:表示当前状态state遇到令牌token时的下一个状态
+                            static const char G[cIterativeParsingStateCount][kTokenCount] = {
+                            // Finish(sink state)
+                            {
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState
+                            },
+                            // Error(sink state)
+                            {
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState
+                            },
+                            // Start
+                            {
+                                IterativeParsingArrayInitialState,  // Left bracket
+                                IterativeParsingErrorState,         // Right bracket
+                                IterativeParsingObjectInitialState, // Left curly bracket
+                                IterativeParsingErrorState,         // Right curly bracket
+                                IterativeParsingErrorState,         // Comma
+                                IterativeParsingErrorState,         // Colon
+                                IterativeParsingValueState,         // String
+                                IterativeParsingValueState,         // False
+                                IterativeParsingValueState,         // True
+                                IterativeParsingValueState,         // Null
+                                IterativeParsingValueState          // Number
+                            },
+                            // ObjectInitial
+                            {
+                                IterativeParsingErrorState,         // Left bracket
+                                IterativeParsingErrorState,         // Right bracket
+                                IterativeParsingErrorState,         // Left curly bracket
+                                IterativeParsingObjectFinishState,  // Right curly bracket
+                                IterativeParsingErrorState,         // Comma
+                                IterativeParsingErrorState,         // Colon
+                                IterativeParsingMemberKeyState,     // String
+                                IterativeParsingErrorState,         // False
+                                IterativeParsingErrorState,         // True
+                                IterativeParsingErrorState,         // Null
+                                IterativeParsingErrorState          // Number
+                            },
+                            // MemberKey
+                            {
+                                IterativeParsingErrorState,             // Left bracket
+                                IterativeParsingErrorState,             // Right bracket
+                                IterativeParsingErrorState,             // Left curly bracket
+                                IterativeParsingErrorState,             // Right curly bracket
+                                IterativeParsingErrorState,             // Comma
+                                IterativeParsingKeyValueDelimiterState, // Colon
+                                IterativeParsingErrorState,             // String
+                                IterativeParsingErrorState,             // False
+                                IterativeParsingErrorState,             // True
+                                IterativeParsingErrorState,             // Null
+                                IterativeParsingErrorState              // Number
+                            },
+                            // MemberValue
+                            {
+                                IterativeParsingErrorState,             // Left bracket
+                                IterativeParsingErrorState,             // Right bracket
+                                IterativeParsingErrorState,             // Left curly bracket
+                                IterativeParsingObjectFinishState,      // Right curly bracket
+                                IterativeParsingMemberDelimiterState,   // Comma
+                                IterativeParsingErrorState,             // Colon
+                                IterativeParsingErrorState,             // String
+                                IterativeParsingErrorState,             // False
+                                IterativeParsingErrorState,             // True
+                                IterativeParsingErrorState,             // Null
+                                IterativeParsingErrorState              // Number
+                            },
+                            // ObjectFinish(sink state)
+                            {
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState
+                            },
+                            // ArrayInitial
+                            {
+                                IterativeParsingArrayInitialState,      // Left bracket(push Element state)
+                                IterativeParsingArrayFinishState,       // Right bracket
+                                IterativeParsingObjectInitialState,     // Left curly bracket(push Element state)
+                                IterativeParsingErrorState,             // Right curly bracket
+                                IterativeParsingErrorState,             // Comma
+                                IterativeParsingErrorState,             // Colon
+                                IterativeParsingElementState,           // String
+                                IterativeParsingElementState,           // False
+                                IterativeParsingElementState,           // True
+                                IterativeParsingElementState,           // Null
+                                IterativeParsingElementState            // Number
+                            },
+                            // Element
+                            {
+                                IterativeParsingErrorState,             // Left bracket
+                                IterativeParsingArrayFinishState,       // Right bracket
+                                IterativeParsingErrorState,             // Left curly bracket
+                                IterativeParsingErrorState,             // Right curly bracket
+                                IterativeParsingElementDelimiterState,  // Comma
+                                IterativeParsingErrorState,             // Colon
+                                IterativeParsingErrorState,             // String
+                                IterativeParsingErrorState,             // False
+                                IterativeParsingErrorState,             // True
+                                IterativeParsingErrorState,             // Null
+                                IterativeParsingErrorState              // Number
+                            },
+                            // ArrayFinish(sink state)
+                            {
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState
+                            },
+                            // Single Value (sink state)
+                            {
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState, IterativeParsingErrorState,
+                                IterativeParsingErrorState
+                            },
+                            // ElementDelimiter
+                            {
+                                IterativeParsingArrayInitialState,      // Left bracket(push Element state)
+                                IterativeParsingArrayFinishState,       // Right bracket
+                                IterativeParsingObjectInitialState,     // Left curly bracket(push Element state)
+                                IterativeParsingErrorState,             // Right curly bracket
+                                IterativeParsingErrorState,             // Comma
+                                IterativeParsingErrorState,             // Colon
+                                IterativeParsingElementState,           // String
+                                IterativeParsingElementState,           // False
+                                IterativeParsingElementState,           // True
+                                IterativeParsingElementState,           // Null
+                                IterativeParsingElementState            // Number
+                            },
+                            // MemberDelimiter
+                            {
+                                IterativeParsingErrorState,         // Left bracket
+                                IterativeParsingErrorState,         // Right bracket
+                                IterativeParsingErrorState,         // Left curly bracket
+                                IterativeParsingObjectFinishState,  // Right curly bracket
+                                IterativeParsingErrorState,         // Comma
+                                IterativeParsingErrorState,         // Colon
+                                IterativeParsingMemberKeyState,     // String
+                                IterativeParsingErrorState,         // False
+                                IterativeParsingErrorState,         // True
+                                IterativeParsingErrorState,         // Null
+                                IterativeParsingErrorState          // Number
+                            },
+                            // KeyValueDelimiter
+                            {
+                                IterativeParsingArrayInitialState,      // Left bracket(push MemberValue state)
+                                IterativeParsingErrorState,             // Right bracket
+                                IterativeParsingObjectInitialState,     // Left curly bracket(push MemberValue state)
+                                IterativeParsingErrorState,             // Right curly bracket
+                                IterativeParsingErrorState,             // Comma
+                                IterativeParsingErrorState,             // Colon
+                                IterativeParsingMemberValueState,       // String
+                                IterativeParsingMemberValueState,       // False
+                                IterativeParsingMemberValueState,       // True
+                                IterativeParsingMemberValueState,       // Null
+                                IterativeParsingMemberValueState        // Number
+                            },
+                            }; // End of G
+                            return static_cast<IterativeParsingState>(G[state][token]);// 根据当前状态和令牌,查询状态转移表G,进而预测下一步状态
+                        }
+                        /**
+                         * @brief 状态转移由Predict()和Transit()完成.Predict()确定目标状态dst,Transit()完成从src到dst的状态转移,并执行必要的解析操作
+                         * Transit()是基于有限状态机设计的:上一状态src+当前令牌token=>要转移的目标状态dst
+                         * @tparam parseFlags 
+                         * @tparam InputStream 
+                         * @tparam Handler 
+                         * @param src 当前解析状态,也就是状态机中的上一状态
+                         * @param token 当前输入的JSON令牌(如{、[、:等)
+                         * @param dst 预测的下一个解析状态
+                         * @param is 输入流实例
+                         * @param handler 用户定义的处理器对象,用于执行StartObject()、EndArray()等
+                         * @return RAPIDJSON_FORCEINLINE 返回新的解析状态
+                         */
+                        template<unsigned parseFlags, typename InputStream, typename Handler>
+                        RAPIDJSON_FORCEINLINE IterativeParsingState Transit(IterativeParsingState src, Token token, IterativeParsingState dst, InputStream& is, Handler& handler){
+                            (void)token;
+                            switch(dst){
+                                case IterativeParsingErrorState:// 目标状态是错误状态,无需任何额外操作,直接返回
+                                    return dst;
+                                // 当前目标状态是对象初始状态或数组初始状态(对于JSON的{和[)
+                                case IterativeParsingObjectInitialState:
+                                case IterativeParsingArrayInitialState:
+                                {
+                                    IterativeParsingState n = src;// n用于记录当前解析状态  !!!用于后续在嵌套结束时恢复
+                                    if(src==IterativeParsingElementState||src==IterativeParsingElementDelimiterState)// 上一个状态为解析一个数组的元素或者刚处理完一个数组元素的分隔符时表示当前正在正在解析数组下一个元素
+                                        n = IterativeParsingElementState;
+                                    else if(src==IterativeParsingKeyValueDelimiterState)// 刚处理完键值对的分隔符则下一个需要解析的是键值对的Value,即目标状态虽然是IterativeParsingObjectInitialState,但是此时是在上一层的键值对的值的位置开始一个嵌套新的对象.这里n是用于在嵌套结束时恢复,即嵌套结束,这里其实就是键值对的值的解析状态
+                                        n = IterativeParsingMemberValueState;
+                                    *stack_.template Push<SizeType>(1) = n;// 将n保存到解析栈中
+                                    *stack_.template Push<SizeType>(1) = 0;// 栈中保存当前对象或数组的成员/元素计数,初始为0.计数会在解析过程更新
+                                    bool hr = (dst==IterativeParsingObjectInitialState) ? handler.StartObject():handler.StartArray();// 根据目标状态决定调用的回调函数
+                                    if(!hr){
+                                        RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorTermination, is.Tell());
+                                        return IterativeParsingErrorState;
+                                    }
+                                    else{
+                                        is.Take();// 消耗当前字符[或{
+                                        return dst;// 返回目标状态dst(对象初始状态或数组初始状态)
+                                    }
+                                }
+                                case IterativeParsingMemberKeyState:// 解析对象成员的键
+                                    ParseString<parseFlags>(is, handler, true);
+                                    if(HasParseError())
+                                        return IterativeParsingErrorState;
+                                    else
+                                        return dst;
+                                case IterativeParsingKeyValueDelimiterState:// 处理对象成员中键值对的分隔符":"
+                                    RAPIDJSON_ASSERT(token==ColonToken);
+                                    is.Take();
+                                    return dst;
+                                case IterativeParsingMemberValueState:// 解析对象成员的值
+                                    ParseValue<parseFlags>(is, handler);
+                                    if(HasParseError())
+                                        return IterativeParsingErrorState;
+                                    return dst;
+                                case IterativeParsingElementState:// 解析数组中的元素
+                                    ParseValue<parseFlags>(is, handler);
+                                    if(HasParseError())
+                                        return IterativeParsingErrorState;
+                                    return dst;
+                                // 处理对象成员之间的逗号和数组元素之间的逗号
+                                case IterativeParsingMemberDelimiterState:
+                                case IterativeParsingElementDelimiterState:
+                                    is.Take();// 消耗逗号这个字符
+                                    *stack_.template Top<SizeType>() = *stack_.template Top<SizeType>()+1;// 将当前对象的成员数或数组的元素数+1并记录(加1就是表示一个完整的对象成员或数组元素结束)
+                                    return dst;
+                                case IterativeParsingObjectFinishState:// 处理对象解析结束的情况(})
+                                {
+                                    if(!(parseFlags&kParseTrailingCommasFlag)&&src==IterativeParsingMemberDelimiterState){// 上一个状态是IterativeParsingMemberDelimiterState表示对象的成员中存在非法的尾随逗号,此时}要直接报错
+                                        RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorObjectMissName, is.Tell());
+                                        return IterativeParsingErrorState;
+                                    }
+                                    SizeType c = *stack_.template Pop<SizeType>(1);// 从栈中弹出计数器,记录当前对象的成员数
+                                    if(src==IterativeParsingMemberValueState)// 如果上一个状态是IterativeParsingMemberValueState,表示对象最后一个成员的值解析完毕,需要将成员数+1
+                                        ++c;
+                                    IterativeParsingState n = static_cast<IterativeParsingState>(*stack_.template Pop<SizeType>(1));// 弹出之前压入的状态(通常是进入该对象前的状态)
+                                    if(n==IterativeParsingStartState)// 如果弹出的状态是IterativeParsingStartState,说明这是最外层的对象,解析已完成,将状态设为IterativeParsingFinishState
+                                        n = IterativeParsingFinishState;
+                                    bool hr = handler.EndObject(c);// 通知处理器对象解析结束,并传递对象的成员数量c
+                                    if(!hr){
+                                        RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorTermination, is.Tell());
+                                        return IterativeParsingErrorState;
+                                    }
+                                    else{
+                                        is.Take();// 消耗结束字符}
+                                        return n;// 返回上一步状态
+                                    }
+                                }
+                                default:
+                                    RAPIDJSON_ASSERT(dst==IterativeParsingValueState);
+                                    ParseValue<parseFlags>(is, handler);
+                                    if(HasParseError())
+                                        return IterativeParsingErrorState;
+                                    return IterativeParsingFinishState;
+                            }
+                        }
+                        /**
+                         * @brief 根据当前解析状态src和输入流设置适当的解析错误
+                         * 
+                         * @tparam InputStream 
+                         * @param src 
+                         * @param is 
+                         */
+                        template<typen1ame InputStream>
+                        void HandleError(IterativeParsingState src, InputStream& is){
+                            if(HasParseError())// 已经有错误标志则直接返回
+                                return;
+                            switch(src){// 根据当前解析状态选择适当的错误类型
+                                case IterativeParsingStartState:            RAPIDJSON_PARSE_ERROR(kParseErrorDocumentEmpty, is.Tell()); return;
+                                case IterativeParsingFinishState:           RAPIDJSON_PARSE_ERROR(kParseErrorDocumentRootNotSingular, is.Tell()); return;
+                                case IterativeParsingObjectInitialState:
+                                case IterativeParsingMemberDelimiterState:  RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissName, is.Tell()); return;
+                                case IterativeParsingMemberKeyState:        RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissColon, is.Tell()); return;
+                                case IterativeParsingMemberValueState:      RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissCommaOrCurlyBracket, is.Tell()); return;
+                                case IterativeParsingKeyValueDelimiterState:
+                                case IterativeParsingArrayInitialState:
+                                case IterativeParsingElementDelimiterState: RAPIDJSON_PARSE_ERROR(kParseErrorValueInvalid, is.Tell()); return;
+                                default: RAPIDJSON_ASSERT(src == IterativeParsingElementState); RAPIDJSON_PARSE_ERROR(kParseErrorArrayMissCommaOrSquareBracket, is.Tell()); return;
+                            }
+                        }
+                        // 判断给定状态是否是分隔符相关的解析状态
+                        RAPIDJSON_FORCEINLINE bool IsIterativeParsingDelimiterState(IterativeParsingState s) const {
+                            return s >= IterativeParsingElementDelimiterState;// 大于等于IterativeParsingElementDelimiterState的状态就是与分隔符相关的状态,从状态映射表IterativeParsingState中可以看出
+                        }
+                        // 判断当前状态是否是结束状态
+                        RAPIDJSON_FORCEINLINE bool IsIterativeParsingCompleteState(IterativeParsingState s) const {
+                            return s <= IterativeParsingErrorState;
+                        }
+                        /**
+                         * @brief 实现迭代式JSON文档解析逻辑
+                         * 
+                         * @tparam parseFlags 
+                         * @tparam InputStream 
+                         * @tparam Handler 
+                         * @param is 
+                         * @param handler 
+                         * @return ParseResult 
+                         */
+                        template<unsigned parseFlags, typename InputStream, typename Handler>
+                        ParseResult IterativeParse(InputStream& is, Handler& handler){
+                            parseResult_.Clear();// 清空之前的解析结果
+                            ClearStackOnExit scope(*this);// 确保在当前对象退出时清空栈内容,防止内存泄漏(类似RAII机制)
+                            IterativeParsingStartState state = IterativeParsingStartState;// 解析刚开始
+                            SkipWhitespaceAndComments<parseFlags>(is);
+                            RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                            while(is.Peek()!='\0'){// 输入流未到文件末尾,持续解析
+                                Token t = Tokenize(is.Peek());// 返回当前字符对应的token令牌
+                                IterativeParsingState n = Predict(state, t);// 根据当前状态和令牌预测出下一个解析状态
+                                IterativeParsingState d = Transit<parseFlags>(state, t, n, is, handler);// 根据当前状态、令牌和预测状态,执行状态转换,返回转换后的状态
+                                if(d==IterativeParsingErrorState){// 错误状态处理
+                                    HandlerError(state, is);
+                                    break;
+                                }
+                                state = d;// 将转换后的状态更新为当前状态,为下一轮解析做准备
+                                if((parseFlags&kParseStopWhenDoneFlag)&&state==IterativeParsingFinishState)// 启用了kParseStopWhenDoneFlag,且文档解析完成就在这提前结束解析
+                                    break;
+                                SkipWhitespaceAndComments<parseFlags>(is);
+                                RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
+                            }
+                            if(state!=IterativeParsingFinishState)// 文档解析结束时如果状态不是IterativeParsingFinishState,就报错
+                                HandlerError(state, is);
+                            return parseResult_;
+                        }
+                        static const size_t kDefaultStackCapacity = 256;   
+                        internal::Stack<StackAllocator> stack_;// 用于存储解析过程中的临时数据
+                        ParseResult parseResult_;// 保存解析结果,包括成功或错误的标志及错误位置
+                        IterativeParsingState state_;
                     };
+        typedef GenericReader<UTF8<>, UTF8<>> Reader;
     }
 }
-#endif+++ 
+#endif

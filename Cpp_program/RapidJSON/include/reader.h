@@ -152,6 +152,7 @@ namespace RAPIDJSON{
             private:
                 StreamLocalCopy& operator=(const StreamLocalCopy&) = delete;     
         };
+    }
         /**
          * @brief 用于在JSON解析时跳过空白字符(空格、换行、回车、制表符)
          * 
@@ -378,9 +379,9 @@ namespace RAPIDJSON{
         class GenericReader{
             public:
                 typedef typename SourceEncoding::Ch Ch;
-                GenericReader(StackAllocator* StackAllocator=nullptr, size_t stackCapacity = kDefaultStackCapacity)
-                    : stack_(StackAllocator, stackCapacity),// 栈用于存储临时数据,如解析过程中需要的字符或字符串
-                      ParseResult_(),// 存储解析结果,如是否成功和错误信息
+                GenericReader(StackAllocator* allocator=nullptr, size_t stackCapacity = kDefaultStackCapacity)
+                    : stack_(allocator, stackCapacity),// 栈用于存储临时数据,如解析过程中需要的字符或字符串
+                      parseResult_(),// 存储解析结果,如是否成功和错误信息
                       state_(IterativeParsingStartState)// 保存当前的解析状态  来标志当前解析的是啥,比如:键解析状态
                     {}
                 /**
@@ -397,7 +398,7 @@ namespace RAPIDJSON{
                 ParseResult Parse(InputStream& is, Handler& handler){// Handler指的是BaseReaderHandler这种,可以自定义解析函数
                     if(parseFlags&kParseIterativeFlag)// 迭代解析
                         return IterativeParse<parseFlags>(is, handler);
-                    ParseResult_.Clear();
+                    parseResult_.Clear();
                     ClearStackOnExit scope(*this);// 确保在解析完成后栈被清空,防止内存泄漏
                     SkipWhitespaceAndComments<parseFlags>(is);// 跳过输入流中的空白字符和注释
                     RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);// 检查是否出现错误,若出现错误就立刻返回
@@ -566,14 +567,15 @@ namespace RAPIDJSON{
                         return;
                     }
                     for(SizeType memberCount=0;;){// 初始化对象的键值对成员为0
-                        if(RAPIDJSON_UNLIKELY(is.Peek()!='"')// 键必须是字符串
+                        if(RAPIDJSON_UNLIKELY(is.Peek()!='"'))// 键必须是字符串
                             RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissName, is.Tell());
                         ParseString<parseFlags>(is, handler, true);// 解析键  true表明这个字符串是对象中的键值对的键
+                        
                         RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;// 检查错误
                         SkipWhitespaceAndComments<parseFlags>(is);// 跳过空白字符和注释
                         RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
-                        if(RAPIDJSON_UNLIKELY(!Consume(is, ':'))// 如果键解析后的字符不是冒号,则报错
-                            RAPIDJSON_PARSE_ERROR(KParseErroObjectMissColon, is.Tell());
+                        if(RAPIDJSON_UNLIKELY(!Consume(is, ':')))// 如果键解析后的字符不是冒号,则报错
+                            RAPIDJSON_PARSE_ERROR(kParseErrorObjectMissColon, is.Tell());
                         SkipWhitespaceAndComments<parseFlags>(is);
                         RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
                         ParseValue<parseFlags>(is, handler);// 解析值
@@ -641,7 +643,7 @@ namespace RAPIDJSON{
                                 break;
                             case ']':
                                 is.Take();
-                                if(RAPIDJSON_UNLIKELY(!handler.EndArray(memberCount)))// EndObject()执行失败
+                                if(RAPIDJSON_UNLIKELY(!handler.EndArray(elementCount)))// EndObject()执行失败
                                     RAPIDJSON_PARSE_ERROR(kParseErrorTermination, is.Tell());
                                 return;
                             default:
@@ -758,11 +760,11 @@ namespace RAPIDJSON{
                         typedef CharType Ch;
                         StackStream(internal::Stack<StackAllocator>& stack) 
                             : stack_(stack),
-                              length(0)// 记录当前在栈中存放的字符数量
+                              length_(0)// 记录当前在栈中存放的字符数量
                             {}
                         RAPIDJSON_FORCEINLINE void Put(Ch c){
                             *stack_.template Push<Ch>() = c;
-                            ++length_++;
+                            ++length_;
                         }
                         RAPIDJSON_FORCEINLINE void* Push(SizeType count){
                             length_ += count;
@@ -827,7 +829,7 @@ namespace RAPIDJSON{
                  * @param os 
                  * @return RAPIDJSON_FORCEINLINE 
                  */
-                template<unsigned parseFlags, typename SourceEncoding, typename TargetEncoding, typename OutputStream>
+                template<unsigned parseFlags, typename SEncoding, typename TEncoding, typename InputStream, typename OutputStream>
                 RAPIDJSON_FORCEINLINE void ParseStringToStream(InputStream& is, OutputStream& os){
                     //!@cond RAPIDJSON_HIDDEN_FROM_DOXYGEN
                     #define Z16 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -850,9 +852,9 @@ namespace RAPIDJSON{
                             is.Take();
                             Ch e = is.Peek();
                             // 检查并处理简单转义字符(即不包括Unicode转义序列和小于0x20的控制字符)
-                            if((sizeof(Ch)==1)||unsigned(e)<256)&&RAPIDJSON_LIKELY(escape[static_cast<unsigned char>(e)]){// 非转义字符且支持ASCII码
+                            if(((sizeof(Ch)==1)||unsigned(e)<256)&&RAPIDJSON_LIKELY(escape[static_cast<unsigned char>(e)])){// 非转义字符且支持ASCII码
                                 is.Take();
-                                os.Put(static_cast<typename TargetEncoding::Ch>(escape[static_cast<unsigned char>(e)]));
+                                os.Put(static_cast<typename TEncoding::Ch>(escape[static_cast<unsigned char>(e)]));
                             }
                             // 检查是否启用解析单引号的转义字符
                             else if((parseFlags&kParseEscapedApostropheFlag)&&RAPIDJSON_LIKELY(e=='\'')){
@@ -877,32 +879,32 @@ namespace RAPIDJSON{
                                     }
                                     else// 只有低代理而没有匹配的高代理,报错   在Unicode转义序列中高代理在低代理前面,所以不可能只有单独的低代理
                                         RAPIDJSON_PARSE_ERROR(kParseErrorStringUnicodeSurrogateInvalid, escapeOffset);
-                                    TargetEncoding::Encode(os, codepoint);// codepoint->os中
                                 }
-                                else
-                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringEscapeInvalid, escapeOffset);    
+                                TEncoding::Encode(os, codepoint);// codepoint->os中
                             }
-                            else if(RAPIDJSON_UNLIKELY(c=='"')){// 检查结束双引号
-                                is.Take();
-                                os.Put('\0');
-                                return;
-                            }
-                            else if(RAPIDJSON_UNLIKELY(static_cast<unsigned>(c)<0x20)){// 检查控制字符(非法字符)
-                                if(c=='\0')
-                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringMissQuotationMark, is.Tell());
-                                else
-                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, is.Tell());
-                            }
-                            else{// 非转义字符或普通字符
-                                size_t offset = is.Tell();
-                                if (RAPIDJSON_UNLIKELY((parseFlags & kParseValidateEncodingFlag ?
-                                    !Transcoder<SEncoding, TEncoding>::Validate(is, os) :
-                                    !Transcoder<SEncoding, TEncoding>::Transcode(is, os))))
-                                    RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, offset);
-                            }
+                            else
+                                RAPIDJSON_PARSE_ERROR(kParseErrorStringEscapeInvalid, escapeOffset);    
                         }
-                    }  
-                }
+                        else if(RAPIDJSON_UNLIKELY(c=='"')){// 检查结束双引号
+                            is.Take();
+                            os.Put('\0');
+                            return;
+                        }
+                        else if(RAPIDJSON_UNLIKELY(static_cast<unsigned>(c)<0x20)){// 检查控制字符(非法字符)
+                            if(c=='\0')
+                                RAPIDJSON_PARSE_ERROR(kParseErrorStringMissQuotationMark, is.Tell());
+                            else
+                                RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, is.Tell());
+                        }
+                        else{// 非转义字符或普通字符
+                            size_t offset = is.Tell();
+                            if (RAPIDJSON_UNLIKELY((parseFlags & kParseValidateEncodingFlag ?
+                                !Transcoder<SEncoding, TEncoding>::Validate(is, os) :
+                                !Transcoder<SEncoding, TEncoding>::Transcode(is, os))))
+                                RAPIDJSON_PARSE_ERROR(kParseErrorStringInvalidEncoding, offset);
+                        }
+                    }
+                }  
                 // 什么都不做的ScanCopyUnescapedString()函数
                 template<typename InputStream, typename OutputStream>
                 static RAPIDJSON_FORCEINLINE void ScanCopyUnescapedString(InputStream&, OutputStream&) {}
@@ -1046,6 +1048,7 @@ namespace RAPIDJSON{
                                 break;// 当扫描到特殊字符,就停止扫描,即退出函数
                             }
                             is.src_ = is.dst_ = p;
+                        }
                     }
                     #elif defined(RAPIDJSON_NEON)
                         /**
@@ -1279,13 +1282,15 @@ namespace RAPIDJSON{
                             }
                             // 手动推入字符c入栈
                             RAPIDJSON_FORCEINLINE void Push(StackCharacter c){
-                                StackStream.Put(c);
+                                stackStream.Put(c);
                             }
-                            size_t Length() { return StackStream.Length();}
+                            size_t Length() { return stackStream.Length();}
                             const StackCharacter* Pop(){
-                                StackStream.Put('\0');
-                                return StackStream.Pop();
+                                stackStream.Put('\0');
+                                return stackStream.Pop();
                             }
+						private:
+							StackStream<StackCharacter> stackStream;
                     };
                     /**
                      * @brief 特化版本 备份数据,且立刻在解析一个字符后就会把它推入栈中(注意:解析的动作在这不会体现,在ParseNumber()体现)
@@ -1298,8 +1303,7 @@ namespace RAPIDJSON{
                         typedef NumberStream<InputStream, StackCharacter, true, false> Base;
                         public:
                             NumberStream(GenericReader& reader, InputStream& s) 
-                                : Base(reader, s),
-                                  stackStream(reader.stack_)
+                                : Base(reader, s)
                                 {}
                             // 每次在解析时会调用Take(),而此特化版本确保了在每次解析一个数值字符调用Take()时就会立刻把它压入栈中
                             RAPIDJSON_FORCEINLINE Ch Take() {return Base::TakePush();}
@@ -1328,7 +1332,7 @@ namespace RAPIDJSON{
                         size_t startOffset = s.Tell();// 处理数值字符串时的起始偏移量
                         double d = 0.0;
                         bool useNanOrInf = false;// 标记是否解析到NaN或无穷大
-                        bool mins = Consume(s, '-');// 检查是否有负号'-'
+                        bool minus = Consume(s, '-');// 检查是否有负号'-'
                         unsigned i = 0;// 用于存储较小的整数
                         uint64_t i64 = 0;// 用于存储较大的整数
                         bool use64bit = false;// 表示是否需要使用64位整数
@@ -1368,7 +1372,7 @@ namespace RAPIDJSON{
                         }
                         // 处理NaN或Infinity
                         else if((parseFlags&kParseNanAndInfFlag)&&RAPIDJSON_LIKELY((s.Peek()=='I'||s.Peek()=='N'))){
-                            if(Consume(s. 'N')){
+                            if(Consume(s, 'N')){
                                 if(Consume(s, 'a')&&Consume(s, 'N')){
                                     d = std::numeric_limits<double>::quiet_NaN();
                                     useNanOrInf = true;
@@ -1935,7 +1939,7 @@ namespace RAPIDJSON{
                          * @param src 
                          * @param is 
                          */
-                        template<typen1ame InputStream>
+                        template<typename InputStream>
                         void HandleError(IterativeParsingState src, InputStream& is){
                             if(HasParseError())// 已经有错误标志则直接返回
                                 return;
@@ -1974,7 +1978,7 @@ namespace RAPIDJSON{
                         ParseResult IterativeParse(InputStream& is, Handler& handler){
                             parseResult_.Clear();// 清空之前的解析结果
                             ClearStackOnExit scope(*this);// 确保在当前对象退出时清空栈内容,防止内存泄漏(类似RAII机制)
-                            IterativeParsingStartState state = IterativeParsingStartState;// 解析刚开始
+                            IterativeParsingState state = IterativeParsingStartState;// 解析刚开始
                             SkipWhitespaceAndComments<parseFlags>(is);
                             RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
                             while(is.Peek()!='\0'){// 输入流未到文件末尾,持续解析
@@ -1982,7 +1986,7 @@ namespace RAPIDJSON{
                                 IterativeParsingState n = Predict(state, t);// 根据当前状态和令牌预测出下一个解析状态
                                 IterativeParsingState d = Transit<parseFlags>(state, t, n, is, handler);// 根据当前状态、令牌和预测状态,执行状态转换,返回转换后的状态
                                 if(d==IterativeParsingErrorState){// 错误状态处理
-                                    HandlerError(state, is);
+                                    HandleError(state, is);
                                     break;
                                 }
                                 state = d;// 将转换后的状态更新为当前状态,为下一轮解析做准备
@@ -1992,7 +1996,7 @@ namespace RAPIDJSON{
                                 RAPIDJSON_PARSE_ERROR_EARLY_RETURN(parseResult_);
                             }
                             if(state!=IterativeParsingFinishState)// 文档解析结束时如果状态不是IterativeParsingFinishState,就报错
-                                HandlerError(state, is);
+                                HandleError(state, is);
                             return parseResult_;
                         }
                         static const size_t kDefaultStackCapacity = 256;   
@@ -2000,7 +2004,6 @@ namespace RAPIDJSON{
                         ParseResult parseResult_;// 保存解析结果,包括成功或错误的标志及错误位置
                         IterativeParsingState state_;
                     };
-        typedef GenericReader<UTF8<>, UTF8<>> Reader;
-    }
+    typedef GenericReader<UTF8<>, UTF8<>> Reader;
 }
 #endif

@@ -122,7 +122,12 @@ template<typename B, typename D> struct IsBaseOfImpl {
 
     enum { Value = (sizeof(Check(Host(), 0)) == sizeof(Yes)) };
 };
-
+/**
+ * @brief 判断类型D是否继承自类型B,或者B和D是否相同
+ * 
+ * @tparam B 
+ * @tparam D 
+ */
 template <typename B, typename D> struct IsBaseOf
     : OrExpr<IsSame<B, D>, BoolExpr<IsBaseOfImpl<B, D> > >::Type {};
 

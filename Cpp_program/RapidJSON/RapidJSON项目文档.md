@@ -625,8 +625,33 @@
 3. 在本项目中,`JSON`数据的内存表示就是`Document`对象.`Document`类是 `RapidJSON`实现的一个`DOM`结构,它用于在内存中构建和操作`JSON`数据
 4. `Document`类实现了`RapidJSON`中的`DOM`编程接口.利用`Document`构建的数据结构其实就是一个树形结构,并且`Document`可以直接通过`AddMember() AddArray()`等接口直接操作和修改数据
 5. 本项目中`Document`对象就是`JSON`数据
-6. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
-7. 为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
+6. `GenericMember`是用于表示`JSON`对象中的一个成员(即一个键值对)
+7. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
+8. 为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
    因为它严格遵守了`C++`迭代器的概念规范(如:可拷贝和可赋值、递增\递减、随机访问、比较操作、`iterator_traits`支持等),并实现了随机访问迭代器的所有必要接口
+9. `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
+   ```C++
+   1.
+   typedef GenericValue<UTF8<>> Value; 
+   Value v1(10);// 将10这个整数值存储在v1这个表示JSON值的Value对象,它实际存储在v1这个对象的内部成员变量data_这个联合体中的整数存储区中
+   Value v1;
+   v1.SetInt(10);// 类似上面,只是用的是接口函数
+   2.
+   Document document;
+   document.SetObject(); // 初始化为一个空对象
+   Document::AllocatorType& allocator = document.GetAllocator();
+   // 创建字符串类型的键和值
+   GenericValue<UTF8<>> nameKey("name", allocator);// 创建一个表示键值对的键的JSON值
+   GenericValue<UTF8<>> nameValue("John Doe", allocator);// 创建一个表示键值对的值的JSON值
+   // 创建整数类型的键和值
+   GenericValue<UTF8<>> ageKey("age", allocator);
+   GenericValue<UTF8<>> ageValue(30);
+   // 创建布尔类型的键和值
+   GenericValue<UTF8<>> marriedKey("married", allocator);
+   GenericValue<UTF8<>> marriedValue(true);
+   document.AddMember(nameKey, nameValue, allocator);
+   document.AddMember(ageKey, ageValue, allocator);
+   document.AddMember(marriedKey, marriedValue, allocator);
+   ```
 
 

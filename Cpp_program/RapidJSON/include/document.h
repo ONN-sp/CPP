@@ -220,7 +220,7 @@ namespace RAPIDJSON{
             GenericStringRef& operator=(const GenericStringRef& rhs) = delete;
     };
     /**
-     * @brief 提供一个简单的函数用于将普通字符指针包装为GenericStringRef对象
+     * @brief 提供一个简单的函数用于将普通字符指针包装为GenericStringRef对象,其实就是GenericStringRef类的上层封装
      * 
      * @tparam CharType 
      * @param str 
@@ -236,7 +236,7 @@ namespace RAPIDJSON{
     }
     #if RAPIDJSON_HAS_STDSTRING
     template<typename CharType>
-    inline GenericStringRef<CharType> StringRef(const std::basic_string<CharType>7 str){
+    inline GenericStringRef<CharType> StringRef(const std::basic_string<CharType>& str){
         return GenericStringRef<CharType>(str.data(), SizeType(str.size()));
     }
     #endif
@@ -466,8 +466,226 @@ namespace RAPIDJSON{
                 template<typename StackAllocator>
                 GenericValue& operator=(GenericDocument<Encoding, Allocator, StackAllocator>&& rhs);
             #endif
+            public:
+            /**
+             * @brief 
+             * 
+             * @param type 表示的是需要构造的JSON值的类型
+             */
+                explicit GenericValue(Type type) RAPIDJSON_NOEXCEPT : data_() {
+                    // 定义一个与JSON类型对应的标志位数组,即第一个表示的是null类型,所以defaultFlags[0]=kNullFlag
+                    static const uint16_t defaultFlags[] = {
+                        kNullFlag, kFalseFlag, kTrueFlag, kObjectFlag, kArrayFlag, kShortStringFlag,
+                        kNumberAnyFlag
+                    };
+                    RAPIDJSON_NOEXCEPT_ASSERT(type >= kNullType && type <= kNumberType);
+                    data_.f.flags = defaultFlags[type];// 设置标志位
+                    if(type==kStringType)
+                        data_.ss.SetLength(0);// 如果type是字符串类型,则使用ShortString存储空字符串
+                }
+                /**
+                 * @brief 拷贝构造函数,用于从GenericValue的另一个实例构造
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param rhs 
+                 * @param allocator 
+                 * @param copyConstStrings 决定是否复制常量字符串
+                 */
+                template<typename SourceAllocator>
+                GenericValue(const GenericValue<Encoding, SourceAllocator>& rhs, Allocator& allocator, bool copyConstStrings=false){
+                    switch(rhs.GetType()){
+                        case kObjectType:// 如果rhs的类型是对象,则调用DoCopyMembers函数复制成员
+                            DoCopyMembers(rhs, allocator, copyConstStrings);
+                            break;
+                        case kArrayType:{// 如果rhs的类型是数组,则分配内存并依次复制数组中的每个元素
+                            SizeType count = rhs.data_.a.size;
+                            GenericValue* le = reinterpret_cast<GenericValue*>(allocator.Malloc(count*sizeof(GenericValue)));// 分配rhs表示的数组一样大小的内存
+                            const GenericValue<Encoding, SourceAllocator>* re = rhs.GetElementsPointer();// 获取rhs中的数组头指针,便于后续复制
+                            for(SizeType i=0;i<count;i++)
+                                new (&le[i]) GenericValue(re[i], allocator, copyConstStrings);// 在新分配的内存中依次构造数组的每个元素
+                            data_.f.flags = kArrayFlag;// 设置数组标志
+                            data_.a.size = data_.a.capacity = count;// 设置数组的大小和容量
+                            SetElementsPointer(le);// 设置新数组的指针
+                        }
+                        break;
+                    case kStringType:// 字符串类型
+                        if(rhs.data_.f.flags == kConstStringFlag&& !copyConstStrings){// 非常量字符串
+                            data_.f.flags = rhs.data_.f.flags;
+                            data_ = *reinterpret_cast<const Data*>(&rhs.data_);
+                        }
+                        else// 常量字符串
+                            SetStringRaw(StringRef(rhs.GetString(), rhs.GetStringLength()), allocator);
+                        break;
+                    default:
+                        data_.f.flags = rhs.data_.f.flags;
+                        data_ = *reinterpret_cast<const Data*>(&rhs.data_);
+                        break;
+                    }
+                }
+                // 布尔类型的JSON值构建
+                #ifndef RAPIDJSON_DOXYGEN_RUNNING
+                    template<typename T>// 确保T必须是bool类型
+                    explicit GenericValue(T b, RAPIDJSON_ENABLEIF((internal::IsSame<bool, T>>))) RAPIDJSON_NOEXCEPT
+                #else
+                    explicit GenericValue(bool b) RAPIDJSON_NOEXCEPT
+                #endif
+                        : data_(){
+                            RAPIDJSON_STATIC_ASSERT((internal::IsSame<bool, T>::Value));
+                            data_.f.flags = b ? kTrueType :: kFalseType;
+                        }
+                // int类型的JSON值对象构造
+                explicit GenericValue(int i) RAPIDJSON_NOEXCEPT : data_() {
+                    data_.n.i64 = i;
+                    data_.f.flags = (i>0) ? (kNumberIntFlag | kUintFlag | kUint64Flag) : kNumberIntFlag;// 如果i是非负数则可以标记为既是整数也是无符号整数,且可以用Uint64_tr处理;否则仅标记为kNumberIntFlag
+                }
+                // uint无符号类型的JSON值对象构造
+                explicit GenericValue(unsigned u) RAPIDJSON_NOEXCEPT : data_() {
+                    data_.n.u64 = u;
+                    data.f.flags = (u&0x80000000) ? kNumberUintFlag : (kNumberUintFlag|kIntFlag|kInt64Flag);// (u&0x80000000)取的是u的最高位,若最高位为1那么只设置kNumberUintFlag标志(因为此时的u就超过了int可以表示的正数范围,即此时u不能用int表示了);若最高位为0,则此时u可以视为int来处理(因为int包括了此时u的范围),那么此时可以被视为无符号整数标志、带符号整数标志或int标志
+                }
+                // int64_t类型的JSON值对象构造
+                explicit GenericValue(int64_t i64) RAPIDJSON_NOEXCEPT data_(){
+                    data_.n.i64 = i64;
+                    data_.f.flags = kNumberInt64Flag;// 设置64位整数标记
+                    if(i64>=0){// 非负的64位整数,此时int64可以视为uint64来处理
+                        data.f.flags |= kNumberUint64Flag;// 设置无符号uint64_t标记
+                        if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x00000000)))// 查看i64的高32位是否为0,若为0则i64在uint32范围内
+                            data.f.flags |= kUintFlag;// 设置为uint无符号
+                        if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x80000000)))// 查看i64的高32位和低32位,高32位=0,低32位的第一位=0,此时在int32有符号范围内
+                            data_.f.flags |= kIntFlag;// 设置为int有符号
+                    }
+                    else if(i64 >= static_cast<int64_t>(RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x80000000)))// i64<0且在int32有符号范围内
+                        data_.f.flags |= kIntFlag;// 设置为有符号
+                }
+                // uint64_t类型的JSON值对象构造
+                explicit GenericValue(uint64_t u64) RAPIDJSON_NOEXCEPT : data_(){
+                    data.n.u64 = u64;
+                    data_.f.flags = kNumberUint64Flag;// 设置为64位无符号整数标记
+                    if(!(u64&RAPIDJSON_UINT64_C2(0x80000000, 0x00000000)))// u64高位为0,此时的uint64可以视为int64来处理
+                        data_.f.flags |= kInt64Flag;
+                    if(!(u64&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x00000000)))// u64低32位为0,设置为无符号uint32标记
+                        data_.f.flags |= kUintFlag;
+                    if(!(u64&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x80000000)))// u64低32位为1,设置为有符号int32标记
+                        data_.f.flags |= kIntFlag;
+                }
+                // double类型的JSON值对象构造
+                explicit GenericValue(double d) RAPIDJSON_NOEXCEPT : data_() {
+                    data_.n.d = d;
+                    data_.f.flags = kNumberDoubleFlag;
+                }
+                // float类型的JSON值对象构造
+                explicit GenericValue(float f) RAPIDJSON_NOEXCEPT : data_() {
+                    data_.n.d = static_cast<double>(f>;
+                    data_.f.flags = kNumberDoubleFlag;
+                }
+                // 常量字符串const Ch*的JSON值对象构造
+                GenericValue(const Ch* s, SizeType length) RAPIDJSON_NOEXCEPT : data_(){
+                    SetStringRaw(StringRef(s, length));// 设置标记的操作隐藏在SetStringRaw()中
+                }
+                // 常量字符串对象StringRefType的JSON值对象构造
+                explicit GenericValue(StringRefType s) RAPIDJSON_NOEXCEPT : data_() {
+                    SetStringRaw(s);
+                }
+                // 带分配器的常量字符串const Ch*的JSON值对象构造
+                GenericValue(const Ch* s, SizeType length, Allocator& allocator) : data_() {
+                    SetStringRaw(StringRef(s, length), allocator);
+                }
+                // 带分配器的常量字符串const Ch*的JSON值对象构造(无指定长度)
+                GenericValue(const Ch* s, Allocator& allocator) : data_() {
+                    SetStringRaw(StringRef(s), allocator);
+                }
+                // 将C++标准库的std::basic_string<Ch>的字符串JSON值对象构造
+                #if RAPIDJSON_HAS_STDSTRING
+                    GenericValue(const std::basic_string<Ch>& s, Allocator& allocator) : data_() {
+                        SetStringRaw(StringRef(s), allocator);
+                    }
+                #endif
+                // 将一个Array类型的对象转换位GenericValue对象.GenericValue可以直接表示一个JSON数组,所以这里是将用Array表示的JSON数组用更通用的GenericValue来表示
+                GenericValue(Array a) RAPIDJSON_NOEXCEPT : data_(a.value_.data_){// Array.value_是一个GenericValue对象,因此它有data_成员
+                    a.value_.data_ = Data();// 清空Array对象的内部数据
+                    a.value_.data_.f.flags = kArrayFlag;
+                }
+                // 将一个Object类型的对象转换位GenericValue对象
+                GenericValue(Object o) RAPIDJSON_NOEXCEPT : data_(o.value_.data_)P{
+                    o.value_.data_ = Data();// 清空Object对象的内部数据
+                    o.value_.data_.f.flags = kObjectFlag;
+                }
+                ~GenericValue(){
+                    if(Allocator::kNeedFree || (RAPIDJSON_USE_MEMBERSMAP+0 &&
+                                                internal::IsRefCounted<Allocator>::Value)){// 后半部分表示是否使用计数机制来管理内存
+                        switch(data_.f.flags){
+                            case kArrayFlag:
+                                {
+                                    GenericValue* e = GetElementsPointer();
+                                    for(GenericValue* v=e; v!=e+data_.a.size;++v)
+                                        v->~GenericValue();// 一个数组元素一个数组元素的析构
+                                    if(Allocator::kNeedFree)
+                                        Allocator::Free(e);
+                                }
+                                break;
+                            case kObjectFlag:
+                                DoFreeMembers();// 负责释放对象中的成员(键值对)
+                                break;
+                            case kCopyStringFlag:
+                                if(Allocator::kNeedFree)
+                                    Allocator::Free(const_cast<Ch*>(GetStringPointer()));// 释放data_中的s.str
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+                // 重载赋值操作符  拷贝赋值
+                GenericValue& operator=(GenericValue& rhs) RAPIDJSON_NOEXCEPT{
+                    if(RAPIDJOSN_LIKELY(this!=&rhs)){
+                        GenericValue temp;
+                        temp.RawAssign(rhs);// 将rhs的赋给对象temp
+                        this->~GenericValue();// 在给当前对象this赋值之前先释放它的资源
+                        RawAssign(temp);// 将临时对象temp赋给当前对象this
+                    }
+                    return *this;
+                }
+                // C++11的右值引用赋值操作符
+                #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                    GenericValue& operator=(GenericValue&& rhs) RAPIDJSON_NOEXCEPT{
+                        return *this = rhs.Move();// 调用rhs.Move()将右值rhs转换为左值,然后使用前面重载的拷贝赋值操作符将其赋给当前对象this
+                    }
+                #endif
+                // 重定义一个字符串引用StringRefType直接赋值给GenericValue对象的赋值操作,即 GenericValue<=StringRefType
+                GenericValue& operator=(StringRefType str) RAPIDJSON_NOEXCEPT{
+                    GenericValue s(str);
+                    return *this = s;
+                }
+                template<typename T>
+                // 禁用指针类型的赋值,只有非指针类型的T才能直接被赋值到GenericValue对象
+                RAPIDJSON_DISABLEIF_RETURN((internal::IsPointer<T>), (GenericValue&))
+                operator=(T value){
+                    GenericValue v(value);
+                    return *this = v;
+                }
+                // 深拷贝(为新对象分配新的内存)赋值,用于从rhs拷贝内容到当前对象
+                template<typename SourceAllocator>
+                GenericValue& CopyFrom(const GenericValue<Encoding, SourceAllocator>& rhs, Allocator& allocator, bool copyConstStrings=false){
+                    RAPIDJSON_ASSERT(static_cast<void*>(this) != static_cast<void const *>(&rhs));
+                    this->~GenericValue();// 拷贝前先释放当前对象的资源.这样做是为了确保在拷贝数据之前,当前对象不再持有任何资源,防止资源泄漏
+                    new (this) GenericValue(rhs, allocator, copyConstStrings);// 使用placement new在当前对象内存中重新构造一个GenericValue对象
+                    return *this;
+                }
+                // 交换赋值 other对象与当前对象交换
+                GenericValue& Swap(GenericValue& other) RAPIDJSON_NOEXCEPT{
+                    GenericValue temp;
+                    temp.RawAssign(*this);
+                    RawAssign(other);
+                    other.RawAssign(temp);
+                    return *this;
+                }
+
+
+
     };
     
+
+
 
 
 }

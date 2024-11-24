@@ -653,5 +653,35 @@
    document.AddMember(ageKey, ageValue, allocator);
    document.AddMember(marriedKey, marriedValue, allocator);
    ```
+10. <mark>`placement new`:它是`C++`中一种特殊的`new`运算符,允许在已分配的内存地址上构造对象.与标准`new`运算符不同,`placement new`并不负责内存的分配,而是将对象的构造操作直接放置在已分配的内存中</mark>
+    ```C++
+    new (pointer) Type(args);// 在一个已分配内存地址pointer上构造一个Type(args)对象
+    ```
+11. `uint64_t`:`0-2^64-1`;`int64_t`:`-2^63-2^63-1`.对于一个整数做`flags`标记时,它可能可以同时被标记为几个`flag`,如:
+    ```C++
+    1.
+    data.f.flags = (u&0x80000000) ? kNumberUintFlag : (kNumberUintFlag|kIntFlag|kInt64Flag);
+    // (u&0x80000000)取的是u的最高位,若最高位为1那么只设置kNumberUintFlag标志(因为此时的u就超过了int可以表示的正数范围,即此时u不能用int表示了);若最高位为0,则此时u可以视为int来处理(因为int包括了此时u的范围),那么此时可以被视为无符号整数标志、带符号整数标志或int标志
+    2.
+    if(i64>=0){// 非负的64位整数,
+      data.f.flags |= kNumberUint64Flag;// 此时int64可以视为uint64来处理(因为uint64包括了此时i64的范围),设置无符号uint64_t标记
+      if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x00000000)))// 查看i64的高32位是否为0,若为0则i64在uint32范围内
+         data.f.flags |= kUintFlag;// 设置为uint无符号
+      if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x80000000)))// 查看i64的高32位和低32位,高32位=0,低32位的第一位=0,此时在int32有符号范围内
+         data_.f.flags |= kIntFlag;// 设置为int有符号
+   }
+   ```
+12. <mark>本项目中`JSON数组`既可以用`GenericArray`表示,也可以用`GenericValue`这种更通用的方式表示.`GenericValue`是一个通用的数据类型,可以表示`JSON`数组、对象、数字、字符串等.它通过`flags`字段来标识当前数据类型.而`GenericArray`是专门用于表示和操作`JSON`数组的类,这个类操作起来更直观,`GenericArray`主要提供了数组级别的操作,如增加、删除元素,访问数组中的元素等.它是一个专用的容器类型,类似于`C++`标准库中的`std::vector`</mark>
+    ```C++
+    1. 利用GenericValue表示JSON数组
+    GenericValue<UTF8<>, Allocator> jsonArray(kArrayType);
+    // 向数组中添加元素
+    jsonArray.PushBack(GenericValue<UTF8<>, Allocator>(1), allocator);// 添加整数 1
+    // 此时是用GenericValue直接表示一个JSON数组jsonArray,此时调用的PushBack方法其实是往这个表示JSON数组的GenericValue对象jsonArray中添加JSON整数值1这个GenericValue对象,即宏观看是往GenericValue中添加GenericValue
+    2. 利用GenericArray表示JSON数组
+    GenericArray<GenericValue<UTF8<>, Allocator>> jsonArray;
+    jsonArray.PushBack(GenericValue<UTF8<>, Allocator>(1), allocator);
+    // 直接用GenericArray表示JSON数组,它其实就是一个容器类,封装了GenericValue的数组,可以更方便地进行数组操作,即GenericArray其实是一个GenericValue数组,其每个数组元素就是一个GenericValue对象.这个PushBack()宏观上看就是一个往GenericArray中添加GenericValue的操作了
+    ```
 
 

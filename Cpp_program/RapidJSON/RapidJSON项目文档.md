@@ -683,5 +683,7 @@
     jsonArray.PushBack(GenericValue<UTF8<>, Allocator>(1), allocator);
     // 直接用GenericArray表示JSON数组,它其实就是一个容器类,封装了GenericValue的数组,可以更方便地进行数组操作,即GenericArray其实是一个GenericValue数组,其每个数组元素就是一个GenericValue对象.这个PushBack()宏观上看就是一个往GenericArray中添加GenericValue的操作了
     ```
+13. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
+   因为如果是有损表示为`double`,那么当用这个有损的`double`值来判断得出可以无损转换为`float`,此时也说明可以无损转换为`float`(即使`int64_t`到`double`有损,这并不一定意味着它无法无损表示为`float`)
 
 

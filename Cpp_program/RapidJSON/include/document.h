@@ -679,6 +679,131 @@ namespace RAPIDJSON{
                     other.RawAssign(temp);
                     return *this;
                 }
+                friend inline void swap(GenericValue& a, GenericValue& b) RAPIDJSON_NOEXCEPT {a.Swap(b);}
+                // 返回当前对象的引用
+                GenericValue& Move() RAPIDJSON_NOEXCEPT {return *this;}
+                /**
+                 * @brief 重载与另一个GenericValue对象相等判断==
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param rhs 
+                 * @return true 
+                 * @return false 
+                 */
+                template<typename SourceAllocator>
+                bool operator==(const GenericValue<Encoding, SourceAllocator>& rhs) const {
+                    typedef GenericValue<Encoding, SourceAllocator> RhsType;
+                    if(GetType() != rhs.GetType())// 1. 类型相同
+                        return false;
+                    switch(GetType()){// 2. 通过不同类型进一步判断大小、值等是否相同(不同类型比较的东西不同)
+                        case kObjectType:
+                            if(data_.o.size != rhs.data_.o.size)
+                                return false;
+                            for(ConstMemberIterator lhsMemberItr = MemberBegin(); lhsMemberItr!=MemberEnd();++lhsMemberItr){
+                                typename RhsType::ConstMemberIterator rhsMemberItr = rhs.FindMember(lhsMemberItr->name);// 对于对象成员来说,找匹配的name,找不到就会返回到MemberEnd()
+                                if(rhsMemberItr==rhs.MemberEnd() || (!(lhsMemberItr->value==rhsMemberItr->value)))// 判断key和value是否都能匹配
+                                    return false;
+                            }
+                            return true;
+                        case kArrayType:
+                            if(data_.a.size != rhs.data_.a.size)
+                                return false;
+                            for(SizeType i=0;i<data_.a.size;++i)
+                                if(!((*this)[i]==rhs[i]))
+                                    return false;
+                            return true;
+                        case kStringType:
+                            return StringEqual(rhs);
+                        case kNumberType:
+                            if(IsDouble() || rhs.IsDouble()){
+                                double a= GetDouble();
+                                double b = rhs.GetDouble();
+                                return a>=b &&a<=b;// a==b才返回true
+                            }
+                            else    
+                                return data_.n.u64 == rhs.data_.n.u64;
+                        default:
+                            return true;
+                    }
+                }
+                // 当前GenericValue对象与Ch字符串直接判断是否相等的重载==
+                bool operator==(const Ch* rhs) const {return *this==GenericValue(StringRef(rhs));}
+                // 当前GenericValue对象与C++11字符串直接判断是否相等的重载==
+                #if RAPIDJSON_HAS_STDSTRING// 在编译器不支持C++20的三向比较运算符(<=>)时才会生效
+                    bool operator==(const std::basic_string<Ch>& rhs) const {return  *this==GenericValue(StringRef(rhs));}
+                #endif
+                // 重载等号判断:支持与任意继承类型比较(除了指针类型和GenericValue类型,即T不能是这两种类型)
+                template<typename T> RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (bool)) operator==(const T& rhs) const {return *this==GenericValue(rhs);}
+                // 重载不等号
+                #ifndef __cpp_impl_three_way_comparison
+                    template<typename SourceAllocator>
+                    // 比较当前对象和另一个GenericValue对象是否不相等
+                    bool operator!=(const GenericValue<Encoding, SourceAllocator>& rhs) const {return !(*this==rhs);}
+                    // 比较当前对象和另一个Ch字符串是否不相等(调用了bool operator==(const Ch* rhs))
+                    bool operator!=(const Ch* rhs) const {return !(*this==rhs);}
+                    // 与除了GenericValue类型的任意类型T的不相等比较
+                    template<typename T> RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator!=(const T& rhs) const {return !(*this==rhs);}
+                    // 定义对称的==运算符,即用于任意类型T的值在左边,需要比较是否相等的GenericValue对象在右边  注意这个==重载不是对于当前对象的比较
+                    template<typename T> friend RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator==(const T& lhs, const GenericValue& rhs) {return rhs==lhs;}
+                    // 定义对称的!=运算符,即用于任意类型T的值在左边,需要比较是否不相等的GenericValue对象在右边  注意这个!=重载不是对于当前对象的比较
+                    template<typename T> RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator!=(const T& lhs, const GenericValue& rhs) {return !(rhs==lhs);}
+                #endif
+                // 获取当前GenericValue对象对应的类型
+                Type GetType() const {return static_cast<Type>(data_.f.flags&kTypeMask);}
+                // 判断当前对象是否是指定类型,通过标记flags来判断
+                bool IsNull() const {return data_.f.flags == kNullFlag;}
+                bool IsFalse() const {return data_.f.flags == kFalseFlag;}
+                bool IsTrue() const {return data_.f.flags == kTrueFlag;}
+                bool IsBool() const {return (data_.f.flags&kBoolFlag)!=0;}
+                bool IsObject() const {return data_.f.flags == kObjectFlag;}
+                bool IsArray() const {return data_.f.flags == kArrayFlag;}
+                bool IsNumber() const {return (data.f.flags & kNumberFlag)!=0;}
+                bool IsInt() const {return (data_.f.flags & kIntFlag)!=0;}
+                bool IsUint() const {return (data_.f.flags & kUintFlag)!=0;}
+                bool IsInt64() const {return (data_.f.flags & kInt64Flag)!=0;}
+                bool IsUint64() const {return (data_.f.flags & kUint64Flag)!=0;}
+                bool IsDouble() const {return (data_.f.flags & kDoubleFlag)!=0;}
+                bool IsString() const {return (data_.f.flags & kStringFlag)!=0;}
+                /**
+                 * @brief 判断当前对象是否可以无损转换为双精度浮点数double
+                 * 对于double类型当数据超过53位就会受损存储
+                 * @return true 
+                 * @return false 
+                 */
+                bool IsLosslessDouble() const {
+                    if(!IsNumber())
+                        return false;
+                    if(IsUint64()){
+                        uint64_t u = GetUint64();// 将当前对象转换为uint64
+                        volatile double d = static_cast<double>(u);
+                        return (d >= 0.0) && (d < static_cast<double>((std::numeric_limits<uint64_t>::max)())) && (u==static_cast<uint64_t>(d));
+                    }
+                    if(IsInt64()){
+                        int64_t i = GetInt64();
+                        volatile double d = static_cast<double>(i);
+                        return (d < static_cast<double>((std::numeric_limits<int64_t>::max)())) && (u>=static_cast<int64_t>(d)) && (i==static_cast<int64_t>(d));
+                    }
+                    return true;
+                }
+                // 检查当前对象是否是float类型的JSON数据
+                bool IsFloat() const {
+                    if((data_.f.flags & kDoubleFlag)==0)
+                        return false;
+                    double d = GetDouble();
+                    return d >= -3.4028234e38 && d<=3.4028234e38;
+                }
+                // 判断当前对象是否可以无损转换为单精度浮点数float
+                bool IsLosslessFloat() const {
+                    if(!IsNumber())
+                        return false;
+                    // 为什么不先判断是否可以无损表示为double?   因为如果是有损表示为double,那么如果用这个有损的double值来判断得出可以无损转换为float,那么也说明可以无损转换为float(即使int64_t到double有损,这并不一定意味着它无法无损表示为float)
+                    double a = GetDouble();// 
+                    if(a < static_cast<double>(-(std::numeric_limits<float>::max)()) || a > static_cast<double>(std::numeric_limits<float>::max()))
+                        return false;
+                    double b = static_cast<double>(static_cast<float>(a));// double->float->double
+                    return a>=b && a<=b;
+                }
+
 
 
 

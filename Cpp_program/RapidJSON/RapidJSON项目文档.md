@@ -614,7 +614,7 @@
 32. <mark>`Reader::Transit()`:`Transit()`是基于有限状态机设计的,它通过当前状态和输入的`JOSN`令牌标记来决定下一步的操作和状态转移.`cur_state+cur_token=>next_state`</mark>,如:
     ![](markdown图像集/2024-11-17-20-24-39.png)
 33. `Reader`是`JSON`的`SAX`风格解析器,而`Writer`则是`JSON`的`SAX`风格生成器
-34. `Reader::ParseString()`中的`RAPIDJSON_ASSERT(s.Peek()=='\"');`:这个断言的作用是确保在解析字符串时,输入流的当前字符是双引号`"`(`\"`被编译器处理为就是`"`),这是`JSON`格式的要求,而不是要求输入流中的双引号必须以转移形式存在(此时可以以转义形式存在`"{\"key\": \"value\" }"`;也可以原始字符串形式`R"({ "key": "value" })"`)
+34. `Reader::ParseString()`中的`RAPIDJSON_ASSERT(s.Peek()=='\"');`:这个断言的作用是确保在解析字符串时,输入流的当前字符是双引号`"`(`\"`被编译器处理为`"`,这个`\`会被编译器给识别后处理掉),这是`JSON`格式的要求,而不是要求输入流中的双引号必须以转义形式存在(此时可以以转义形式存在`"{\"key\": \"value\" }"`;也可以原始字符串形式`R"({ "key": "value" })"`)
 ## 测试程序
 1. `const char json[] = " { \"hello\" : \"world\", \"t\" : true , \"f\" : false, \"n\": null, \"i\":123, \"pi\": 3.1416, \"a\":[1, 2, 3, 4] } ";`和`const char json[] = R"({ "hello" : "world", "t" : true, "f" : false, "n": null, "i":123, "pi": 3.1416, "a":[1, 2, 3, 4] })";`:`C++`的原始字符串是为了方便程序员定义字符串,允许字符串内容中包含未转义的特殊字符.原始字符串在代码中表现为不需要转义,但在内存中,它和普通字符串的内容是完全一样的、
 2. 测试结果:
@@ -626,10 +626,10 @@
 4. `Document`类实现了`RapidJSON`中的`DOM`编程接口.利用`Document`构建的数据结构其实就是一个树形结构,并且`Document`可以直接通过`AddMember() AddArray()`等接口直接操作和修改数据
 5. 本项目中`Document`对象就是`JSON`数据
 6. `GenericMember`是用于表示`JSON`对象中的一个成员(即一个键值对)
-7. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
+7. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`,此项目中就是`Value v;v.MemberBegin();v.MemberEnd()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
 8. 为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
    因为它严格遵守了`C++`迭代器的概念规范(如:可拷贝和可赋值、递增\递减、随机访问、比较操作、`iterator_traits`支持等),并实现了随机访问迭代器的所有必要接口
-9. `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
+9.  `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
    ```C++
    1.
    typedef GenericValue<UTF8<>> Value; 
@@ -685,5 +685,7 @@
     ```
 13. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
    因为如果是有损表示为`double`,那么当用这个有损的`double`值来判断得出可以无损转换为`float`,此时也说明可以无损转换为`float`(即使`int64_t`到`double`有损,这并不一定意味着它无法无损表示为`float`)
+14. `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
+15. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`)
 
 

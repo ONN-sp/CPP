@@ -790,7 +790,7 @@ namespace RAPIDJSON{
                     if((data_.f.flags & kDoubleFlag)==0)
                         return false;
                     double d = GetDouble();
-                    return d >= -3.4028234e38 && d<=3.4028234e38;
+                    return d >= -3.4028234e38 && d <= 3.4028234e38;
                 }
                 // 判断当前对象是否可以无损转换为单精度浮点数float
                 bool IsLosslessFloat() const {
@@ -803,6 +803,351 @@ namespace RAPIDJSON{
                     double b = static_cast<double>(static_cast<float>(a));// double->float->double
                     return a>=b && a<=b;
                 }
+                /**
+                 * @brief 将当前对象设置为Null值
+                 * 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetNull() {
+                    this->~GenericValue();
+                    new (this) GenericValue();// 默认GenericValue()构造函数就是设置的Null值
+                    return *this;    
+                }
+                /**
+                 * @brief 获取当前对象的布尔值
+                 * 
+                 * @return true 
+                 * @return false 
+                 */
+                bool GetBool() const{
+                    RAPIDJSON_ASSERT(IsBool());
+                    return data_.f.flags == kTrueFlag;// 如果是True标记就会返回true;否则返回false
+                }
+                /**
+                 * @brief 将当前对象设置为布尔值b
+                 * 
+                 * @param b 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetBool(bool b) {
+                    this->~GenericValue();
+                    new (this) GenericValue(b);
+                    return *this;
+                }
+                /**
+                 * @brief 将当前对象设置为JSON对象
+                 * 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetObject() {
+                    this->~GenericValue();
+                    new (this) GenericValue(kObjectType);
+                    return *this;
+                }
+                /**
+                 * @brief 返回当前JSON对象的成员数
+                 * 
+                 * @return SizeType 
+                 */
+                SizeType MemberCount() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return data_.o.size;
+                }
+                /**
+                 * @brief 返回当前JSON对象的成员容量
+                 * 
+                 * @return SizeType 
+                 */
+                SizeType MemberCapacity() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return data_.o.capacity;
+                }
+                /**
+                 * @brief 判断当前JSON对象是否为空
+                 * 
+                 * @return true 
+                 * @return false 
+                 */
+                bool ObjectEmpty() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return data_.o.size==0;
+                }
+                /**
+                 * @brief 通过字符串指针name来索引当前JSON对象中的成员
+                 * 当去掉const后的T与Ch一样,则条件不成立.此时模板函数的返回类型为GenericValue&;若条件成立,则禁用这个模板函数
+                 * internal::NotExpr:取反
+                 * internal::IsSame:检查两个参数是否相同
+                 * internal::RemoveConst:若T有const,则去掉T中的const
+                 * @tparam T 
+                 */
+                template<typename T>
+                RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&)) operator[](T* name){
+                    GenericValue n(StringRef(name));
+                    return (*this)[n];// 这会调用后面的重载索引GenericValue& operator[](const GenericValue<Encoding, SourceAllocator>& name),所以若n这个key不在当前对象中,会在FindMember()中被找出
+                }
+                // 常量版本的索引[]
+                template<typename T>
+                RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (const GenericValue&)) operator[](T* name) const {
+                    return const_cast<GenericValue&>(*this)[name];// 会先调用非常量版本的[]
+                }
+                /**
+                 * @brief 通过GenericValue表示JSON对象成员的键值来访问当前键值对的值
+                 * 即类似unordered_map容器,假设一个表示JSON对象的GenericValue为a,那么a[key]就是访问对象a中匹配给定键key的键值对的对应value
+                 * 其它重载的索引[],都是基于这个索引[]函数,即都调用这个
+                 * @tparam SourceAllocator 
+                 * @param name 
+                 * @return GenericValue& 
+                 */
+                template<typename SourceAllocator>
+                GenericValue& operator[](const GenericValue<Encoding, SourceAllocator>& name){
+                    MemberIterator member = FindMember(name);// 通过name查找当前对象中是否存在以name为key的成员键值对
+                    if(member != MemberEnd())// 查找到了
+                        return member->value;// 返回name(键值对中的key)对应的value
+                    else{// 查找不到
+                        RAPIDJSON_ASSERT(false);// 调试模式(NDEBUG)才会触发断言,终止程序;发布模式下断言被禁用了,此时程序在这就不会终止
+                        // 在成员未找到时,需要返回一个空的GenericValue对象,这样有助于避免未定义行为
+                        #if RAPIDJSON_HAS_CXX11
+                            alignas(GenericValue) thread_local static char buffer[sizeof(GenericValue)];
+                            return *new (buffer) GenericValue();
+                        #elif defined(__GNUC__)
+                            __thread static GenericValue buffer;
+                            return buffer;
+                        #else
+                            static GenericValue buffer;
+                            return buffer;
+                        #endif
+                    }
+                }
+                // 常量版本,即返回const引用
+                template<typename SourceAllocator>
+                const GenericValue& operator[](const GenericValue<Encoding, SourceAllocator>& name) const {
+                    return const_cast<GenericValue&>(*this)[name];// 使用const_cast的目的是能够调用前面的非常量版本的operator[]
+                }
+                // 使用C++11的name进行索引[]的重载版本
+                #if RAPIDJSON_HAS_CXX11
+                    GenericValue& operator[](const std::basic_string<Ch>& name){
+                        return (*this)[GenericValue(StringRef(name))];
+                    }
+                    const GenericValue& operator[](const std::basic_string<Ch>& name) const {
+                        return (*this)[GenericValue(StringRef(name))];
+                    }
+                #endif
+                /**
+                 * @brief 返回一个常量迭代器,指向JSON对象的第一个成员
+                 * 
+                 * @return ConstMemberIterator 
+                 */
+                ConstMemberIterator MemberBegin() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return ConstMemberIterator(GetMembersPointer());
+                }
+                /**
+                 * @brief 返回一个常量迭代器,指向当前JSON对象的最后一个成员的后一个位置
+                 * 
+                 * 
+                 * 
+                 * @return ConstMemberIterator 
+                 */
+                ConstMemberIterator MemberEnd() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return ConstMemberIterator(GetMembersPointer()+data_.o.size);
+                }
+                /**
+                 * @brief 返回一个可修改的迭代器(即该迭代器可以++,--等),指向当前JSON对象的第一个成员
+                 * 
+                 * @return MemberIterator 
+                 */
+                MemberIterator MemberBegin(){
+                    RAPIDJSON_ASSERT(IsObject());
+                    return MemberIterator(GetMembersPointer());
+                }
+                /**
+                 * @brief 返回一个可修改的迭代器(即该迭代器可以++,--等),指向当前JSON对象的最后一个成员的后一个位置
+                 * 
+                 * @return MemberIterator 
+                 */
+                MemberIterator MemberEnd() {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return MemberIterator(GetMembersPointer() + data_.o.size);
+                }
+                /**
+                 * @brief 预留空间,准备为对象的成员分配新的容量
+                 * 
+                 * @param newCapacity 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& MemberReserve(SizeType newCapacity, Allocator& allocator){
+                    RAPIDJSON_ASSERT(IsObject());
+                    DoReserveMembers(newCapacity, allocator);// 执行实际的内存分配操作,使用指定的分配器来调整成员的容量
+                    return *this;
+                }
+                /**
+                 * @brief 检查对象是否包含指定的成员(以key表示该成员)
+                 * 
+                 * @param name 以Ch*字符串为参数表示key
+                 * @return true 
+                 * @return false 
+                 */
+                bool HasMember(const Ch* name) const {
+                    return FindMember(name) != MemberEnd();
+                }
+                // 以C++11字符串std::basic_string<Ch>为参数表示key
+                #if RAPIDJSON_HAS_STDSTRING
+                    bool HasMember(const std::basic_string<Ch>& name) const {
+                        return FindMember(name) != MemberEnd();
+                    }
+                #endif
+                /**
+                 * @brief 检查对象是否包含指定的成员(以key表示该成员)
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param name 直接以const GenericValue对象为参数表示JSON对象成员的key
+                 * @return true 
+                 * @return false 
+                 */
+                template<typename SourceAllocator>
+                bool HasMember(const GenericValue<Encoding, SourceAllocator>& name) const {
+                    return FindMember(name) != MemberEnd();
+                } 
+                /**
+                 * @brief 查找指定参数的成员,以迭代器返回
+                 * 
+                 * @param name 以Ch*字符串为参数表示key
+                 * @return MemberIterator 
+                 */
+                MemberIterator FindMember(const Ch* name){
+                    GenericValue n(StringRef(name));
+                    return FindMember(n);
+                }
+                /**
+                 * @brief 查找指定参数的成员,以常量迭代器返回
+                 * 
+                 * @param name 以Ch*字符串为参数表示key
+                 * @return ConstMemberIterator 
+                 */
+                ConstMemberIterator FindMember(const Ch* name) const {
+                    return const_cast<GenericValue&>(*this).FindMember(name);
+                }
+                /**
+                 * @brief 查找指定参数的成员,以成员迭代器返回
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param name 直接以const GenericValu为参数表示key(传入的参数可以是const,也可以非const)
+                 * @return MemberIterator 
+                 */
+                template<typename SourceAllocator>
+                MemberIterator FindMember(const GenericValue<Encoding, SourceAllocator>& name){
+                    RAPIDJSON_ASSERT(IsObject());
+                    RAPIDJSON_ASSERT(name.IsString());
+                    return DoFindMember(name);
+                }
+                /**
+                 * @brief 查找指定参数的成员,以常量成员迭代器返回
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param name 直接以const GenericValu为参数表示key(传入的参数可以是const,也可以非const)
+                 * @return ConstMemberIterator 
+                 */
+                template<typename SourceAllocator> 
+                ConstMemberIterator FindMember(const GenericValue<Encoding, SourceAllocator>& name) const {
+                    return const_cast<GenericValue&>(*this).FindMember(name);
+                }
+                // 参数以C++11字符串std::basic_string为例
+                #if RAPIDJSON_HAS_STDSTRING
+                    MemberIterator FindMember(const std::basic_string<Ch>& name) {
+                        return FindMember(GenericValue(StringRef(name)));
+                    }
+                    ConstMemberIterator FindMember(const std::basic_string<Ch>& name) const {
+                        return FindMember(GenericValue(StringRef(name)));
+                    }
+                #endif
+                /**
+                 * @brief 向当前对象添加指定的键值对成员
+                 * 
+                 * @param name 以GenericValue&为参数
+                 * @param value 以GenericValue&为参数
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& AddMember(GenericValue& name, GenericValue& value, Allocator& allocator){
+                    RAPIDJSON_ASSERT(IsObject());
+                    RAPIDJSON_ASSERT(name.IsString());
+                    DoAddMember(name, value, allocator);// 执行实际的添加键值对的操作,即AddMember()是DoMember()的上层封装
+                    return *this;
+                }
+                /**
+                 * @brief 向当前对象添加指定的键值对成员
+                 * 
+                 * @param name 以GenericValue&为参数
+                 * @param value 以字符串的引用封装StringRefType为参数
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& AddMember(GenericValue& name, StringRefType value, Allocator& allocator){
+                    GenericValue v(value);
+                    return AddMember(name, v, allocator);
+                }
+                // value以C++11字符串std::basic_string为参数
+                #if RAPIDJSON_HAS_STDSTRING
+                    GenericValue& AddMember(GenericValue& name, std::basic_string<Ch>& value, Allocator& allocator){
+                        GenericValue v(value, allocator);
+                        return AddMember(name, v, allocator);
+                    }
+                #endif
+                /**
+                 * @brief 向当前对象添加指定的键值对成员
+                 * 
+                 * @tparam T 键值对的value以任意类型(除指针类型和GenericValue类型)为参数传入
+                 */
+                template<typename T>
+                RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (GenericValue&)) AddMember(GenericValue& name, T value, Allocator& allocator){
+                    GenericValue v(value);
+                    return AddMember(name, v, allocator);
+                }
+                // 添加C++11中的右值引用
+                #if RAPIDJSON_HAS_CXX11_RVALUE_REFS// 右值
+                    GenericValue& AddMember(GenericValue&& name, GenericValue&& value, Allocator& allocator){
+                        return AddMember(name, value, allocator);
+                    }
+                    GenericValue& AddMember(GenericValue&& name, GenericValue& value, Allocator& allocator){
+                        return AddMember(name, value, allocator);
+                    }
+                    GenericValue& AddMember(GenericValue& name, GenericValue&& value, Allocator& allocator){
+                        return AddMember(name, value, allocator);
+                    }
+                    GenericValue& AddMember(StringRefType name, GenericValue&& value, Allocator& allocator){
+                        GenericValue n(name);
+                        return AddMember(name, value, allocator);
+                    }
+                #endif
+                /**
+                 * @brief 向当前对象添加指定的键值对成员
+                 * 
+                 * @param name 以字符串的引用封装StringRefType为参数
+                 * @param value 直接以GenericValue&为参数
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& AddMember(StringRefType name, GenericValue& value, Allocator& allocator){
+                    GenericValue n(name);
+                    return AddMember(n, value, allocator);
+                }
+                /**
+                 * @brief 向当前对象添加指定的键值对成员
+                 * 
+                 * @param name 以字符串的引用封装StringRefType为参数
+                 * @param value 以字符串的引用封装StringRefType为参数
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& AddMember(StringRefType name, StringRefType value, Allocator& allocator){
+                    GenericValue v(value);
+                    return AddMember(name, v, allocator);
+                }
+
+
+
 
 
 

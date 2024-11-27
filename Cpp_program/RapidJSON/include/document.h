@@ -98,7 +98,7 @@ namespace RAPIDJSON{
         public:
             typedef GenericMemberIterator Iterator;// 通用迭代器
             typedef GenericMemberIterator<true, Encoding, Allocator> ConstIterator;// 常量迭代器
-            typedef GenericMemberIterator<false, Encoding, Allocator> ConstIterator;// 非常量迭代器
+            typedef GenericMemberIterator<false, Encoding, Allocator> NonConstIterator;// 非常量迭代器
             typedef ValueType   value_type;// 迭代器指向的成员元素类型
             typedef ValueType*  pointer;// 指向成员元素的指针类型
             typedef ValueType&  reference;// 指向成员元素的引用类型
@@ -637,7 +637,7 @@ namespace RAPIDJSON{
                 }
                 // 重载赋值操作符  拷贝赋值
                 GenericValue& operator=(GenericValue& rhs) RAPIDJSON_NOEXCEPT{
-                    if(RAPIDJOSN_LIKELY(this!=&rhs)){
+                    if(RAPIDJSON_LIKELY(this!=&rhs)){
                         GenericValue temp;
                         temp.RawAssign(rhs);// 将rhs的赋给对象temp
                         this->~GenericValue();// 在给当前对象this赋值之前先释放它的资源
@@ -1145,6 +1145,228 @@ namespace RAPIDJSON{
                     GenericValue v(value);
                     return AddMember(name, v, allocator);
                 }
+                /**
+                 * @brief 以任意类型(除指针类型、GenericValue类型)为参数进行向当前对象添加指定的键值对成员
+                 * 
+                 * @tparam T 
+                 */
+                template<typename T>
+                RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (GenericValue&)) AddMember(StringRefType name, T value, Allocator& allocator){
+                    GenericValue n(name);
+                    return AddMember(n, value, allocator);
+                }
+                /**
+                 * @brief 类似vector的clear()方法,清空当前JSON对象中的所有成员
+                 * 
+                 */
+                void RemoveAllMembers(){
+                    RAPIDJSON_ASSERT(IsObject());
+                    DoClearMembers();
+                }
+                /**
+                 * @brief 类似C++标准库的std::remove(),都是最终直接作用于迭代器上的,即实际会调用MemberIterator RemoveMember(MemberIterator m)
+                 * 
+                 * @param name 以Ch*字符串为参数
+                 * @return true 
+                 * @return false 
+                 */
+                bool RemoveMember(const Ch* name){
+                    GenericValue n(StringRef(name));
+                    return RemoveMember(n);
+                }
+                // 以C++11表示的字符串std::basic_string为参数
+                #if RAPIDJSON_HAS_STDSTRING
+                    bool RemoveMember(const std::basic_string<Ch>& name){
+                        return RemoveMember(GenericValue(StringRef(name)));
+                    }
+                #endif
+                // 直接以GenericValue为参数
+                template<typename SourceAllocator>
+                bool RemoveMember(const GenericValue<Encoding, SourceAllocator>& name){
+                    MemberIterator m = FindMember(name);
+                    if(m!=MemberEnd()){// 可以在当前对象匹配到name表示的键值对
+                        RemoveMember(m);
+                        return true;
+                    }
+                    else
+                        return false;
+                }
+                /**
+                 * @brief 这个函数以迭代器为参数,这才是真正底层的RemoveMember(),其它几个重载RemoveMember()会调用它
+                 * 
+                 * @param m 
+                 * @return MemberIterator 
+                 */
+                MemberIterator RemoveMember(MemberIterator m){
+                    RAPIDJSON_ASSERT(IsObject());
+                    RAPIDJSON_ASSERT(data_.o.size > 0);
+                    RAPIDJSON_ASSERT(GetMembersPointer()!=0);
+                    RAPIDJSON_ASSERT(m>=MemberBegin()&&m<MemberEnd());
+                    return DoRemoveMember(m);// 用最后一个元素替换被删除的元素,返回指向删除位置的迭代器
+                }
+                /**
+                 * @brief 类似vector的erase()方法(v.erase(pos);)
+                 * 只传入一个参数,即只删除pos位置的JSON对象的成员
+                 * @param pos 
+                 * @return MemberIterator 
+                 */
+                MemberIterator EraseMember(ConstMemberIterator pos){
+                    return EraseMember(pos, pos+1);
+                }
+                /**
+                 * @brief 类似vector的erase()方法(v.erase(start_iterator,end_iterator);)
+                 * 
+                 * @param first 
+                 * @param last 
+                 * @return MemberIterator 
+                 */
+                MemberIterator EraseMember(ConstMemberIterator first, ConstMemberIterator last){
+                    RAPIDJSON_ASSERT(IsObject());
+                    RAPIDJSON_ASSERT(data_.o.size>0);
+                    RAPIDJSON_ASSERT(GetMembersPointer()!=0);
+                    RAPIDJSON_ASSERT(first>=MemberBegin());
+                    RAPIDJSON_ASSERT(first<=last);
+                    RAPIDJSON_ASSERT(last<=MemberEnd());
+                    return DoEraseMembers(first, last);
+                }
+                /**
+                 * @brief 删除JSON对象中的成员,通过以Ch*参数表示key
+                 * 
+                 * @param name 
+                 * @return true 
+                 * @return false 
+                 */
+                bool EraseMember(const Ch* name){
+                    GenericValue n(StringRef(name));
+                    return EraseMember(n);
+                }
+                // 删除JSON对象中的成员,通过以C++11字符串std::basic_string参数表示key
+                #if RAPIDJSON_HAS_CXX11
+                    bool EraseMember(const std::basic_string<Ch>& name){
+                        return EraseMember(GenericValue(StringRef(name)));
+                    }
+                #endif
+                /**
+                 * @brief 根据给定的成员名来删除JSON对象中的成员,以GenericValue为参数表示键值对的key
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param name 
+                 * @return true 
+                 * @return false 
+                 */
+                template<typename SourceAllocator>
+                bool EraseMember(const GenericValue<Encoding, SourceAllocator>& name){
+                    MemberIterator m = FindMember(name);
+                    if(m!=MemberEnd()){
+                        EraseMember(m);// 最底层还是调用的迭代器为参数的EraseMember(),参数为ConstMemberIterator也可以接受MemberIterator,这和形参有const可以接受非const实参一样
+                        return true;
+                    }
+                    else
+                        return false;
+                }
+                /**
+                 * @brief 将当前表示JSON对象的GenericValue对象转换为Object对象(GenericObject)
+                 * 
+                 * @return Object 
+                 */
+                Object GetObject() {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return Object(*this);
+                }   
+                ConstObject GetObject() const {
+                    RAPIDJSON_ASSERT(IsObject());
+                    return ConstObject(*this);
+                }
+                /**
+                 * @brief 将当前对象设置为JSON对象
+                 * 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetArray() {
+                    this->~GenericValue();
+                    new (this) GenericValue(kArrayType);
+                    return *this;
+                }
+                // 返回当前JSON数组的大小
+                SizeType Size() const {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return data_.a.size;
+                }
+                // 返回当前JSON数组的容量
+                SizeType Capacity() const {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return data_.a.capacity;
+                }
+                // 判断当前JSON数组是否为空
+                bool Empty() const {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return data_.a.size == ;
+                }
+                // 清空当前JSON数组
+                void Clear() {
+                    RAPIDJSON_ASSERT(IsArray());
+                    GenericValue* e = GetElementsPointer();
+                    for(GenericValue* v=e;v!=e+data_.a.size;++v)
+                        v->~GenericValue();
+                    data.a.size = 0;
+                }
+                /**
+                 * @brief 通过一个下标index来访问当前JSON数组对应的值
+                 * 
+                 * @param index 
+                 * @return GenericValue& 
+                 */
+                GenericValue& operator[](SizeType index){
+                    RAPIDJSON_ASSERT(IsArray());
+                    RAPIDJSON_ASSERT(index < data_.a.size);
+                    return GetElementsPointer()[index];
+                }
+                // 常量的索引[]版本
+                const GenericValue& operator[](SizeType index) const {
+                    return const_cast<GenericValue&>(*this)[index];
+                }
+                /**
+                 * @brief 返回当前数组的首部元素的地址
+                 * 
+                 * @return ValueIterator 
+                 */
+                ValueIterator Begin() {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return GetElementsPointer();
+                }
+                /**
+                 * @brief 返回当前数组的尾部元素的地址
+                 * 
+                 * @return ValueIterator 
+                 */
+                ValueIterator End() {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return GetElementsPointer()+data_.a.size;
+                }
+                const ValueIterator Begin() const {
+                   return const_cast<GenericValue&>(*this).Begin();
+                }
+                const ValueIterator Begin() const {
+                    return const_cast<GenericValue&>(*this).End();
+                }
+                /**
+                 * @brief 通过给定容量大小来预留数组空间
+                 * 
+                 * @param newCapacity 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& Reserve(SizeType newCapacity, Allocator& allocator){
+                    RAPIDJSON_ASSERT(IsArray());
+                    if(newCapacity > data_.a.capacity){// 如果新设容量不比之前大,就不重新设置了,免得多次分配内存,造成性能损失
+                        SetElementsPointer(reinterpret_cast<GenericValue*>(allocator.Realloc(GetElementsPointer(), data.a.capacity*sizeof(GenericValue), newCapacity*sizeof(GenericValue)));
+                        data_.a.capacity = newCapacity;
+                    }
+                    return *this;
+                }
+
+
+            
 
 
 

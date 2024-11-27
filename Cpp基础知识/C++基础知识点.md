@@ -105,6 +105,47 @@
     k='a'(ascll码:48+49=97->'a')
     ```
 39. `C++`中的续行符(`\`):在宏定义或长代码行中,反斜杠可以用来指示代码在下一行继续
+40. <mark>在`C++`中,`const`关键字可以出现在三个不同的位置:函数返回值处;函数形参中;类成员函数声明为常量函数中(常量函数是必须在类的成员函数中的,即它一定是一个成员函数):</mark>
+    ```C++
+    1. const在函数返回值处:const修饰函数的返回值,表示返回的值是不可修改的
+    int value = 5;
+    const int& getValue() {  // 返回一个常量引用
+        return value;
+    }
+    int main() {
+        getValue() = 10;  // 编译错误，无法修改返回的常量引用
+    }
+    2. const在函数参数中:const修饰函数参数时,表示传入函数的参数值在函数内部不能被修改
+    void printValue(const int value) {  // 参数是常量
+        // value = 10;// 编译错误，无法修改 const 参数
+        std::cout << value << std::endl;
+    }
+    int main() {
+        int x = 5;
+        printValue(x); // 参数 x 不能在函数内被修改
+    }
+    3. const在类成员函数声明中:此时表示该成员函数是一个常量成员函数.常量成员函数保证在调用该函数时,不会修改该类中的任何非mutable成员变量,可以访问它们,但不会修改
+    class MyClass {
+    public:
+        MyClass(int val) : value(val) {}
+        // 常量成员函数：不能修改对象的状态
+        int getValue() const {
+            return value;
+        }
+        // 非常量成员函数：可以修改对象的状态
+        void setValue(int val) {
+            value = val;
+        }
+    private:
+        int value;
+    };
+    int main() {
+        const MyClass obj(10);
+        std::cout << obj.getValue() << std::endl;  // OK: 调用常量函数
+        // obj.setValue(20);  // 编译错误：常量对象不能调用非常量函数
+    }
+    ```
+41. <mark>在`C++`中,`mutable`是一个关键字,用来修饰类的成员变量,使得该变量能够在常量成员函数中被修改</mark>
 # 数组
 1. 数组声明应指出以下三点:
     * 存储在每个元素中的值的类型;

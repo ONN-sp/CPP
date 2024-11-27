@@ -629,7 +629,7 @@
 7. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`,此项目中就是`Value v;v.MemberBegin();v.MemberEnd()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
 8. 为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
    因为它严格遵守了`C++`迭代器的概念规范(如:可拷贝和可赋值、递增\递减、随机访问、比较操作、`iterator_traits`支持等),并实现了随机访问迭代器的所有必要接口
-9.  `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
+9. `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
    ```C++
    1.
    typedef GenericValue<UTF8<>> Value; 
@@ -686,6 +686,10 @@
 13. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
    因为如果是有损表示为`double`,那么当用这个有损的`double`值来判断得出可以无损转换为`float`,此时也说明可以无损转换为`float`(即使`int64_t`到`double`有损,这并不一定意味着它无法无损表示为`float`)
 14. `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
-15. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`)
+15. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`),数组中的`ValueIterator`其实就是指针,即数组只有指针访问的形式
+16. `RemoveMember()`和`EraseMember()`是实现的类似`vector`的`std::remove()`和`vec.erase()`方法,最终底层调用的函数传入的参数都是迭代器.即这样设计就是为了将本项目中的`JSON`对象访问其成员时,设计成类似`std::vector`中通过迭代器而对元素删除的高效操作(`std::remove() erase()`)
+17. <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
+   这样做虽然会破坏内部的顺序,但是只需要一次覆盖操作(如果整体往前移,就需要多次覆盖).这种涉及不需要频繁地移动大量数据,尤其当对象中有很多成员时,这种方法可以显著提升性能
+18. `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
 
 

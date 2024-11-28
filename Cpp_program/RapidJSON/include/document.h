@@ -1282,6 +1282,7 @@ namespace RAPIDJSON{
                  * 
                  * @return GenericValue& 
                  */
+                // 下面开始的函数是针对JSON数组的
                 GenericValue& SetArray() {
                     this->~GenericValue();
                     new (this) GenericValue(kArrayType);
@@ -1357,16 +1358,354 @@ namespace RAPIDJSON{
                  * @return GenericValue& 
                  */
                 GenericValue& Reserve(SizeType newCapacity, Allocator& allocator){
-                    RAPIDJSON_ASSERT(IsArray());
+                    RAPIDJSON_ASSERT(IsArray());// 确保是JSON数组
                     if(newCapacity > data_.a.capacity){// 如果新设容量不比之前大,就不重新设置了,免得多次分配内存,造成性能损失
                         SetElementsPointer(reinterpret_cast<GenericValue*>(allocator.Realloc(GetElementsPointer(), data.a.capacity*sizeof(GenericValue), newCapacity*sizeof(GenericValue)));
                         data_.a.capacity = newCapacity;
                     }
                     return *this;
                 }
+                /**
+                 * @brief 向当前JSON数组中压入一个元素
+                 * 
+                 * @param value 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& PushBack(GenericValue& value, Allocator& allocator){
+                    RAPIDJSON_ASSERT(IsArray());// 确保是JSON数组
+                    if(data_.a.size >= data_.a.capacity)// 如果数组的当前大小已经达到或超过容量,则调用Reserve方法重新分配内存,以容纳更多元素
+                        Reserve(data_.a.capacity==0 ? kDefaultArrayCapacity:(data_.a.capacity+(data_.a.capacity+1)/2), allocator);// 使用当前容量的加倍策略来增加容量
+                    GetElementsPointer()[data_.a.size++].RawAssign(value);// 将value插入到数组的最后一个位置
+                    return *this;
+                }
+                // 定义一个接收右值引用的PushBack方法
+                #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                    GenericValue& PushBack(GenericValue&& value, Allocator& allocator){
+                        return PushBack(value, allocator);// 这里使用了C++11的引用折叠
+                    }
+                #endif
+                /**
+                 * @brief 用于将一个StringRefType类型的值推送到数组中
+                 * 
+                 * @param value 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& PushBack(StringRefType value, Allocator& allocator){
+                    return (*this).template PushBack<StringRefType>(value, allocator);
+                }
+                /**
+                 * @brief 它接受一个任意类型T的值,如果T既不是指针也不是GenericValue类型,则将value转换为GenericValue类型并调用PushBack插入到数组中
+                 * 
+                 * @tparam T 
+                 */
+                template<typename T>
+                RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (GenericValue&)) PushBack(T value, Allocator& allocator){
+                    GenericValue v(value);
+                    return PushBack(v, allocator);
+                }
+                /**
+                 * @brief 从当前JSON数组的末尾移除一个元素
+                 * 
+                 * @return GenericValue& 
+                 */
+                GenericValue& PopBack(){
+                    RAPIDJSON_ASSERT(IsArray());// 确保是JSON数组
+                    RAPIDJSON_ASSERT(!Empty());
+                    GetElementsPointer()[--data_.a.size].~GenericValue();
+                    return *this;
+                }
+                /**
+                 * @brief 用于删除当前JSON数组中指定位置的元素
+                 * 
+                 * @param pos 
+                 * @return ValueIterator 
+                 */
+                ValueIterator Erase(ConstValueIterator pos){
+                    return Erase(pos, pos+1);
+                }
+                /**
+                 * @brief 删除当前JSON数组中指定范围的元素(first到last).返回新的位置迭代器
+                 * 
+                 * 
+                 * @param first 
+                 * @param last 
+                 * @return ValueIterator 
+                 */
+                ValueIterator Erase(ConstValueIterator first, ConstValueIterator last){
+                    RAPIDJSON_ASSERT(IsArray());// 确保是JSON数组
+                    RAPIDJSON_ASSERT(data_.a.size>0);
+                    RAPIDJSON_ASSERT(GetElementsPointer()!=0);
+                    RAPIDJSON_ASSERT(first >= Begin());
+                    RAPIDJSON_ASSERT(first <= last);
+                    RAPIDJSON_ASSERT(last <= End());
+                    ValueIterator pos = Begin()+(first-Begin());
+                    for(ValueIterator itr=pos;itr!=last;++itr)
+                        itr->~GenericValue();
+                    std::memmove(static_cast<void*>(pos), last, static_cast<size_t>(End()-last)*sizeof(GenericValue));// 将last后续未被删除的移到pos(即前面删除的起始位置)
+                    data_.a.size -= static_cast<SizeType>(last-first);
+                    return pos;
+                }
+                /**
+                 * @brief 将当前表示JSON数组的GenericValue对象转换为Array对象(GenericArray)
+                 * 
+                 * @return Array 
+                 */
+                Array GetArray() {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return Array(*this);
+                }
+                ConstArray GetArray() const {
+                    RAPIDJSON_ASSERT(IsArray());
+                    return ConstArray(*this);
+                }
+                /**
+                 * @brief 返回当前的对象的整数值
+                 * 
+                 * @return int 
+                 */
+                int GetInt() const {
+                    RAPIDJSON_ASSERT(data_.f.flags&kIntFlag);
+                    return data_.n.i.i;
+                }
+                /**
+                 * @brief 返回当前的对象的无符号整数值
+                 * 
+                 * @return unsigned 
+                 */
+                unsigned GetUint() const {
+                    RAPIDJSON_ASSERT(data_.f.flags&kUintFlag);
+                    return data_.n.u.u;
+                }
+                /**
+                 * @brief 返回当前的对象的64位整数值
+                 * 
+                 * @return int64_t 
+                 */
+                int64_t GetInt64() const {
+                    RAPIDJSON_ASSERT(data_.f.flags&kInt64Flag);
+                    return data_.n.i64;
+                }
+                /**
+                 * @brief 返回当前的对象的无符号64位整数值
+                 * 
+                 * @return uint64_t 
+                 */
+                uint64_t GetUint64() const {
+                    RAPIDJSON_ASSERT(data_.f.flags&kUint64Flag);
+                    return data_.n.u64;
+                }
+                /**
+                 * @brief 返回当前的对象的双精度浮点值
+                 * 
+                 * @return double 
+                 */
+                double GetDouble() const {
+                    RAPIDJSON_ASSERT(IsNumber());
+                    if((data_.f.flags&kDoubleFlag)!=0)// 如果当前对象为双精度值,则直接返回
+                        return data_n.d;
+                    if((data_.f.flags&kIntFlag)!=0)// 如果当前对象是整数值,则以双精度形式返回,因为int转换为double是安全的隐式转换,所以不用static_cast<double>
+                        return data_n.i.i;
+                    if((data_.f.flags&kUintFlag)!=0)// 如果当前对象是无符号整数值,则以双精度形式返回,因为Uint转换为double是安全的隐式转换,所以不用static_cast<double>
+                        return data_n.u.u;
+                    if((data_.f.flags&kInt64Flag)!=0)// 如果当前对象是64位整数值,则以双精度形式返回,因为int64转换为double是可能会出现精度损失的情况,所以需要static_cast<double>
+                        return static_cast<double>(data_.n.i64);
+                    RAPIDJSON_ASSERT((data_.f.flags&kUint64Flag)!=0);// 剩余情况只能是无符号64位整数了
+                    return static_cast<double>(data_.n.u64);
+                }
+                /**
+                 * @brief 将当前GenericValue对象的值转换为float类型并返回
+                 * 
+                 * @return float 
+                 */
+                float GetFloat() const {
+                    return static_cast<float>(GetDouble());
+                }
+                /**
+                 * @brief 将当前GenericValue对象的值设置为int类型
+                 * 
+                 * @param i 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetInt(int i){
+                    this->~GenericValue();
+                    new (this) GenericValue(i);
+                    return *this;
+                }
+                // 将当前GenericValue对象的值设置为Uint类型
+                GenericValue& SetUint(unsigned u){
+                    this->~GenericValue();
+                    new (this) GenericValue(u);
+                    return *this;
+                }
+                // 将当前GenericValue对象的值设置为int64类型
+                GenericValue& SetInt64(int64_t i64){
+                    this->~GenericValue();
+                    new (this) GenericValue(i64);
+                    return *this;
+                }
+                // 将当前GenericValue对象的值设置为uint64类型
+                GenericValue& SetUint64(uint64_t u64){
+                    this->~GenericValue();
+                    new (this) GenericValue(u64);
+                    return *this;
+                }
+                // 将当前GenericValue对象的值设置为double类型
+                GenericValue& SetDouble(double d){
+                    this->~GenericValue();
+                    new (this) GenericValue(d);
+                    return *this;
+                }
+                // 将当前GenericValue对象的值设置为float类型
+                GenericValue& SetFloat(float f){
+                    this->~GenericValue();
+                    new (this) GenericValue(static_cast<float>(f));
+                    return *this;
+                }
+                /**
+                 * @brief 返回当前GenericValue对象所存储的字符串内容,按Ch*的形式返回
+                 * 
+                 * @return const Ch* 
+                 */
+                const Ch* GetString() const {
+                    RAPIDJSON_ASSERT(IsString());
+                    return DataString(data_);// 返回指向字符串数据的指针
+                }
+                /**
+                 * @brief 返回当前GenericValue对象所存储字符串的长度
+                 * 
+                 * @return SizeType 
+                 */
+                SizeType GetStringLength() const {
+                    RAPIDJSON_ASSERT(IsString());
+                    return DataStringLength(data_);// 获取字符串长度
+                }
+                /**
+                 * @brief 将当前GenericValue对象的值data_设置为字符串类型,值为指向s的指针,长度为length
+                 * s以Ch*为参数传入
+                 * @param s 
+                 * @param length 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetString(const Ch* s, SizeType length){
+                    return SetString(StringRef(s, length));
+                }
+                /**
+                 * @brief 将当前GenericValue对象的值data_设置为s
+                 * s以StringRefType为参数传入
+                 * @param s 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetString(StringRefType s){
+                    this->~GenericValue();
+                    SetStringRaw(s);// 将当前GenericValue对象的data_值设置为常量字符串s,并标记该GenericValue对象的flags=kConstStringFlag
+                    return *this;
+                }
+                /**
+                 * @brief 将当前GenericValue对象的data_值设置为s,并使用Allocator分配内存
+                 * s以Ch*为参数传入
+                 * @param s 
+                 * @param length 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetString(const Ch* s, SizeType length, Allocator& allocator){
+                    return SetString(StringRef(s), allocator);
+                }
+                /**
+                 * @brief 将当前GenericValue对象的data_值设置为s,并使用Allocator分配内存
+                 * s以StringRefType为参数传入
+                 * @param s 
+                 * @param allocator 
+                 * @return GenericValue& 
+                 */
+                GenericValue& SetString(StringRefType s, Allocator& allocator){
+                    this->~GenericValue();
+                    SetStringRaw(s, allocator);// 通过内存分配器复制字符串的方法将s复制到当前GenericValue对象中的data_中
+                    return *this;
+                }
+                // 以C++11字符串std::basic_string为参数传入
+                #if RAPIDJSON_HAS_CXX11
+                    GenericValue& SetString(const std::basic_string<Ch>& s, Allocator& allocator){
+                        return SetString(StringRef(s), allocator);
+                    }
+                #endif
+                // 查找当前GenericValue对象是否为T类型
+                template<typename T>
+                bool Is() const {
+                    return internal::TypeHelper<ValueType, T>::Is(*this);
+                }
+                // 返回当前GenericValue对象中T类型的值
+                template<T>
+                T Get() const {
+                    return internal::TypeHelper<ValueType, T>::Get(*this);
+                }
+                template<typename T>
+                T Get() {
+                    return internal::TypeHelper<ValueType, T>::Get(*this);
+                }
+                // 设置当前GenericValue对象的data_为T类型,并等于data
+                template<typename T>
+                ValueType& Set(const T& data){
+                    return internal::TypeHelper<ValueType, T>::Set(*this, data);
+                }
+                template<typename T>
+                ValueType& Set(const T& data, Allocator& allocator){
+                    return internal::TypeHelper<ValueType, T>::Set(*this, data, allocator);
+                }
+                /**
+                 * @brief 接受并处理传入的Handler对象,它对当前GenericValue对象进行遍历并根据不同的数据类型执行指定的Handler操作
+                 * Handler通常是用户自定义从外部传入的
+                 * @tparam Handler 
+                 * @param handler 
+                 * @return true 
+                 * @return false 
+                 */
+                template<typename Handler>
+                bool Accept(Handler& handler) const {
+                    switch(GetType()){
+                        case kNullType:// Handler处理Null类型
+                            return handler.Null();
+                        case kFalseType:// Handler处理False类型
+                            return handler.Bool(false);
+                        case kTrueType:// // Handler处理true类型
+                            return handler.Bool(true);
+                        case kObjectType:// // Handler处理Object类型
+                            if(RAPIDJSON_UNLIKELY(!handler.StartObject()))
+                                return false;
+                            for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m){// 遍历JSON对象的每个键值对
+                                RAPIDJSON_ASSERT(m->name.IsString());// JSON对象的键值对的键必须是字符串
+                                if(RAPIDJSON_UNLIKELY(!handler.Key(m->name.GetString(), m->name.GetStringLength(), (m->name.data_.f.flags&kCopyFlag)!=0)))
+                                    return false;
+                                if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler)))// JSON对象的键值对的值可以是任何值类型,所以这里还需单独对m->value用handler处理
+                                    return false;
+                            }
+                            return handler.EndObject(data_.o.size);
+                        case kArrayType:// Handler处理Array类型
+                            if(RAPIDJSON_UNLIKELY(!handler.StartArray()))
+                                return false;
+                            for(ConstValueIterator v=Begin();v!=End();++v)// 遍历JSON数组的每个元素
+                                if(RAPIDJSON_UNLIKELY(!v->Accept(handler)))
+                                    return false;
+                            return handler.EndArray(data_.a.size);
+                        case kStringType:// Handler处理String类型
+                            return handler.String(GetString(), GetStringLength(), (data_.f.flags&kCopyFlag)!=0);
+                        default:// 剩余情况只能是数值类型
+                            RAPIDJSON_ASSERT(GetType()==kNumberType);
+                            if(IsDouble())
+                                return handler.Double(data_.n.d);
+                            else if(IsInt())
+                                return handler.Int(data_.n.i.i);
+                            else if(IsUint())
+                                return handler.Uint(data_.n.u.u);
+                            else if(IsInt64())
+                                return handler.Int64(data_.n.ui64);
+                            else
+                                return handler.Uint64(data_.n.u64);
+                    }
+                }
 
-
-            
 
 
 

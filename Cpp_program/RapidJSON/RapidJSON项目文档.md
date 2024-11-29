@@ -18,17 +18,18 @@
    * `JSON XML`都是国际标准或广泛接受的标准格式,确保数据可以在多种应用程序、系统和服务之间无缝交换
    * `JSON XML`都十分易于阅读和理解,适合开发者直接查看和边集
    * 无论`JSON XML`,都有大量的库、工具和框架支持它们的解析和生成
-3. `JSON`中的对象:
+3. `JSON`中所有数据都必须嵌套在数字和对象这两种结构中,不能凌驾于之外
+4. `JSON`中的对象:
    * 对象用花括号{}包裹:对象内容必须包含在一对大括号内
    * 对象内的数据以键值对的形式存储,每对键和值之间用冒号分隔
    * 键必须为字符串类型,放在双引号 "" 内
    * 值可以是以下几种`JSON`支持的类型:字符串、数字、布尔值、对象、数组或`null`
    * 键值对之间用逗号分隔:多个键值对按顺序排列,每对之间用逗号分割
-4. `JSON`数组:
+5. `JSON`数组:
    * 数组用中括号[]包裹
    * 值之间用逗号分隔
-5. `JSON`使用斜杠`\`来转义字符
-6. <mark>在`JSON`中,根元素指的是整个`JSON`数据结构的最外层部分</mark>.每个`JSON`文档有且仅有一个根元素,根元素可以为对象或者数组:
+6. `JSON`使用斜杠`\`来转义字符
+7. <mark>在`JSON`中,根元素指的是整个`JSON`数据结构的最外层部分</mark>.每个`JSON`文档有且仅有一个根元素,根元素可以为对象或者数组:
    ```json
    [
     {
@@ -671,7 +672,7 @@
       data_.f.flags |= kIntFlag;// 设置为int有符号
    }
    ```
-1.  <mark>本项目中`JSON数组`既可以用`GenericArray`表示,也可以用`GenericValue`这种更通用的方式表示.`GenericValue`是一个通用的数据类型,可以表示`JSON`数组、对象、数字、字符串等.它通过`flags`字段来标识当前数据类型.而`GenericArray`是专门用于表示和操作`JSON`数组的类,这个类操作起来更直观,`GenericArray`主要提供了数组级别的操作,如增加、删除元素,访问数组中的元素等.它是一个专用的容器类型,类似于`C++`标准库中的`std::vector`</mark>
+12. <mark>本项目中`JSON数组`既可以用`GenericArray`表示,也可以用`GenericValue`这种更通用的方式表示.`GenericValue`是一个通用的数据类型,可以表示`JSON`数组、对象、数字、字符串等.它通过`flags`字段来标识当前数据类型.而`GenericArray`是专门用于表示和操作`JSON`数组的类,这个类操作起来更直观,`GenericArray`主要提供了数组级别的操作,如增加、删除元素,访问数组中的元素等.它是一个专用的容器类型,类似于`C++`标准库中的`std::vector`</mark>
     ```C++
     1. 利用GenericValue表示JSON数组
     GenericValue<UTF8<>, Allocator> jsonArray(kArrayType);
@@ -683,23 +684,34 @@
     jsonArray.PushBack(GenericValue<UTF8<>, Allocator>(1), allocator);
     // 直接用GenericArray表示JSON数组,它其实就是一个容器类,封装了GenericValue的数组,可以更方便地进行数组操作,即GenericArray其实是一个GenericValue数组,其每个数组元素就是一个GenericValue对象.这个PushBack()宏观上看就是一个往GenericArray中添加GenericValue的操作了
     ```
-2.  `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
+13. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
    因为如果是有损表示为`double`,那么当用这个有损的`double`值来判断得出可以无损转换为`float`,此时也说明可以无损转换为`float`(即使`int64_t`到`double`有损,这并不一定意味着它无法无损表示为`float`)
-3.  `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
-4.  本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`),数组中的`ValueIterator`其实就是指针,即数组只有指针访问的形式
-5.  `RemoveMember()`和`EraseMember()`是实现的类似`vector`的`std::remove()`和`vec.erase()`方法,最终底层调用的函数传入的参数都是迭代器.即这样设计就是为了将本项目中的`JSON`对象访问其成员时,设计成类似`std::vector`中通过迭代器而对元素删除的高效操作(`std::remove() erase()`)
-6.  <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
+14. `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
+15. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`),数组中的`ValueIterator`其实就是指针,即数组只有指针访问的形式
+16. `RemoveMember()`和`EraseMember()`是实现的类似`vector`的`std::remove()`和`vec.erase()`方法,最终底层调用的函数传入的参数都是迭代器.即这样设计就是为了将本项目中的`JSON`对象访问其成员时,设计成类似`std::vector`中通过迭代器而对元素删除的高效操作(`std::remove() erase()`)
+17. <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
    这样做虽然会破坏内部的顺序,但是只需要一次覆盖操作(如果整体往前移,就需要多次覆盖).这种涉及不需要频繁地移动大量数据,尤其当对象中有很多成员时,这种方法可以显著提升性能
-7.  `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
-8.  `C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数
+18. `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
+19. `C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数
    ```C++
    GenericValue& PushBack(GenericValue&& value, Allocator& allocator){
       return PushBack(value, allocator);// 这里使用了C++11的引用折叠
    }
    // 这里的PushBack(value, allocator);调用了底层的GenericValue& PushBack(GenericValue& value, Allocator& allocator),这里使用了引用折叠,即将右值引用(&&)参数直接绑定到左值引用(&)参数上了,这不会报错
    ```
-9.  `std::memmove`:`void* memmove(void* dest, const void* src, size_t count);`:将内存从`src`位置拷贝到`dest`位置,拷贝的内存大小是`count`
-10. 在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`
-11. `GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`
+20. `std::memmove`:`void* memmove(void* dest, const void* src, size_t count);`:将内存从`src`位置拷贝到`dest`位置,拷贝的内存大小是`count`
+21. 在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`
+22. `GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`
+23. `GeneriValue`中其实就是表示一个`JSON`值(注意:这里说的`JSON`值不是指的`JSON`对象中键值对的值,而是指的所有`JSON`的可能值,如:数字、字符串、逻辑值、数字、对象、`null`的等),它可以是`JSON`数组、对象、基本类型元素等,其具体的就是操作`Data`这个共用体(即针对`Data`中不同的`JSON`值进行不同的重载函数操作)
+24. 标志位枚举类中为什么`kTypeMask=0x07`,它有什么用?
+    `kTypeMask`用于提取类型信息的掩码,通过最低3位来标识数据的基本类型,则等于`0x07`,这样就能提取中标志位的最低3位,对于标志位来说最低3位都是不用来表示`flag`的,如`kBoolFlag=0x0008,kInlineStrFlag=0x1000`,最低3位就是八进制中最后一位,都是0,因此可以直接从标志位中通过`kTypeMask`按位与就能获得类型
+25. `Flag`结构体中`payload`用于存储与指针相关的内存数据和其它优化信息,对于不同的系统,使用了不同的填充字节,如:64位系统中`char payload[sizeof(SizeType)*2+sizeof(void*)+6];`:用了6个填充字节,这是因为`sizeof(SizeType)*2+sizeof(void*)`=16字节,而`flags`又占2字节,因此这个结构体位18字节,64位系统中内存对齐通常是8字节,此时18字节未对齐,因此填充了6个字节;32位系统也是同理的.至于为什么要用`sizeof(SizeType)*2+sizeof(void*)`:个人猜测是因为`payload`后续会被用在`ShortString`的定义中,而从`String`结构体可知,通常由两个`SizeType`+一个`char*`指针构成,因此`payload`设置成这样
+26. `ShortString`需注意:
+    * 在字符串`Ch str[MaxChars];`中,最后一个字节存储的是该字符串长度的信息
+    * `MaxChars = sizeof(static_cast<Flag*>(0)->payload)/sizeof(Ch),MaxSize = MaxChars-1,LenPos = MaxSize`和`Ch str[MaxChars];`:对于32位系统,`str`就是有13字节的有效字符的字符串;64位就对应的是21字节
+    * 在`ShortString`中,我们使用的是反向方式来间接存储该字符串的长度,即`str[LenPos]`保存的不是直接的该字符串的长度,而是最大有效字节数`MaxSize`减去该字符串的长度.这样做的好处:
+      - 节省存储空间:这样做就不需要单独用一个字节去表示字符串的实际长度,而是直接用`MaxSize-len`
+      - 防止直接暴露长度信息:这样做隐藏了实际的字符串长度,从而为开发者带来一些"安全性" 
+    * `Ch str[MaxChars];`这是直接存储在`ShortString`这个结构体里了,所以称作内联存储,因此对应的是`kInlineStrFlag`标志(`ShortString`的字符串直接存储在这个结构体内存中,而不是像`String`中:它表示的字符串的存储位置用一个指向其他内存位置的指针来表示)  
 
 

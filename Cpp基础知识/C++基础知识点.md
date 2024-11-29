@@ -146,6 +146,7 @@
     }
     ```
 41. <mark>在`C++`中,`mutable`是一个关键字,用来修饰类的成员变量,使得该变量能够在常量成员函数中被修改</mark>
+42. 在`C/C++`中`char`通常是一个字节
 # 数组
 1. 数组声明应指出以下三点:
     * 存储在每个元素中的值的类型;
@@ -2408,7 +2409,52 @@ void Swap(AnyType &a, AnyType &b);
     }
     ```
 # 友元(friend)
-1. 友元类允许另一个类访问它的私有(`private`)和保护(`protected`)成员
+1. 友元类允许另一个类访问它的私有(`private`)和保护(`protected`)成员:
+    ```C++
+    class A {
+    private:
+        int x; // 私有成员
+    public:
+        A() : x(10) {}
+        //声明B为A的友元类
+        friend class B;  
+    };
+    class B {
+    public:
+        void display(A& a) {
+            // B 是 A 的友元类，可以访问 A 的私有成员
+            std::cout << "A's private member x = " << a.x << std::endl;
+        }
+    };
+    int main() {
+        A a;
+        B b;
+        b.display(a);  // 输出: A's private member x = 10
+        return 0;
+    }
+    ```
+2. 友元函数:友元函数是一个可以访问某个类私有成员或保护成员的非成员函数,即使这个函数不是类的成员函数,它仍然可以访问该类的私有和保护成员:
+   ```C++
+   class A {
+    private:
+        int x;  // 私有成员
+    public:
+        A() : x(10) {}
+        // 声明函数 printX 为友元函数
+        friend void printX(A& a);  
+    };
+    // 定义友元函数
+    void printX(A& a) {
+        // 友元函数可以访问 A 的私有成员
+        std::cout << "A's private member x = " << a.x << std::endl;
+    }
+    int main() {
+        A a;
+        printX(a);  // 输出: A's private member x = 10
+        return 0;
+    }
+    ```
+3. 友元类/友元函数的必须在待访问类的内部进行事先声明,具体来说,如果类`B`是类`A`的友元类,那么需要在类`A`的定义内部声明`B`为友元类.这样,类`B`就可以访问`A`的私有成员和保护成员
 # static
 1. <mark>`static`关键字只在类的声明(通常是头文件)中使用,用于指示某个成员是静态的(属于类,而不是实例).在实现文件中,编译器根据头文件中的声明,已经知道哪个成员是静态的,因此不需要再次声明:</mark>
    ```C++

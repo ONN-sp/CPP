@@ -1705,6 +1705,176 @@ namespace RAPIDJSON{
                                 return handler.Uint64(data_.n.u64);
                     }
                 }
+            private:
+                template<typename, typename> friend class GenericValue;// 声明GenericValue是当前类的友元类,即它可以访问当前类的私有成员
+                template<typename, typename> friend class GenericDocument;// 声明GenericDocument是当前类的友元类,即它可以访问当前类的私有成员
+                enum {
+                    kBoolFlag = 0x0008,
+                    kNumberFlag = 0x0010,
+                    kIntFlag = 0x0020,
+                    kUintFlag = 0x0040,
+                    kInt64Flag = 0x0080,
+                    kUint64Flag = 0x0100,
+                    kDoubleFlag = 0x0200,
+                    kStringFlag = 0x0400,
+                    kCopyFlag = 0x0800,
+                    kInlineStrFlag = 0x1000,// 标识内联字符串标志,通常用于标识字符串对象内联存储.ShortString就是内联存储的,即它的字符串直接存储在这个结构体内存中,而不是像String中那样字符串的存储位置用一个指向其他内存位置的指针来表示
+                    kNullFlag = kNullType,
+                    // 定义复合标志
+                    kTrueFlag = static_cast<int>(kTrueType) | static_cast<int>(kBoolFlag);
+                    kFalseFlag = static_cast<int>(kFalseType) | static_cast<int>(kBoolFlag);
+                    kNumberIntFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberType | kIntFlag | kInt64Flag);
+                    kNumberUintFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kUintFlag | kUint64Flag),
+                    kNumberInt64Flag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kInt64Flag),
+                    kNumberUint64Flag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kUint64Flag),
+                    kNumberDoubleFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kDoubleFlag),
+                    kNumberAnyFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kIntFlag | kInt64Flag | kUintFlag | kUint64Flag | kDoubleFlag),
+                    kConstStringFlag = static_cast<int>(kStringType) | static_cast<int>(kStringFlag),
+                    kCopyStringFlag = static_cast<int>(kStringType) | static_cast<int>(kStringFlag | kCopyFlag),
+                    kShortStringFlag = static_cast<int>(kStringType) | static_cast<int>(kStringFlag | kCopyFlag | kInlineStrFlag),
+                    kObjectFlag = kObjectType,
+                    kArrayFlag = kArrayType,
+                    kTypeMask = 0x07// 用于提取类型信息的掩码,通过最低3位来标识数据的基本类型
+                };
+                static const SizeType kDefaultArrayCapacity = RAPIDJSON_VALUE_DEFAULT_ARRAY_CAPACITY;
+                static const SizeType kDefaultObjectCapacity = RAPIDJSON_VALUE_DEFAULT_OBJECT_CAPACITY;
+                /**
+                 * @brief Flag结构体用于存储类型标志信息,根据不同的优化选项,该结构体会使用不同大小的内存布局,以确保内存对齐和节省空间
+                 * payload中后续加的数字是用于对齐的,如:48位时+6达到14字节,此时这个结构体就是16字节;64位时+6达到22字节,此时这个结构体就是24字节
+                 * 
+                 */
+                struct Flag{
+                    #if RAPIDJSON_48BITPOINTER_OPTIMIZATION
+                        char payload[sizeof(SizeType)*2+6];// 14字节=2*4+6 6个填充字节确保内存对齐和高效访问
+                    #elif RAPIDJSON_64BIT
+                        char payload[sizeof(SizeType)*2+sizeof(void*)+6];// 22字节=2*4+8+6
+                    #else
+                        char payload[sizeof(SizeType)*2+sizeof(void*)+2]// 14字节=2*4+4+2
+                    #endif
+                        uint46_t flags;// 2字节
+                };
+                /**
+                 * @brief 用于存储字符串数据
+                 * 
+                 */
+                struct String{
+                    SizeType length;
+                    SizeType hashcode;// 为字符串预留的哈希码,通常用于优化查找
+                    const Ch* str;
+                };
+                /**
+                 * @brief 用于存储较短的字符串.使用了最后一个有效字节存储反向字符串长度的方法
+                 * RAPIDJSON_48BITPOINTER_OPTIMIZATION启用时ShortString有13字节的字符串存储位置;64位系统中有21字节;32位系统中有13字节
+                 */
+                struct ShortString{
+                    enum {
+                        MaxChars = sizeof(static_cast<Flag*>(0)->payload)/sizeof(Ch),
+                        MaxSize = MaxChars-1,
+                        LenPos = MaxSize// std[LenPos]存储该字符串的长度信息
+                    };
+                    Ch str[MaxChars];// 这是内联存储,即存储在结构体这个内存中
+                    inline static bool Usable(SizeType len) {// 判断给定的长度是否小于或等于最大有效字符数,即在32位系统中小于13字节的字符串都是ShortString
+                        return (MaxSize >= len);
+                    }
+                    inline void SetLength(SizeType len) {// 在最后一个字节设置字符串的长度信息,注意:这里用的是反向方式存储,不是直接存储该字符串的实际长度
+                        str[LenPos] = static_cast<Ch>(MaxSize-len);
+                    }
+                    inline SizeType GetLength() const {// 获取该字符串实际长度
+                        return static_cast<SizeType>(MaxSize - str[LenPos]);
+                    }
+                };
+                /**
+                 * @brief 用于存储不同类型的数字数据
+                 * 使用了padding数组进行对齐填充,使每个数据都是8字节
+                 */
+                union Number{
+                    #if RAPIDJSON_ENDIAN == RAPIDJSON_LITTLEENDIAN// 小端序
+                        struct I {
+                            int i;
+                            char padding[4];// 后面填充字节,使其都为8字节,进行对齐
+                        }i;
+                        struct U {
+                            unsigned u;
+                            char padding2[4];
+                        }u;
+                    #else
+                        struct I {
+                            char padding[4];// 前面填充字节,使其都为8字节,进行对齐
+                            int i;
+                        }i;
+                        struct U {
+                            char padding2[4];
+                            unsigned u;
+                        }u;
+                    #endif
+                    int64_t i64;
+                    uint64_t u64;
+                    double d;
+                };
+                /**
+                 * @brief 用于存储JSON对象数据
+                 * 
+                 */
+                struct ObjectData {
+                    SizeType size;
+                    SizeType capacity;
+                    Member* members;
+                };
+                /**
+                 * @brief 用于存储JSON数组数据
+                 * 
+                 */
+                struct ArrayData {
+                    SizeType size;
+                    SizeType capacity;
+                    GenericValue* elements;
+                };
+                /**
+                 * @brief 在同一内存位置存储不同类型的数据,使用联合体可以节省内存
+                 * 
+                 */
+                union Data {
+                    String s;
+                    ShortString ss;
+                    Number n;
+                    ObjectData o;
+                    ArrayData a;
+                    Flag f;
+                };
+                // 返回当前JSON数据中存储的字符串内容.kInlineStrFlag=>ShortString
+                static RAPIDJSON_FORCEINLINE const Ch* DataString(const Data&){
+                    return (data.f.flags & kInlineStrFlag) ? data.ss.str : RAPIDJSON_GETPOINTER(Ch, data.s.str);
+                }
+                // 返回当前JSON数据中存储的字符串长度
+                static RAPIDJSON_FORCEINLINE SizeType DataStringLength(const Data& data){
+                    return (data.f.flags & kInlineStrFlag) ? data.ss.GetLength() : data.s.length;
+                }
+                // 返回当前JSON字符串的指针.简单情况就是直接返回data_.s.str
+                RAPIDJSON_FORCEINLINE const Ch* GetStringPointer() const {
+                    return RAPIDJSON_GETPOINTER(Ch, data_.s.str);
+                }
+                // 设置当前JSON字符串的指针.即让data_.s.str指向str相同的地方
+                RAPIDJSON_FORCEINLINE const Ch* SetStringPointer(const Ch* str) {
+                    return RAPIDJSON_SETPOINTER(Ch, data_.s.str, str);
+                }
+                // 获取当前JSON数组元素的指针.简单情况就是直接返回data_.a.elements
+                RAPIDJSON_FORCEINLINE GenericValue* GetElementsPointer() const {
+                    return RPAIDJSON_GETPOINTER(GenericValue, data_.a.elements);
+                }
+                // 设置当前JSON数组元素的指针.即让data_.a.elements指向elements相同的地方
+                RAPIDJSON_FORCEINLINE GenericValue* SetElementsPointer(GenericValue* elements) {
+                    return RAPIDJSON_SETPOINTER(GenericValue, data_.a.elements, elements);
+                }
+                // 获取当前JSON对象成员的指针.简单情况就是直接返回data_.o.members
+                RAPIDJSON_FORCEINLINE Member* GetMembersPointer() const {
+                    return RAPIDJSON_GETPOINTER(Member, data_.o.members);
+                }
+                // 设置当前JSON对象成员的指针.即让data_.a.members指向members相同的地方
+                RAPIDJSON_FORCEINLINE Member* SetMembersPointer(Member* members) {
+                    return RAPIDJSON_SETPOINTER(Member, data_.o.members, members);
+                }
+
+
 
 
 

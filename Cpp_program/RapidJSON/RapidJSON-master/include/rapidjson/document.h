@@ -2110,7 +2110,7 @@ private:
     static RAPIDJSON_FORCEINLINE SizeType DataStringLength(const Data& data) {
         return (data.f.flags & kInlineStrFlag) ? data.ss.GetLength() : data.s.length;
     }
-
+    // 以下函数都是操作的当前JSON对象/数组/字符串
     RAPIDJSON_FORCEINLINE const Ch* GetStringPointer() const { return RAPIDJSON_GETPOINTER(Ch, data_.s.str); }
     RAPIDJSON_FORCEINLINE const Ch* SetStringPointer(const Ch* str) { return RAPIDJSON_SETPOINTER(Ch, data_.s.str, str); }
     RAPIDJSON_FORCEINLINE GenericValue* GetElementsPointer() const { return RAPIDJSON_GETPOINTER(GenericValue, data_.a.elements); }

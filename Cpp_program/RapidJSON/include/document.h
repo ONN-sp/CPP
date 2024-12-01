@@ -1849,6 +1849,7 @@ namespace RAPIDJSON{
                 static RAPIDJSON_FORCEINLINE SizeType DataStringLength(const Data& data){
                     return (data.f.flags & kInlineStrFlag) ? data.ss.GetLength() : data.s.length;
                 }
+                // 以下几个函数都是操作的当前JSON对象/数组/字符串
                 // 返回当前JSON字符串的指针.简单情况就是直接返回data_.s.str
                 RAPIDJSON_FORCEINLINE const Ch* GetStringPointer() const {
                     return RAPIDJSON_GETPOINTER(Ch, data_.s.str);
@@ -1859,7 +1860,7 @@ namespace RAPIDJSON{
                 }
                 // 获取当前JSON数组元素的指针.简单情况就是直接返回data_.a.elements
                 RAPIDJSON_FORCEINLINE GenericValue* GetElementsPointer() const {
-                    return RPAIDJSON_GETPOINTER(GenericValue, data_.a.elements);
+                    return RAPIDJSON_GETPOINTER(GenericValue, data_.a.elements);
                 }
                 // 设置当前JSON数组元素的指针.即让data_.a.elements指向elements相同的地方
                 RAPIDJSON_FORCEINLINE GenericValue* SetElementsPointer(GenericValue* elements) {
@@ -1873,16 +1874,413 @@ namespace RAPIDJSON{
                 RAPIDJSON_FORCEINLINE Member* SetMembersPointer(Member* members) {
                     return RAPIDJSON_SETPOINTER(Member, data_.o.members, members);
                 }
-
-
-
-
-
-
-
-
-
-
+                #if RAPIDJSON_USE_MEMBERSMAP// 如果启用成员映射功能(JSON对象才有成员)
+                    struct MapTraits{
+                        struct Less{// 使用函数对象自定义比较函数   用于比较两个Data类型的数据
+                            bool operator()(const Data& s1, const Data& s2) const {// operator重载函数调用运算符
+                                SizeType n1 = DataStringLength(s1), n2 = DataStringLength(s2);
+                                int cmp = std::memcmp(DataString(s1), DataString(s2), sizeof(Ch)*(n1<n2 ? n1:n2));// 只比较s1和s2两个字符串最少的个数,如:Length(s1)=3,Length(s2)=5,那么只比较3个字符
+                                return cmp<0 || (cmp==0&&n1<n2);// 如果cmp小于0,表示s1<s2;如果cmp=0,则比较字符串长度
+                            }
+                        };
+                        typedef std::pair<const Data, SizeType> Pair;
+                        typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;// key=Data, value=SizeType;Map中存储的是JSON对象成员的键(key)与该成员在对象中的位置索引,而不是JSON键与JSON值的映射
+                        typedef typename Map::iterator Iterator;// 定义Iterator类型为Map类型的迭代器
+                    };
+                    typedef typename MapTraits::Map         Map;
+                    typedef typename MapTraits::Less        MapLess;
+                    typedef typename MapTraits::Pair        MapPair;
+                    typedef typename MapTraits::Iterator    MapIterator;
+                    // 计算和返回存储映射所需的内存布局的总大小
+                    // 在内存布局中我们自定义成了如下形式:Map指针内存+SizeType容量内存+capacity*sizeof(Member)所有成员内存+capacity * sizeof(MapIterator)所有映射的迭代器内存
+                    static RAPIDJSON_FORCEINLINE size_t GetMapLayoutSize(SizeType capacity) {
+                        return  RAPIDJSON_ALIGN(sizeof(Map*)) +
+                                RAPIDJSON_ALIGN(sizeof(SizeType)) + 
+                                RAPIDJSON_ALIGN(capacity * sizeof(Member)) + 
+                                capacity * sizeof(MapIterator);
+                    }
+                    // 通过映射获取容量,通过此函数确保了SizeType表示的容量在Map*之后
+                    static RAPIDJSON_FORCEINLINE SizeType& GetMapCapacity(Map* &map) {// 指针的引用
+                        return *reinterpret_cast<SizeType*>(reinterpret_cast<uintptr_t>(&map) + RAPIDJSON_ALIGN(sizeof(Map*)));
+                    }
+                    // 通过映射来获取给定map的成员地址,通过此函数确保了在内存布局中:Member在Map指针内存+SizeType容量内存的后面,并且得到的Member*就是传入的map的键值对指针
+                    static RAPIDJSON_FORCEINLINE Member* GetMapMembers(Map* &map){
+                        return reinterpret_cast<Member*>(reinterpret_cast<uintptr_t>(&map) + 
+                                                         RAPIDJSON_ALIGN(sizeof(Map*)) + 
+                                                         RAPIDJSON_ALIGN(sizeof(SizeType)));
+                    }
+                    // 通过映射来获取成员迭代器在内存中要存储的地址,通过此函数确保了在内存布局中:MapIterator在Map指针内存+SizeType容量内存+Member内存的后面,,并且得到的MapIterator*就是传入的map的键值对的迭代器
+                    static RAPIDJSON_FORCEINLINE MapIterator* GetMapIterators(Map* &map){
+                        return reinterpret_cast<MapIterator*>(reinterpret_cast<uintptr_t>(&map) + 
+                                                         RAPIDJSON_ALIGN(sizeof(Map*)) + 
+                                                         RAPIDJSON_ALIGN(sizeof(SizeType)) + 
+                                                         RAPIDJSON_ALIGN(GetMapCapacity(map) * sizeof(Member)));
+                    }
+                    /**
+                     * @brief 通过给定的Member* members指针,反向查找Map*指针的位置并返回对其的引用
+                     * 
+                     * @param members 
+                     * @return RAPIDJSON_FORCEINLINE*& 
+                     */
+                    static RAPIDJSON_FORCEINLINE Map* &GetMap(Member* members){
+                        RAPIDJSON_ASSERT(members!=0);
+                        return *reinterpret_cast<Map**>(reinterpret_cast<uintptr_t>(members) - 
+                                                        RAPIDJSON_ALIGN(sizeof(SizeType)) - 
+                                                        RAPIDJSON_ALIGN(sizeof(Map*)));
+                    }
+                    // 析构传入的MapIterator迭代器并返回新的迭代器,新的迭代器和传入的是一样的.这样做可以返回一个安全的迭代器,即这个迭代器当前是没有被外部持有的,而rhs这个迭代器可能在外部某个地方被持有了
+                    RAPIDJSON_FORCEINLINE MapIterator DropMapIterator(MapIterator& rhs) {
+                        #if RAPIDJSON_HAS_CXX11
+                            MapIterator ret = std::move(rhs);
+                        #else
+                            MapIterator ret = rhs;
+                        #endif
+                            rhs.~MapIterator();
+                            return ret;
+                    }
+                    /**
+                     * @brief 对Map数据结构重新分配内存并将旧的数据迁移到新分配的内存中
+                     * 
+                     * @param oldMap 旧指针的指针
+                     * @param newCapacity 
+                     * @param allocator 
+                     * @return Map*& 
+                     */
+                    Map* &DoReallocMap(Map** oldMap, sizeType newCapacity, Allocator& allocator) {
+                        Map** newMap = static_cast<Map**>(allocator.Malloc(GetMapLayoutSize(newCapacity)));// 分配按[ Map* ] [ SizeType ] [ Member[capacity] ] [ MapIterator[capacity] ]这种内存形式布局的这么大的内存空间
+                        GetMapCapacity(*neMap) = newCapacity;// 找到容量地址并重新设置新容量
+                        if(!oldMap)// 无旧Map,则new一个
+                            *newMap = new (allocator.Malloc(sizeof(Map))) Map(MapLess(), allocator);// 分配一个新的Map对象
+                        else{// 有旧Map,则将旧数据迁移到新分配的内存中
+                            *newMap = *oldMap;
+                            size_t count = (*oldMap)->size();// 旧Map的大小
+                            std::memcpy(static_cast<void*>(GetMapMembers(*newMap)),
+                                        static_cast<void*>(GetMapMembers(*oldMap)),
+                                        count * sizeof(Member));// 将旧Map中的成员从旧Map内存拷贝到新的Map中
+                            MapIterator *oldIt = GetMapIterator(*oldMap),// 旧Map的迭代器数组
+                                        *newIt = GetMapIterator(*newMap);// 新Map的迭代器数组
+                            while(count--)// 释放旧Map的内存
+                                new (&newIt[count]) MapIterator(DropMapIterator(oldIt[count]));// 复制到newIt迭代器
+                            Allocator::Free(oldMap);
+                        }
+                        return *newMap;// 返回新Map
+                    }
+                    // 分配一块内存来存储capacity个成员,并返回分配的Member数组的指针
+                    RAPIDJSON_FORCEINLINE Member* DoAllocMembers(SizeType capacity, Allocator& allocator) {
+                        return GetMapMembers(DoReallocMap(0, capacity, allocator));
+                    }
+                    // 通过增加容量来预留空间,如果newCapacity大于当前容量,则会重新分配内存
+                    void DoReserveMembers(SizeType newCapacity, Allocator& allocator) {
+                        ObjectData& o = data_.o;
+                        if(newCapacity > o.capacity){// 如果新分配的容量更大,那么就要重新分配内存
+                            Member* oldMembers = GetMembersPointer();
+                            Map** oldMap = oldMembers ? &GetMap(oldMembers):nullptr,// oldMembers有成员则返回旧的map指针,否则返回nullptr
+                               *& newMap = DoReallocMap(oldMap, newCapacity, allocator);// 重新分配Map内存
+                            RAPIDJSON_SETPOINTER(Member, o.members, GetMapMembers(newMap));// 将新的成员地址赋给o.members
+                            o.capacity = newCapacity;
+                        }
+                    }
+                    /**
+                     * @brief 查找指定名称的成员,并返回该成员的迭代器;找不到成员,就返回MemberEnd()
+                     * 
+                     * @tparam SourceAllocator 
+                     * @param name 
+                     * @return MemberIterator 
+                     */
+                    template<typename SourceAllocator>
+                    MemberIterator DoFindMember(const GenericValue<Encoding, SourceAllocator>& name) {
+                        if(Member* members=GetMembersPointer()){
+                            Map*& map = GetMap(members);
+                            MapIterator mit = map->find(reinterpret_cast<const Data&*>(name.data_));
+                            if(mit!=map->end())// 找到了
+                                return MemberIterator(&members[mit->second]);// 返回其成员迭代器
+                        }
+                        return MemberEnd();// 找不到就直接返回最后一个成员的后一个位置
+                    }
+                    /**
+                     * @brief 清空所有成员,将Map中的成员删除,即将JSON对象的成员删除
+                     * 清空成员,没有删除成员数组
+                     */
+                    void DoClearMembers() {
+                        if(Member* members = GetMembersPointer()){// 获取当前成员数组的指针
+                            Map*& map = GetMap(members);// 获取与members相关的Map
+                            MapIterator* mit = GetMapIterator(map);// 获取指向Map的迭代器
+                            for(SizeType i=0;i<data_.o.size;++i){
+                                map->erase(DropMapIterator(mit[i]));// 从map中移除成员
+                                members[i].~Member();// 销毁成员对象
+                            }
+                            data_.o.size = 0;
+                        }
+                    }
+                    /**
+                     * @brief 释放Map和成员对象内存
+                     * 删除了删除数组,并且释放了内存
+                     */
+                    void DoFreeMembers() {
+                        if(Member* members=GetMembersPointer()) {
+                            GetMap(members)->~Map();
+                            for(SizeType i=0;i<data_.o.size;++i)
+                                members[i].~Member();
+                            if(Allocator::kNeedFree){
+                                Map** map = &GetMap(members);
+                                Allocator::Free(*map);
+                                Allocator::Free(map);
+                            }
+                        }
+                    }
+                #else// 不用map
+                    // 用于为Member[]数组分配内存(即为JSON对象的成员数组分配空间)
+                    RAPIDJSON_FORCEINLINE Member* DoAllocMembers(SizeType capacity, Allocator& allocator) {
+                        return Malloc<Member>(allocator, capacity);
+                    }
+                    // 用于调整Member[]数组的容量
+                    void DoReserveMembers(SizeType newCapacity, Allocator& allocator) {
+                        ObjectData& o = data_.o;
+                        if(newCapacity > o.capacity) {// 如果新分配的容量更大,那么就要重新分配内存
+                            Member* newMembers = Realloc<Member>(allocator, GetMembersPointer(), o.capacity, newCapacity);
+                            RAPIDJSON_SETPOINTER(Member, o.members, newMembers);
+                            o.capacity = newCapacity;
+                        }
+                    }
+                    // 用于查找特定名称的成员在Member[]数组中的位置,以迭代器返回
+                    template<typename SourceAllocator>
+                    MemberIterator DoFindMember(const GenericValue<Encoding, SourceAllocator>& name) {
+                        MemberIterator member = MemberBegin();
+                        for(;member!=MemberEnd();++member)
+                            if(name.StringEqual(member->name))// 查找到了,直接退出循环
+                                break;
+                        return member;
+                    }
+                    // 清空当前JSON对象的Member[]
+                    void DoClearMembers() {
+                        for(for(MemberIterator m=MemberBegin();m!=MemberEnd();++m)
+                            m->~Member();
+                        Allocator::Free(GetMembersPointer());
+                    }
+                #endif// RAPIDJSON_USE_MEMBERSMAP
+                /**
+                 * @brief 用于向当前JSON对象添加一个新的成员  name:value
+                 * 
+                 * @param name 
+                 * @param value 
+                 * @param allocator 
+                 */
+                void DoAddMember(GenericValue& name, GenericValue& value, Allocator& allocator) {
+                    ObjectData& o = data_.o;
+                    if(o.size >= o.capacity)// 检查当前容量是否满了,即是否需要扩容后再添加成员
+                        DoReserveMembers(o.capacity ? (o.capacity + (o.capacity+1)/2:kDefaultObjectCapacity, allocator));// 使用当前容量的加倍策略来增加容量
+                    Member* members = GetMembersPointer();// 获取指向成员数组的指针
+                    Member* m = members+o.size;// 将m指向成员数组的下一个空位置,为了后续将新键值对添加进来
+                    m->name.RawAssign(name);// name赋值给新键值对的name成员(即赋给m这个Member对象中的name成员)
+                    m->value.RawAssign(value);// value赋值给新键值对的value成员(即赋给m这个Member对象中的value成员)
+                    #if RAPIDJSON_USE_MEMBERSMAP
+                        Map*& map = GetMap(members);// 获取map这个映射表的地址
+                        MapIterator* mit = GetMapIterator(map);// 获取map的迭代器指针
+                        new (&mit[o.size]) MapIterator(map->insert(MapPair(m->name.data_, o.size)));// 将name和其索引位置添加到map这个映射中
+                    #endif
+                    ++o.size;
+                }
+                /**
+                 * @brief 用于从JSON对象中删除一个指定的成员
+                 * 
+                 * @param m 待删除的成员的迭代器
+                 * @return MemberIterator 
+                 */
+                MemberIterator DoRemoveMember(MemberIterator m) {
+                    ObjectData& o = data_.o;
+                    Member* members = GetMembersPointer();// 获取当前JSON对象的成员数组的指针
+                    #if RAPIDJSON_USE_MEMBERSMAP// 启用了map映射,则在映射表中删除对应的成员
+                        Map*& map = GetMap(members);
+                        MapIterator* mit = GetMapIterator(map);
+                        SizeType mpos = static_cast<SizeType>(&*m-members);
+                        map->erase(DropMapIterator(mit[mpos]));// 从映射表(std::multimap)中删除对应成员mit[mpos]
+                    #endif
+                    MemberIterator last(members+(o.size-1));// 获取成员数组中最后一个成员的迭代器
+                    if(o.size>1 && m!=last) {// 如果成员数组中有多个成员,且要删除的成员不是最后一个,则将最后一个成员复制到被删除的成员的位置
+                        #if RAPIDJSON_USE_MEMBERSMAP
+                            new (&mit[mpos]) MapIterator(DropMapIterator(mit[&*last-members]));// 将最后一个成员复制到mit[mpos]这个需要删除成员的位置
+                            mit[mpos]->second = mpos;
+                        #endif
+                        *m = *last;// 将最后一个成员的内容复制到要删除的成员位置,这样既实现了删除指定成员,又把最后一个成员复制过来了
+                    }
+                    else
+                        m->~Member();
+                    --o.size;
+                    return m;
+                }
+                /**
+                 * @brief 用于从JSON对象中删除一段连续的成员 first到last
+                 * 
+                 * @param first 
+                 * @param last 
+                 * @return MemberIterator 
+                 */
+                MemberIterator DoEraseMembers(ConstMemberIterator first, ConstMemberIterator last) {
+                    ObjectData& o = data_.o;
+                    MemberIterator beg = MemberBegin(),
+                                   pos = beg+(first-beg),// 待删除成员的起点,即first
+                                   end = MemberEnd();
+                    #if RAPIDJSON_USE_MEMBERSMAP
+                        Map*& map = GetMap(GetMembersPointer());
+                        MapIterator* mit = GetMapIterators(map);
+                    #endif
+                    for(MemberIterator itr=pos;itr!=last;++itr){// 从first删到last
+                        #if RAPIDJSON_USE_MEMBERSMAP
+                            map->erase(DropMapIterator(mit[itr-beg]));// 从映射表中删除first到last的成员
+                        #endif
+                        itr->~Member();
+                    }
+                    #if RAPIDJSON_USE_MEMBERSMAP
+                        if(first!=last){// 将last后面的成员移到first这个已删除的起点
+                            MemberIterator next = pos+(last-first);// last的后一个未删除成员
+                            for(MemberIterator itr=pos;next!=end;++itr,++next) {// 将last后未删除的成员移到前面来
+                                std::memcpy(static_cast<void*>(&*itr), &*next, sizeof(Member));
+                                SizeType mpos = static_cast<SizeType>(itr-beg);
+                                new (&mit[mpos]) MapIterator(DropMapIterator(mit[next-beg]));
+                                mit[mpos]->second = mpos;
+                            }
+                        }   
+                    #else
+                        std::memmove(static_cast<void*>(&*pos), &*last, static_cast<size_t>(end-last)*sizeof(Member));// 直接将last后面的成员移到前面的空位,即覆盖已删除的成员
+                    #endif
+                    o.size -= static_cast<SizeType>(last-first);
+                    return pos;
+                }
+                /**
+                 * @brief 将指定的JSON对象rhs的成员复制到当前对象中
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param rhs 
+                 * @param allocator 
+                 * @param copyConstStrings 
+                 */
+                template<typename SourceAllocator>
+                void DoCopyMembers(const GenericValue<Encoding, SourceAllocator>& rhs, Allocator& allocator, bool copyConstStrings) {
+                    RAPIDJSON_ASSERT(rhs.GetType==kObjectType);
+                    data_.f.flags = kObjectFlag;
+                    SizeType count = rhs.data_.o.size;
+                    Member* lm = DoAllocMembers(count, allocator);// 分配rhs这个JSON对象这么多的成员的内存
+                    const typename GenericValue<Encoding, SourceAllocator>::Member* rm = rhs.GetMembersPointer();
+                    #if RAPIDJSON_USE_MEMBERSMAP
+                        Map*& map = GetMap(lm);
+                        MapIterator* mit = GetMapIterator(map);
+                    #endif
+                    for(SizeType i=0;i<count;i++){// 逐个成员地复制rhs的成员名称和成员值
+                        new (&lm[i].name) GenericValue(rm[i].name, allocator, copyConstStrings);
+                        new (&lm[i].value) GenericValue(rm[i].value, allocator, copyConstStrings);
+                    #if RAPIDJSON_USE_MEMBERSMAP// 启用了map,则在map中插入新的键值对,构建相应迭代器并复制到mit
+                        new (&mit[i]) MapIterator(map->insert(MapPair(lm[i].name.data_.i)));
+                    #endif
+                    }
+                    data_.o.size = data_.o.capacity = count;// 将当前JSON对象的size就设成rhs的成员数
+                    SetMembersPointer(lm);// 将临时Member[]数组lm拷贝到当前对象的members中,即data_.o.members
+                }
+                /**
+                 * @brief 设置当前GenericValue对象为一个JSON数组
+                 * 
+                 * @param values 
+                 * @param count 
+                 * @param allocator 
+                 */
+                void SetArrayRaw(GenericValue* values, SizeType count, Allocator& allocator) {
+                    data_.f.flags = kArrayFlag;
+                    if(count) {// 确保数组不为空
+                        GenericValue* e = static_cast<GenericValue*>(allocator.Malloc(count*sizeof(GenericValue)));
+                        SetElementsPointer(e);// 将当前JSON数组地址设置为e,即data_.a.elements=e
+                        std::memcpy(static_cast<void*>(e), values, count*sizeof(GenericValue));// 将count个GenericValue值拷贝到data_.a.elements地址处
+                    }
+                    else
+                        SetElementsPointer(0);
+                    data_.a.size = data_.a.capacity = count;
+                }
+                /**
+                 * @brief 设置当前GenericValue对象为一个JSON对象
+                 * 
+                 * @param members 
+                 * @param count 
+                 * @param allocator 
+                 */
+                void SetObjectRaw(Member* members, SizeType count, Allocator& allocator) {
+                    data_.f.flags = kObjectFlag;
+                    if(count) {// 确保成员不为空
+                        Member* m = DoAllocMembers(count, allocator);
+                        SetMembersPointer(m);// 将当前JSON对象地址设置为m,即data_.a.members=m
+                        std::memcpy(static_cast<void*>(m), members, count*sizeof(Member));// 将count个GenericValue值拷贝到data_.a.members地址处
+                        #if RAPIDJSON_USE_MEMBERSMAP
+                            Map*& map = GetMap(m);
+                            MapIterator* mit = GetMapIterators(map);
+                            for(SizeType i=0;i<count;i++) 
+                                new (&mit[i]) MapIterator(map->insert(MapPair(m[i].name.data_, i)));// 将count个成员复制到映射表中
+                        #endif
+                    }
+                    else
+                        SetMembersPointer(0);
+                    data_.o.size = data_.o.capacity = count;
+                }
+                /**
+                 * @brief 用于设置当前GenericValue对象为一个JSON字符串
+                 * 
+                 * @param s 
+                 */
+                void SetStringRaw(StringRefType s) RAPIDJSON_NOEXCEPT {
+                    data_.f.flags = kConstStringFlag;// 设置为常量字符串
+                    SetStringPointer(s);// 将当前JSON字符串地址设置为s,即data_.a.s=s
+                    data_.s.length = s.length;
+                }
+                /**
+                 * @brief 用于设置当前GenericValue对象为一个JSON字符串
+                 * 根据字符串长度决定使用短字符串存储还是动态分配内存来存储长字符串
+                 * @param s 
+                 * @param allocator 
+                 */
+                void SetStringRaw(StringRefType s, Allocator& allocator) {
+                    Ch* str = 0;
+                    if(ShortString::Usable(s.length)) {// 短字符串 ShortString
+                        data_.f.flags = kShortStringFlag;
+                        data_.ss.SetLength(s.length);
+                        str = data_.ss.str;
+                    }
+                    else {// 长字符串 String
+                        data_.f.flags = kCopyStringFlag;
+                        data_.s.length = s.length;
+                        str = static_cast<Ch*>(allocator.Malloc((s.length+1)*sizeof(Ch));
+                        SetStringPointer(str);
+                    }
+                    std::memcpy(str, s, s.length*sizeof(Ch));// 将s复制到str,因为data_.ss.str或data_.s.str与str指向同一个地址,所以直接复制到str即可
+                    str[s.length] = '\0';
+                }
+                /**
+                 * @brief 用于将一个指定的GenericValue对象的所有数据直接赋值给当前对象
+                 * 
+                 * @param rhs 
+                 */
+                void RawAssign(GenericValue& rhs) RAPIDJSON_NOEXCEPT {
+                    data_ = rhs.data_;
+                    rhs.data_.f.flags = kNullFlag;
+                }
+                /**
+                 * @brief 用于比较当前GenericValue对象与另一个GenericValue对象rhs的字符串是否相等
+                 * 
+                 * @tparam SourceAllocator 
+                 * @param rhs 
+                 * @return true 
+                 * @return false 
+                 */
+                template<typename SourceAllocator>
+                bool StringEqual(const GenericValue<Encoding, SourceAllocator>& rhs) const {
+                    RAPIDJSON_ASSERT(IsString());
+                    RAPIDJSON_ASSERT(rhs.IsString());
+                    const SizeType len1 = GetStringLength();
+                    const SizeType len2 = rhs.GetStringLength();
+                    if(len1!=len2)// 长度不等直接返回false
+                        return false;
+                    const Ch* const str1 = GetString();
+                    const Ch* const str2 = rhs.GetString();
+                    if(str1==str2)// 长度相等的前提下,若两个字符串指针相同,表示它们指向的是同一块内存,此时直接返回true
+                        return true;
+                    return (std::memcmp(str1, str2, sizeof(Ch)*len1)==0);// 长度相等的前提下,使用memcmp进行一个字节一个字节的比较
+                }
+                Data data_;// 当前GenericValue对象的值,即JSON数据的一种值(可能是对象值、数组值、字符串值等等)
     };
     
 

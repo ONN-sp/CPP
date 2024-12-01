@@ -89,7 +89,7 @@
 4. 内存池分配器`MemoryPoolAllocator`通过统一管理内存块,减少了内存碎片的产生.内存池一次性分配较大的内存块,内部的小对象分配都来自同一块连续的内存区域
 5. 内存池分配器`MemoryPoolAllocator`的`Free`实际是一个空操作,即内存块的回收并不是立即执行的.相反,内存块在整个内存池分配器被销毁时才会统一释放,这样避免了频繁的内存释放操作,进一步提升性能 当前内存池被消耗=>内存池中定义的内存块自然也消耗
 6. 在某些情况下,用户可能需要手动释放内存池中的内存块.而`Clear()`函数会释放内存池中除了第一个块之外的所有内存块,确保内存池在这之后仍然可以被使用
-7. 对齐内存边界重要性:对齐操作在计算机系统中非常重要,特别是在处理器访问内存时.处理器从内存读取数据时,通常是按块进行的,最常见的是按4字节(32位)或8字节(64位)读取.对齐的内存访问可以使得处理器只需要一次内存访问即可读取完整的数据,而不对齐的访问可能会导致处理器需要进行两次内存读取.如果数据没有对齐到合适的边界,处理器需要进行两次或更多次内存读取,将结果合并后才能得到所需的数据,这会增加延迟并降低性能
+7. <mark>对齐内存边界重要性:对齐操作在计算机系统中非常重要,特别是在处理器访问内存时.处理器从内存读取数据时,通常是按块进行的,最常见的是按4字节(32位)或8字节(64位)读取.对齐的内存访问可以使得处理器只需要一次内存访问即可读取完整的数据,而不对齐的访问可能会导致处理器需要进行两次内存读取.如果数据没有对齐到合适的边界,处理器需要进行两次或更多次内存读取,将结果合并后才能得到所需的数据,这会增加延迟并降低性能</mark>
 8. 本项目的对齐内存操作:
    ```C++
    1. 计算掩码
@@ -584,7 +584,7 @@
 11. 在本项目中一个`JSON`文档只能有一个根对象,不然会出错.在`Reader::Parse()`中,当`kParseStopWhenDoneFlag`标志位被设置时,解析器会在解析第一个完整的根对象后停止,不会继续向后检查内容.这意味着允许单一根对象解析完成后立即结束,不会报错.而`kParseStopWhenDoneFlag`标志位未被设置时(即`!(parseFlags & kParseStopWhenDoneFlag)`为`true`),解析器会在解析第一个完整根对象后继续读取剩余字符,当发现多余非空字符,即此时有多个根元素,所以解析器返回错误(假设输入`JSON`为`{ "name": "John" } { "age": 30 }`,包含两个根对象`{ "name": "John" }`和`{ "age": 30 }`:解析器首先调用`ParseValue`解析第一个对象`{ "name": "John" }`.跳过空白和注释后,`is.Peek()`读取到第二个`{`,导致 `RAPIDJSON_PARSE_ERROR_NORETURN(kParseErrorDocumentRootNotSingular, is.Tell())`被触发.错误被记录到`parseResult_`,解析提前终止)
 12. <span style="color:red;">`if (!IsIterativeParsingDelimiterState(n))`:不是分隔符状态则直接返回`true`,此时没有解析完成,若要继续解析用户可以继续执行下一次迭代解析.此时可以在解析一个`JSON`片段后就返回,如解析一个字符串就可以返回,这样为用户带来了灵活性.这种设计允许用户在迭代模式下逐步解析`JSON`,解析出一个完整的片段(如一个键、一个值、一个数组元素)后暂停解析.用户可以基于每个独立片段做一些中间处理,再继续调用 `IterativeParseNext`进行后续解析.这对于流式解析、增量解析,或处理较大的 JSON 文档时非常实用</span>
 13. `ParseValue()`是一个通用解析函数,它可以解析`null true false string object array number`,由于对象的键必须是字符串,所以直接用`ParseString()`,而没有用`ParseValue()`
-14. <mark>`RAPIDJSON_FORCEINLINE`提示编译器尽量将此函数内联化(`inline`),优化性能</mark>
+14. <mark>`RAPIDJSON_FORCEINLINE`表示强制内联,提示编译器尽可能将此函数内联化(`inline`),优化性能</mark>
 15. <mark>为什么`ParseHex4()`要`codepoint <<= 4;`?</mark>
     因为每个16进制字符表示4位,所以解析了一个字符后,需要左移4位,来为后面的16进制字符腾出位置
 16. `ParseHex4()`举个例:
@@ -692,7 +692,7 @@
 17. <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
    这样做虽然会破坏内部的顺序,但是只需要一次覆盖操作(如果整体往前移,就需要多次覆盖).这种涉及不需要频繁地移动大量数据,尤其当对象中有很多成员时,这种方法可以显著提升性能
 18. `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
-19. `C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数
+19. <span style="color:red;">`C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数</span>
    ```C++
    GenericValue& PushBack(GenericValue&& value, Allocator& allocator){
       return PushBack(value, allocator);// 这里使用了C++11的引用折叠
@@ -700,18 +700,29 @@
    // 这里的PushBack(value, allocator);调用了底层的GenericValue& PushBack(GenericValue& value, Allocator& allocator),这里使用了引用折叠,即将右值引用(&&)参数直接绑定到左值引用(&)参数上了,这不会报错
    ```
 20. `std::memmove`:`void* memmove(void* dest, const void* src, size_t count);`:将内存从`src`位置拷贝到`dest`位置,拷贝的内存大小是`count`
-21. 在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`
-22. `GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`
+21. <mark>在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`</mark>
+22. <span style="color:red;">`GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`<span>
 23. `GeneriValue`中其实就是表示一个`JSON`值(注意:这里说的`JSON`值不是指的`JSON`对象中键值对的值,而是指的所有`JSON`的可能值,如:数字、字符串、逻辑值、数字、对象、`null`的等),它可以是`JSON`数组、对象、基本类型元素等,其具体的就是操作`Data`这个共用体(即针对`Data`中不同的`JSON`值进行不同的重载函数操作)
-24. 标志位枚举类中为什么`kTypeMask=0x07`,它有什么用?
-    `kTypeMask`用于提取类型信息的掩码,通过最低3位来标识数据的基本类型,则等于`0x07`,这样就能提取中标志位的最低3位,对于标志位来说最低3位都是不用来表示`flag`的,如`kBoolFlag=0x0008,kInlineStrFlag=0x1000`,最低3位就是八进制中最后一位,都是0,因此可以直接从标志位中通过`kTypeMask`按位与就能获得类型
+24. <mark>标志位枚举类中为什么`kTypeMask=0x07`,它有什么用?</mark>
+    `kTypeMask`用于在标志中提取类型信息的掩码,通过最低3位来标识数据的基本类型(从`rapidjson.h`中的枚举类`Type`中可知,所有类型可以用3位二进制表示完,因为只有7种),则等于`0x07=0x00000111`,这样就能提取中标志位的最低3位,对于标志位来说最低3位都是不用来表示`flag`的,如`kBoolFlag=0x0008,kInlineStrFlag=0x1000`,最低3位就是八进制中最后一位,都是0,因此可以直接从标志位中通过`kTypeMask`按位与就能获得类型
 25. `Flag`结构体中`payload`用于存储与指针相关的内存数据和其它优化信息,对于不同的系统,使用了不同的填充字节,如:64位系统中`char payload[sizeof(SizeType)*2+sizeof(void*)+6];`:用了6个填充字节,这是因为`sizeof(SizeType)*2+sizeof(void*)`=16字节,而`flags`又占2字节,因此这个结构体位18字节,64位系统中内存对齐通常是8字节,此时18字节未对齐,因此填充了6个字节;32位系统也是同理的.至于为什么要用`sizeof(SizeType)*2+sizeof(void*)`:个人猜测是因为`payload`后续会被用在`ShortString`的定义中,而从`String`结构体可知,通常由两个`SizeType`+一个`char*`指针构成,因此`payload`设置成这样
-26. `ShortString`需注意:
+26. <mark>`ShortString`需注意:</mark>
     * 在字符串`Ch str[MaxChars];`中,最后一个字节存储的是该字符串长度的信息
     * `MaxChars = sizeof(static_cast<Flag*>(0)->payload)/sizeof(Ch),MaxSize = MaxChars-1,LenPos = MaxSize`和`Ch str[MaxChars];`:对于32位系统,`str`就是有13字节的有效字符的字符串;64位就对应的是21字节
     * 在`ShortString`中,我们使用的是反向方式来间接存储该字符串的长度,即`str[LenPos]`保存的不是直接的该字符串的长度,而是最大有效字节数`MaxSize`减去该字符串的长度.这样做的好处:
       - 节省存储空间:这样做就不需要单独用一个字节去表示字符串的实际长度,而是直接用`MaxSize-len`
       - 防止直接暴露长度信息:这样做隐藏了实际的字符串长度,从而为开发者带来一些"安全性" 
     * `Ch str[MaxChars];`这是直接存储在`ShortString`这个结构体里了,所以称作内联存储,因此对应的是`kInlineStrFlag`标志(`ShortString`的字符串直接存储在这个结构体内存中,而不是像`String`中:它表示的字符串的存储位置用一个指向其他内存位置的指针来表示)  
+27. `GetMapLayoutSize()`是用于计算内存布局后存储`Map`映射这种数据结构所使用的内存字节数,这里使用了对齐操作`RAPIDJSON_ALIGN()`.我们定义的内存布局为`[ Map*][SizeType][Member[capacity]][MapIterator[capacity]]`,即在内存中映射数据结构以这种方式存储在内存中,具体存储的操作是`GetMapCapacity() GetMapMembers() GetMapIterators()`三个函数实现的.对于一个`Map* maps;`,要通过该映射找成员指针`Member*=GetMapMembers(maps)`,`maps`指的是`Map`的指针,而后续`Member*`或`MapIterator*`要按照内存布局中存储的顺序往后就能找到
+28. <mark>如何能确保`GetMapMembers()`得到的`Member*`就是对应的传入的映射表中的键值对,即如何让`Member[]`数组存储的映射表的键值对?</mark>(`GetMapIterators()`同理)
+    这个过程是通过`reinterpret_cast`实现的,`reinterpret_cast<Member*>(reinterpret_cast<uintptr_t>(&map)+ RAPIDJSON_ALIGN(sizeof(Map*))+RAPIDJSON_ALIGN(sizeof(SizeType)));`.通过`reinterpret_cast<uintptr_t>(&map)+RAPIDJSON_ALIGN(sizeof(Map*))+RAPIDJSON_ALIGN(sizeof(SizeType)))`可以将映射表中每一个键值对的指针转换到对齐、偏移后的地址,即此时的地址就是每一个键值对,然后将其转换为`Member*`(`reinterpret_cast<Member*>`),则实现了此时`GetMapMembers()`得到的`Member*`就是传入的映射表的每一个键值对
+29.  `GetMapCapacity() GetMapMembers() GetMapIterators()`这三个函数共同作用,通过精确的内存偏移计算确保`Map*、SizeType、Member[]`和`MapIterator[]`在内存中的顺序.`Map*`在最前面;紧随其后的是`SizeType`,即表示容量的字段;`Member[]`紧接在`SizeType`后面;最后是`MapIterator[]`,在`Member[]`之后
+30. `GetMapMembers() GetMapIterators()`不仅确保了`Member[]`和`MapIterator[]`在内存布局中的位置,而且返回得到的`Member* MapIterator*`就是传入的`map`的键值对指针和迭代器
+31. `DropMapIterator()`明明返回的新迭代器和传入的旧迭代器是一样的,为什么要换成新的迭代器进行返回?
+   这样做可以返回一个安全的迭代器,即这个新的迭代器当前是没有被外部持有的,而传入的旧的迭代器可能在外部某个地方被持有了,我们在这个函数内就将旧的给析构了,然后重新用一个外部目前每持有的新的迭代器,就算这个迭代器和之前的旧迭代器一样也是有意义的
+32. 本项目对于`JSON`数组和`JSON`对象中的成员的扩容操作都是使"用当前容量的加倍策略来增加容量",类似于`vector`
+33. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
+34. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
+35. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
 
 

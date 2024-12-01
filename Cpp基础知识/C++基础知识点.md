@@ -1177,6 +1177,8 @@ void Swap(AnyType &a, AnyType &b);
     // 为什么auto& target加上&,target的改变就会对后续的递归有影响？
     // auto& target是一个引用,而不是一个值拷贝.这意味着你在遍历targets[result[result.size() - 1]]时,target直接引用了targets容器中实际的元素.因此,target的修改会直接反映在targets容器中,所以会影响后续递归
     ```
+27. 在函数形参中的指针的引用:`static RAPIDJSON_FORCEINLINE SizeType& GetMapCapacity(Map* &map)`:这表示的是对指向`Map`的指针的一个引用,即这个函数传递的是一个`Map*`类型指针的引用
+28. <mark>`Map*& map = GetMap(members);`:表示的是一个引用指针,即`Map*& map`是一个指向`Map`指针的引用</mark>
 # auto关键字
 1. 用于声明变量时让编译器自动推断其类型,使得代码更灵活、可读性更好
    ```C++

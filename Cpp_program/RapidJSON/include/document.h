@@ -1903,13 +1903,13 @@ namespace RAPIDJSON{
                     static RAPIDJSON_FORCEINLINE SizeType& GetMapCapacity(Map* &map) {// 指针的引用
                         return *reinterpret_cast<SizeType*>(reinterpret_cast<uintptr_t>(&map) + RAPIDJSON_ALIGN(sizeof(Map*)));
                     }
-                    // 通过映射来获取给定map的成员地址,通过此函数确保了在内存布局中:Member在Map指针内存+SizeType容量内存的后面,并且得到的Member*就是传入的map的键值对指针
+                    // 通过映射来获取给定map的成员地址,通过此函数确保了在内存布局中:Member在Map指针内存+SizeType容量内存的后面
                     static RAPIDJSON_FORCEINLINE Member* GetMapMembers(Map* &map){
                         return reinterpret_cast<Member*>(reinterpret_cast<uintptr_t>(&map) + 
                                                          RAPIDJSON_ALIGN(sizeof(Map*)) + 
                                                          RAPIDJSON_ALIGN(sizeof(SizeType)));
                     }
-                    // 通过映射来获取成员迭代器在内存中要存储的地址,通过此函数确保了在内存布局中:MapIterator在Map指针内存+SizeType容量内存+Member内存的后面,,并且得到的MapIterator*就是传入的map的键值对的迭代器
+                    // 通过映射来获取成员迭代器在内存中要存储的地址,通过此函数确保了在内存布局中:MapIterator在Map指针内存+SizeType容量内存+Member内存的后面
                     static RAPIDJSON_FORCEINLINE MapIterator* GetMapIterators(Map* &map){
                         return reinterpret_cast<MapIterator*>(reinterpret_cast<uintptr_t>(&map) + 
                                                          RAPIDJSON_ALIGN(sizeof(Map*)) + 

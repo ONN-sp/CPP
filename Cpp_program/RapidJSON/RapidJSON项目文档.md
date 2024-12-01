@@ -713,16 +713,17 @@
       - 节省存储空间:这样做就不需要单独用一个字节去表示字符串的实际长度,而是直接用`MaxSize-len`
       - 防止直接暴露长度信息:这样做隐藏了实际的字符串长度,从而为开发者带来一些"安全性" 
     * `Ch str[MaxChars];`这是直接存储在`ShortString`这个结构体里了,所以称作内联存储,因此对应的是`kInlineStrFlag`标志(`ShortString`的字符串直接存储在这个结构体内存中,而不是像`String`中:它表示的字符串的存储位置用一个指向其他内存位置的指针来表示)  
-27. `GetMapLayoutSize()`是用于计算内存布局后存储`Map`映射这种数据结构所使用的内存字节数,这里使用了对齐操作`RAPIDJSON_ALIGN()`.我们定义的内存布局为`[ Map*][SizeType][Member[capacity]][MapIterator[capacity]]`,即在内存中映射数据结构以这种方式存储在内存中,具体存储的操作是`GetMapCapacity() GetMapMembers() GetMapIterators()`三个函数实现的.对于一个`Map* maps;`,要通过该映射找成员指针`Member*=GetMapMembers(maps)`,`maps`指的是`Map`的指针,而后续`Member*`或`MapIterator*`要按照内存布局中存储的顺序往后就能找到
-28. <mark>如何能确保`GetMapMembers()`得到的`Member*`就是对应的传入的映射表中的键值对,即如何让`Member[]`数组存储的映射表的键值对?</mark>(`GetMapIterators()`同理)
-    这个过程是通过`reinterpret_cast`实现的,`reinterpret_cast<Member*>(reinterpret_cast<uintptr_t>(&map)+ RAPIDJSON_ALIGN(sizeof(Map*))+RAPIDJSON_ALIGN(sizeof(SizeType)));`.通过`reinterpret_cast<uintptr_t>(&map)+RAPIDJSON_ALIGN(sizeof(Map*))+RAPIDJSON_ALIGN(sizeof(SizeType)))`可以将映射表中每一个键值对的指针转换到对齐、偏移后的地址,即此时的地址就是每一个键值对,然后将其转换为`Member*`(`reinterpret_cast<Member*>`),则实现了此时`GetMapMembers()`得到的`Member*`就是传入的映射表的每一个键值对
-29.  `GetMapCapacity() GetMapMembers() GetMapIterators()`这三个函数共同作用,通过精确的内存偏移计算确保`Map*、SizeType、Member[]`和`MapIterator[]`在内存中的顺序.`Map*`在最前面;紧随其后的是`SizeType`,即表示容量的字段;`Member[]`紧接在`SizeType`后面;最后是`MapIterator[]`,在`Member[]`之后
-30. `GetMapMembers() GetMapIterators()`不仅确保了`Member[]`和`MapIterator[]`在内存布局中的位置,而且返回得到的`Member* MapIterator*`就是传入的`map`的键值对指针和迭代器
-31. `DropMapIterator()`明明返回的新迭代器和传入的旧迭代器是一样的,为什么要换成新的迭代器进行返回?
+27. <mark>`GetMapLayoutSize()`是用于计算内存布局后存储`Map`映射这种数据结构所使用的内存字节数,这里使用了对齐操作`RAPIDJSON_ALIGN()`.我们定义的内存布局为`[ Map*][SizeType][Member[capacity]][MapIterator[capacity]]`,即在内存中映射数据结构以这种方式存储在内存中,具体实现这样存储的操作是`GetMapCapacity() GetMapMembers() GetMapIterators()`三个函数实现的.对于一个`Map* maps;`,要通过该映射找成员指针`Member*=GetMapMembers(maps)`,`maps`指的是`Map`的指针,而后续`Member*`或`MapIterator*`要按照内存布局中存储的顺序往后就能找到</mark>
+28. 按照此内存布局,映射表、成员数组、迭代器是相关联的,即对应同一个`JSON`键值对的索引在三个地方都是一样的,即`Map* map;Member* members;MapIterator* Iterators;`中,`map->begin()(第一个键值对);memebers[0](第一个成员);Iterators[0](第一个迭代器)`都是指的第一个`JSON`键值对
+29. <mark>如何能确保`GetMapMembers()/GetMapIterators()/GetMap()`得到的`Member*/MapIterator*/Map*`就是指向的传入的映射表中的键值对,即如何让`Member[]`数组存储的映射表的键值对?</mark>
+    这个过程是通过`DoAddMember()`实现的,我们规定了内存布局,然后通过`DoAddMember()`会将给定的成员的`name`和`value`存储再`Member[]`中.同时,它还会更新映射表`map`,以及迭代器`MapIterator`.此函数通过`GetMap(members)`保证了将成员`insert`的就是内存布局中与`Member*`相关联的映射表;`GetMapIterator(map)`保证了拷贝到的迭代器就是`map`映射表在内存布局中对应的迭代器(因此,若要使用此内存布局形式的映射表、成员数组、迭代器,要先使用`DoAddMember()`初始化这个内存布局,即把成员放到该放的地方,并使映射表、成员数组、迭代器三个部分都与传入的`JSON`键值对相关联)
+30.  `GetMapCapacity() GetMapMembers() GetMapIterators()`这三个函数共同作用,通过精确的内存偏移计算确保`Map*、SizeType、Member[]`和`MapIterator[]`在内存中的顺序.`Map*`在最前面;紧随其后的是`SizeType`,即表示容量的字段;`Member[]`紧接在`SizeType`后面;最后是`MapIterator[]`,在`Member[]`之后
+31. `GetMapMembers() GetMapIterators()`不仅确保了`Member[]`和`MapIterator[]`在内存布局中的位置,而且返回得到的`Member* MapIterator*`就是传入的`map`的键值对指针和迭代器
+32. `DropMapIterator()`明明返回的新迭代器和传入的旧迭代器是一样的,为什么要换成新的迭代器进行返回?
    这样做可以返回一个安全的迭代器,即这个新的迭代器当前是没有被外部持有的,而传入的旧的迭代器可能在外部某个地方被持有了,我们在这个函数内就将旧的给析构了,然后重新用一个外部目前每持有的新的迭代器,就算这个迭代器和之前的旧迭代器一样也是有意义的
-32. 本项目对于`JSON`数组和`JSON`对象中的成员的扩容操作都是使"用当前容量的加倍策略来增加容量",类似于`vector`
-33. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
-34. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
-35. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
+33. 本项目对于`JSON`数组和`JSON`对象中的成员的扩容操作都是使"用当前容量的加倍策略来增加容量",类似于`vector`
+34. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
+35. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
+36. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
 
 

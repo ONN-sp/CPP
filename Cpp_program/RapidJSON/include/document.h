@@ -1999,7 +1999,7 @@ namespace RAPIDJSON{
                     }
                     /**
                      * @brief 清空所有成员,将Map中的成员删除,即将JSON对象的成员删除
-                     * 清空成员,没有删除成员数组
+                     * 
                      */
                     void DoClearMembers() {
                         if(Member* members = GetMembersPointer()){// 获取当前成员数组的指针
@@ -2014,7 +2014,7 @@ namespace RAPIDJSON{
                     }
                     /**
                      * @brief 释放Map和成员对象内存
-                     * 删除了删除数组,并且释放了内存
+                     * 
                      */
                     void DoFreeMembers() {
                         if(Member* members=GetMembersPointer()) {
@@ -2282,6 +2282,112 @@ namespace RAPIDJSON{
                 }
                 Data data_;// 当前GenericValue对象的值,即JSON数据的一种值(可能是对象值、数组值、字符串值等等)
     };
+    /**
+     * @brief 表示一个JSON文档,继承自GenericValue
+     * 
+     */
+    typedef GenericValue<UTF8<>> Value;// Value就表示一个JSON数据
+    template<typename Encoding, typename Allocator=RAPIDJSON_DEFAULT_ALLOCATOR, typename StackAllocator=RAPIDJSON_DEFAULT_STACK_ALLOCATOR>
+    class GenericDocument : public GenericValue<Encoding, Allocator> {
+        public:
+            typedef typename Encoding::Ch Ch;
+            typedef GenericValue<Encoding, Allocator> ValueType;
+            typedef Allocator AllocatorType;
+            typedef StackAllocator StackAllocatorType;
+            /**
+             * @brief 用来创建一个具有指定类型type的JSON文档
+             * 
+             * @param type 
+             * @param allocator 
+             * @param stackCapacity 
+             * @param stackAllocator 
+             */
+            explicit GenericDocument(Type type, Allocator* allocator=nullptr, size_t stackCapacity=kDefaultStackCapacity, StackAllocator* stackAllocator=nullptr) 
+                : GenericValue<Encoding, Allocator>(type),
+                  allocator_(allocator),// 指向内存分配器的指针,allocator为外部传入的内存分配器,如果没提供就是nullptr
+                  ownAllocator_(nullptr),// 用于管理内存的分配器,即如果没有提供外部内存分配器,就会用这个指针来管理当前JSON文档内部的内存分配器的定义和释放
+                  stack_(stackAllocator, stackCapacity),// 栈内存的分配器
+                  parseResult_()// 解析结果对象
+                {
+                    if(!allocator_)// 如果未提供外部的内存分配器,则使用RAPIDJSON_NEW在内部动态分配一个新的内存分配器,并传给ownAllocator_,allocator_.并传给ownAllocator_用于管理这个分配器用的
+                        ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
+                }
+            /**
+             * @brief 创建一个类型为Null的JSON空文档
+             * 
+             * @param allocator 
+             * @param stackCapacity 
+             * @param stackAllocator 
+             */
+            GenericDocument(Allocator* allocator=nullptr, size_t stackCapacity=kDefaultStackCapacity, StackAllocator* stackAllocator=nullptr)
+                :   allocator_(allocator),
+                    ownAllocator_(nullptr),// 用于管理内存的分配器,即如果没有提供外部内存分配器,就会用这个指针来管理当前JSON文档内部的内存分配器的定义和释放
+                    stack_(stackAllocator, stackCapacity),
+                    parseResult_()// 解析结果对象
+                {
+                    if(!allocator_)
+                        ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
+                }
+            #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                /**
+                 * @brief 移动构造函数,允许将一个GenericDocument对象的资源转移到当前GenericDocument对象中
+                 * 
+                 * @param rhs 
+                 */
+                GenericDocument(GenericDocument&& rhs) RAPIDJSON_NOEXCEPT 
+                    : ValueType(std::forward<ValueType>(rhs)),// 将rhs的数据成员通过完美转发转移到当前对象的基类ValueType中
+                      allocator_(rhs.allocator_),
+                      ownAllocator_(rhs.ownAllocator_),
+                      stack_(std::move(rhs.stack_)),
+                      parseResult_(rhs.parseResult_)
+                    {
+                        // 确保源对象rhs不再持有资源
+                        rhs.allocator_ = nullptr;
+                        rhs.ownAllocator_ = nullptr;
+                        rhs.parseResult_ = ParseResult();// 将rhs的解析结果重置为一个默认的ParseResult()对象,这样做是为了确保 rhs 不再持有任何有效的解析状态
+                    }  
+            #endif
+            /**
+             * @brief 清楚文档内容,将原来的JSON文档清空,然后再用Destroy()释放内部动态分配内存分配器的这个资源
+             * 
+             */
+            ~GenericDocument() {
+                if(ownAllocator_)
+                    ValueType::SetNull();
+                Destroy();
+            }
+            #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                /**
+                 * @brief 移动赋值运算符重载
+                 * 
+                 * @param rhs 
+                 * @return GenericDocument& 
+                 */
+                GenericDocument& operator=(GenericDocument&& rhs) RAPIDJSON_NOEXCEPT {
+                    ValueType::operator=(std::forward<ValueType>(rhs));
+                    Destroy();
+                    allocator_ = rhs.allocator_;
+                    ownAllocator_ = rhs.ownAllocator_;
+                    stack_ = std::move(rhs.stack_);
+                    parseResult_ = rhs.parseResult_;
+                    rhs.allocator_ =nullptr;
+                    rhs.ownAllocator_ = nullptr;
+                    rhs.parseResult_ = ParseResult();// 将rhs的解析结果重置为一个默认的ParseResult()对象,这样做是为了确保 rhs 不再持有任何有效的解析状态
+                    return *this;
+                }
+            #endif
+            GenericDocument& Swap(GenericDocument& rhs) RAPIDJSON_NOEXCEPT {
+                ValueType::Swap(rhs);// rhs与当前JSON文档对象的基类数据进行交换,即把rhs的data_交换到当前JSON文档的基类中的data_数据中
+                stack_.Swap(rhs.stack_);
+                internal::Swap(allocator_, rhs.allocator_);// 交换allocator_指针
+                internal::Swap(ownAllocator_, rhs.ownAllocator_);
+                internal::Swap(parseResult_, rhs.parseResult_);
+                return *this;
+            }
+            using ValueType::Swap;
+
+    };
+
     
 
 

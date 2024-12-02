@@ -725,5 +725,8 @@
 34. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
 35. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
 36. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
-
+37. `GenericDocument`中的`ownAllocator_`和`allocator_`在外部没传入内存分配器时,不就是在程序中会设为一样的吗,那么为什么还要单独用`ownAllocator_`?
+    `allocator_`是外部传入的内存分配器,表示用户在创建`GenericDocument`时提供的分配器,如果用户没有提供分配器,那么会`new`一个分配器然后赋给`allocator_`.`ownAllocator_`是用来管理内部分配器的,即若外部提供了,那么`ownAllocator_`就没用了,虽然在内部`new`分配器时,`ownAllocator_=allocator_`,但是它们两个设计的目的不同,`ownAllocator_`的存在确保了`GenericDocument`即使在没有外部分配器时,依然能够自动创建并管理一个内部分配器,以确保内存能够正确地分配和释放(从`Destory()`中的`RAPIDJSON_DELETE(ownAllocator_);`可以看出)
+38. `GenericDocument::~GenericDocument()`中的`ValueType::SetNull()`其作用是将当前`JSON`文档的内容清空,设置为`Null`,而不会说把这个`JSON`文档内存给释放,因为在`SetNull`中,其实会重新分配内存,只是此时是空的而已.`Destory()`的作用是销毁`ownAllocator_`指向的内存,即释放`ownAllocator_`指向的分配器本身的内存(因为动态`new`了一个内存分配器),而不会释放由分配器管理的内存
+39. 在派生类`GenericDocument::Swap`方法中,首先要调用基类`GenericValue`的 `Swap`方法来交换基类的成员数据(`ValueType::Swap(rhs);`).这样做是为了确保基类的数据能够正确交换,因为基类的数据是派生类对象的一部分.基类的数据交换完毕后,接下来才是交换派生类特有的成员数据.这样可以确保派生类特有的数据在基类部分已经交换之后再进行交换
 

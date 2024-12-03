@@ -729,4 +729,8 @@
     `allocator_`是外部传入的内存分配器,表示用户在创建`GenericDocument`时提供的分配器,如果用户没有提供分配器,那么会`new`一个分配器然后赋给`allocator_`.`ownAllocator_`是用来管理内部分配器的,即若外部提供了,那么`ownAllocator_`就没用了,虽然在内部`new`分配器时,`ownAllocator_=allocator_`,但是它们两个设计的目的不同,`ownAllocator_`的存在确保了`GenericDocument`即使在没有外部分配器时,依然能够自动创建并管理一个内部分配器,以确保内存能够正确地分配和释放(从`Destory()`中的`RAPIDJSON_DELETE(ownAllocator_);`可以看出)
 38. `GenericDocument::~GenericDocument()`中的`ValueType::SetNull()`其作用是将当前`JSON`文档的内容清空,设置为`Null`,而不会说把这个`JSON`文档内存给释放,因为在`SetNull`中,其实会重新分配内存,只是此时是空的而已.`Destory()`的作用是销毁`ownAllocator_`指向的内存,即释放`ownAllocator_`指向的分配器本身的内存(因为动态`new`了一个内存分配器),而不会释放由分配器管理的内存
 39. 在派生类`GenericDocument::Swap`方法中,首先要调用基类`GenericValue`的 `Swap`方法来交换基类的成员数据(`ValueType::Swap(rhs);`).这样做是为了确保基类的数据能够正确交换,因为基类的数据是派生类对象的一部分.基类的数据交换完毕后,接下来才是交换派生类特有的成员数据.这样可以确保派生类特有的数据在基类部分已经交换之后再进行交换
+40. `Populate(Generator& g)`:通过生成器填充当前`GenericDocument`对象,函数中的`g(*this)`会向当前`GenericDocument`对象发送`SAX`事件,即解析过程中触发回调事件时就会调用`GenericDocument`的`Handler`操作,然后通过这个`Handler`操作把解析的`JSON`数据保存到当前`GenericDocument`对象的`stack_`中.最后,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`调用了当前`GenericDocument`对象`stack_`栈中的赋值操作符,即从栈中弹出解析的`JSON`数据,然后将其赋值到当前`GenericDocument`对象对应的基类`GenericValue`的数据`data_`中
+41. `GenericDocument::ParseStream()`实际底层是根据不同解析标志调用`Reader::Parse`
+42. 为什么需要`operator ParseResult()`?
+    这是一个类型转换运算符,可以将一个`GenericDocument`对象直接转换为`ParseResult`类型对象.对于如果一个`GenericDocument`对象包含了相应的`ParseResult`,那么可以直接通过类型转换运算符访问解析状态.这样就不需要显式地访问`parseResult_`成员变量了
 

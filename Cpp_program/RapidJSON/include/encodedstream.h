@@ -18,7 +18,6 @@ namespace RAPIDJSON{
         public:
             typedef typedef Encoding::Ch Ch;
             EncodedInputStream(InputByteStream& is) : is_(is){
-                // 
                 current_ = Encoding::TakeBOM(is_);// 读取并处理(处理就是几次Take())可能存在的BOM
             }
             Ch Peek() const {return current_;}

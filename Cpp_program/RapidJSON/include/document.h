@@ -2364,7 +2364,7 @@ namespace RAPIDJSON{
                  * @return GenericDocument& 
                  */
                 GenericDocument& operator=(GenericDocument&& rhs) RAPIDJSON_NOEXCEPT {
-                    ValueType::operator=(std::forward<ValueType>(rhs));
+                    ValueType::operator=(std::forward<ValueType>(rhs));// 将rhs的基类数据拷贝到当前GenericDocument对象的基类数据中
                     Destroy();
                     allocator_ = rhs.allocator_;
                     ownAllocator_ = rhs.ownAllocator_;
@@ -2385,6 +2385,170 @@ namespace RAPIDJSON{
                 return *this;
             }
             using ValueType::Swap;
+            // 定义一个友元函数,使之能够访问当前GenericDocument对象的内容
+            friend inline void swap(GenericDocument& a, GenericDocument& b) RAPIDJSON_NOEXCEPT {
+                a.Swap(b);
+            }
+            /**
+             * @brief 通过生成器填充当前GenericDocument对象
+             * g(*this)会向当前GenericDocument对象发送SAX事件,即解析过程中触发回调事件时就会调用GenericDocument的Handler操作,然后通过这个Handler操作把解析的JSON数据保存到当前GenericDocument对象的stack_中
+             * @tparam Generator 
+             * @param g 
+             * @return GenericDocument& 
+             */
+            template<typename Generator>
+            GenericDocument& Populate(Generator& g) {
+                ClearStackOnExit scope(*this);// 这是一个RAII样式的对象,保证在函数退出时,栈会被清理.即保证在Populate函数结束时自动清除栈中的内容
+                if(g(*this)) {// 以当前JSON文档对象传入Generator函数,其实是使用GenericDocument对象的Handler操作
+                    RAPIDJSON_ASSERT(stack_.GetSize()==sizeof(ValueType));// 保证栈中只有一个根对象
+                    ValueType::operator=(*stack_.template Pop<ValueType>(1));// 调用栈中的赋值操作符,即从栈中弹出解析的JSON数据,然后将其赋值到当前GenericDocument对象对应的基类数据data_中
+                }
+                return *this;
+            }
+            /**
+             * @brief 从输入流中解析JSON文本,并根据指定的编码和解析标志进行解析
+             * 实际是调用Reader中的Parse()进行解析
+             * @tparam parseFlags 
+             * @tparam SourceEncoding 
+             * @tparam InputStream 
+             * @param is 
+             * @return GenericDocument& 
+             */
+            template<unsigned parseFlags, typename SourceEncoding, typename InputStream>
+            GenericDocument& ParseStream(InputStream& is) {
+                GenericReader<SourceEncoding, Encoding, StackAllocator> reader(stack_.HasAllocator() ? &stack_.GetAllocator():0);// 创建一个Reader对象,这个对象负责从流中读取并解析JSON文本
+                ClearStackOnExit scope(*this);
+                parseResult_ = reader.template Parse<parseFlags>(is, *this);// 解析输入流is的JSON文本
+                if(parseResult_) {// 解析成功
+                    RAPIDJSON_ASSERT(stack_.GetSize()==sizeof(ValueType));
+                    ValueType::operator=(*stack_.template Pop<ValueType>(1));
+                }
+                return *this;
+            }
+            /**
+             * @brief 从输入流中解析JSON文本,但只指定解析标志,不指定编码
+             * 
+             * @tparam parseFlags 
+             * @tparam InputStream 
+             * @param is 
+             * @return GenericDocument& 
+             */
+            template<unsigned parseFlags, typename InputStream>
+            GenericDocument& ParseStream(InputStream& is) {
+                return ParseStream<parseFlags, Encoding, InputStream>(is);
+            }
+            // 从输入流中解析JSON文本,不指定解析标志,不指定编码
+            template<typename InputStream>
+            GenericDocument& ParseStream(InputStream& is) {
+                return ParseStream<kParseDefaultFlags, Encoding, InputStream>(is);
+            }
+            /**
+             * @brief 原地解析字符串Ch*中的JSON字符串(即不会用栈来存储临时数据),并指定解析标志
+             * 
+             * @tparam parseFlags 
+             * @param str 
+             * @return GenericDocument& 
+             */
+            template<unsigned parseFlags>
+            GenericDocument& ParseInsitu(Ch* str) {
+                GenericInsituStringStream<Encoding> s(str);
+                return ParseStream<parseFlags | kParseInsituFlag>(s);
+            }
+            // 非原地解析Ch*,使用默认解析标志
+            GenericDocument& ParseInsitu(Ch* str) {
+                return ParseInsitu<kParseDefaultFlags>(str);
+            }
+            /**
+             * @brief 
+             * 
+             * @tparam parseFlags 
+             * @tparam SourceEncoding 
+             * @param str 
+             * @return GenericDocument& 
+             */
+            template<unsigned parseFlags, typename SourceEncoding>
+            GenericDocument& Parse(const typename SourceEncoding::Ch* str) {
+                RAPIDJSON_ASSERT(!(parseFlags&kParseInsituFlag));// 确保不包含kParseInsituFlag,因为不支持原地解析
+                GenericStringStream<SourceEncoding> s(str);// 创建字符串流
+                return ParseStream<parseFlags, SourceEncoding>(s);// 其实底层调用的ParseStream()->Reader::Parse
+            }
+            // 不指定输入流的编码,即其编码就是当前JSON文档编码类型
+            template<unsigned parseFlags>
+            GenericDocument& Parse(const Ch* str) {
+                return Parse<parseFlags, Encoding>(str);
+            }
+            /**
+             * @brief 多一个表示字符串长度的参数length的Parse()重载版本
+             * 
+             * @tparam parseFlags 
+             * @tparam SourceEncoding 
+             * @param str 
+             * @param length 
+             * @return GenericDocument& 
+             */
+            template<unsigned parseFlags, typename SourceEncoding>
+            GenericDocument& Parse(const typename SourceEncoding::Ch* str, size_t length) {
+                RAPIDJSON_ASSERT(!(parseFlags&kParseInsituFlag));// 确保不包含kParseInsituFlag,因为不支持原地解析
+                MemoryStream ms(reinterpret_cast<const char*>(str), length*sizeof(typename SourceEncoding::Ch));// 创建一个内存流作为编码流的输入字节流
+                EncodedInputStream<SourceEncoding, MemoryStream> is(ms);// 以内存流创建一个输入编码流
+                ParseStream<parseFlags, SourceEncoding>(is);
+                return *this;
+            }
+            // 不指定输入流的编码,即其编码就是当前JSON文档编码类型,指定Ch*字符串和其长度
+            template<unsigned parseFlags>
+            GenericDocument& Parse(const Ch* str, size_t length) {
+                return Parse<parseFlags, Encoding>(str, length);
+            }
+            // 默认的Parse()方法,即非模板成员函数,而是通用默认的成员函数
+            GenericDocument& Parse(const Ch* str, size_t length) {
+                return Parse<kParseDefaultFlags>(str, length);
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                // 处理C++11的std::basic_string字符串
+                template<unsigned parseFlags, typename SourceEncoding>
+                GenericDocument& Parse(const std::basic_string<typename SourceEncoding::Ch>& str) {
+                    // 调用GenericDocument& Parse(const typename SourceEncoding::Ch* str)函数
+                    return Parse<parseFlags, SourceEncoding>(str.c_str());// c_str()的复杂度是恒定的,它比Parse(const char*, size_t)更快
+                }
+                template<unsigned parseFlags>
+                GenericDocument& Parse(const std::basic_string<Ch>& str) {
+                    return Parse<parseFlags, Encoding>(str.c_str());
+                }
+                GenericDocument& Parse(const std::basic_string<Ch>& str) {
+                    return Parse<kParseDefaultFlags>(str);
+                }
+            #endif
+            // 检查parseResult_是否表示错误,即检查解析是否有错
+            bool HasParseError() const {
+                return parseResult_.IsError();
+            }
+            // 获取解析的错误信息,即从parseResult_中获得错误类型,通过错误编码结构体ParseErrorCode可看出具体错误类型
+            ParseErrorCode GetParseError() const {
+                return parseResult_.Code();
+            }
+            // 返回解析错误的偏移量
+            size_t GetErrorOffset() const {
+                return parseResult_.Offset();
+            }
+            /**
+             * @brief 利用operator实现类型转换操作.operator type()即把GenericDocument对象转换为ParseResult类型对象
+             * GenericDocument doc;
+             * ParseResult result = doc;// 可以直接转换
+             * @return ParseResult 
+             */
+            operator ParseResult() const {
+                return parseResult_;
+            }
+            // 获取分配器,这个分配器可能是外部传入的,也可能是内部动态分配的
+            Allocator& GetAllocator() {
+                RAPIDJSON_ASSERT(allocator_);
+                return *allocator_;
+            }
+            // 返回当前JSON文档栈的容量
+            size_t GetStackCapacity() const {
+                return stack_.GetCapacity();
+            }
+
 
     };
 

@@ -733,4 +733,9 @@
 41. `GenericDocument::ParseStream()`实际底层是根据不同解析标志调用`Reader::Parse`
 42. 为什么需要`operator ParseResult()`?
     这是一个类型转换运算符,可以将一个`GenericDocument`对象直接转换为`ParseResult`类型对象.对于如果一个`GenericDocument`对象包含了相应的`ParseResult`,那么可以直接通过类型转换运算符访问解析状态.这样就不需要显式地访问`parseResult_`成员变量了
-
+43. 利用`GenericDocument`的`Parse`会将当前`GenericDocument`对象作为调用底层`Reader::Parse()`时的`Handler`进行传入,然后在解析过程中,会回调`GenericDocument`实现的`Handler`的`API`,如`Key() EndObject()`等.从实现的`API`函数可知,用`GenericDocument`作为`Handler`,会把解析的`JSON`数据先存储在当前`GenericDocument`对象的`stack_`中,然后再通过`SetObjectRaw() SetArrayRaw()`传到当前这个`GenericValue`对象中,重新组织成了一个完整的`JSON`对象或数组
+44. <span style="color:red;">`ValueType::operator=(*stack_.template Pop<ValueType>(1));`:这一句程序是实现`GenericDocument`将解析后的`JSON`数据存储在当前`GenericDocument`对象中的关键,因为`GenericDocument::Parse()`会在解析过程先用`stack_`暂存`JSON`解析过程中产生的`JSON`数据,最终解析到`EndObject() EndArray()`时,将栈中的数据构建成完整的对象或数组(栈中逐渐构成了一个树状结构`DOM`树),然后通过`SetObjectRaw()`或`SetArrayRaw()`将它们关联到当前的对象或数组(这个当前对象和当前数值位于`stack_`此时的栈顶).因此,利用`GenericDocument`解析得到的最终`JSON`结果会存储在`stack_`的栈顶,这个栈顶元素就是最终的解析结果,代表整个`JSON`文档(它可能是一个对象或者数组,内部也嵌套了很多对象或数组).那么,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`就实现了在解析成功时,将存储在栈顶的`JSON`结果,赋值到当前这个`GenericDocument`对象(由于`GenericDocument`继承自`GenericValue`,它的内部成员`data_`会持有`JSON`解析后的数据),即当前`GenericDocument`对象也是一个存储了`JSON`解析结果的`DOM`树</span>
+45. `ValueType::operator=(*stack_.template Pop<ValueType>(1));`这是一个成员函数的调用,即等价于`ValueType temp = *stack_.template Pop<ValueType>(1);this->operator=(temp);`.而重载的赋值运算符也可以写作`A=B`的形式,即`*this = *stack_.template Pop<ValueType>(1);`
+46. `stack_.ShrinkToFit();`:确保栈在`Empty()`后会调整其内部的内存分配,以释放未使用的空间,即释放`stack_`这个栈数据结构占据的内存
+47. 为什么`GenericDocument::StartObject()`和`Reader::StartObject()`为什么和`Writer::StartObject()`不同,`Writer::StartObject()`需要写入一个`{`,而其余两种不用,为什么?
+    主要原因是`GenericDocument::StartObject()`和`Reader::StartObject()`并没有涉及实际的输出操作,它只是在解析`JSON`字符串时创建的一个新的对象并将相应解析出的数据进行`Handler`操作(如推入`stack_`中);而`Writer::StartObject()`是用于生成`JSON`字符串并写入传入的`JSON`数据,所以要输出`{`

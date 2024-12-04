@@ -1787,6 +1787,24 @@ void Swap(AnyType &a, AnyType &b);
         std::cout << v << std::endl;
     }
     ```
+6. <mark>在`C++`中,对于模板成员函数,你必须在调用时指定模板参数,并且需要使用尖括号 `<>`来明确指定模板参数类型.即使在类外定义模板成员函数时,也需要使用尖括号.对于普通的非成员模板函数,调用时通常可以省略尖括号.编译器会自动推断出模板参数类型,除非你想显式指定模板参数:</mark>
+    ```C++
+    1. 模板成员函数
+    template <typename T>
+    class MyClass {
+    public:
+        void func() {}
+        template <typename U>
+        void templateFunc(U u) {}
+    };
+    MyClass<int> obj;
+    obj.template templateFunc<double>(3.14);// 需要尖括号
+    2. 非成员模板函数
+    template <typename T>
+    void func(T t) { }
+    func(42);  // 编译器会推断出 T = int
+    func(3.14); // 编译器会推断出 T = double
+    ```
 # 模板特化
 1. 模板特化是`C++`中模板的一个强大功能,允许为特定类型或特定参数值定制模板的实现(如:当前模板对于类型为`int`时它会特殊实现,而不都是通用实现).通过模板特化,开发者可以在处理某些特定类型或参数时提供特殊的实现,而其他情况下则使用通用模板.模板特化分为两类:完全特化和部分特化
 2. 函数模板、结构体模板、类模板都有模板特化

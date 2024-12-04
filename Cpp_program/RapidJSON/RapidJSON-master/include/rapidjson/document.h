@@ -2378,7 +2378,6 @@ private:
     template <typename SourceAllocator>
     void DoCopyMembers(const GenericValue<Encoding,SourceAllocator>& rhs, Allocator& allocator, bool copyConstStrings) {
         RAPIDJSON_ASSERT(rhs.GetType() == kObjectType);
-
         data_.f.flags = kObjectFlag;
         SizeType count = rhs.data_.o.size;
         Member* lm = DoAllocMembers(count, allocator);

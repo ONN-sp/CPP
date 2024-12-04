@@ -2418,10 +2418,10 @@ namespace RAPIDJSON{
             GenericDocument& ParseStream(InputStream& is) {
                 GenericReader<SourceEncoding, Encoding, StackAllocator> reader(stack_.HasAllocator() ? &stack_.GetAllocator():0);// 创建一个Reader对象,这个对象负责从流中读取并解析JSON文本
                 ClearStackOnExit scope(*this);
-                parseResult_ = reader.template Parse<parseFlags>(is, *this);// 解析输入流is的JSON文本
+                parseResult_ = reader.template Parse<parseFlags>(is, *this);// 解析输入流is的JSON文本,将当前GenericDocument对象作为Reader::Parse()的Handler传入,即会调用GenericDocument中实现的handler API接口
                 if(parseResult_) {// 解析成功
                     RAPIDJSON_ASSERT(stack_.GetSize()==sizeof(ValueType));
-                    ValueType::operator=(*stack_.template Pop<ValueType>(1));
+                    ValueType::operator=(*stack_.template Pop<ValueType>(1));// !!! 十分关键
                 }
                 return *this;
             }
@@ -2548,6 +2548,113 @@ namespace RAPIDJSON{
             size_t GetStackCapacity() const {
                 return stack_.GetCapacity();
             }
+        private:
+            // 确保在GenericDocument对象析构时,栈被清空
+            struct ClearStackOnExit {
+                explicit ClearStackOnExit(GenericDocument& d) 
+                    : d_(d)
+                {}
+                ~ClearStackOnExit() {
+                    d_.ClearStack();// 清空栈
+                }
+                private:
+                    ClearStackOnExit(const ClearStackOnExit&) = delete;
+                    ClearStackOnExit& operator=(const ClearStackOnExit&) = delete;
+                    GenericDocument& d_;
+            };
+            template<typename, typename>
+            friend class GenericValue;// 声明GenericValue为当前GenericDocument的友元类
+        public:
+            // 以下是GenericDocument对象的Handler的具体API实现
+            bool Null() {
+                new (stack_.template Push<ValueType>()) ValueType();
+                return true;
+            }
+            bool Bool(bool b) {
+                new (stack_.template Push<ValueType>()) ValueType(b);
+                return true;
+            }
+            bool Int(int i) {
+                new (stack_.template Push<ValueType>()) ValueType(i);
+                return true;
+            }
+            bool Uint(unsigned u) {
+                new (stack_.template Push<ValueType>()) ValueType(u);
+                return true;
+            }
+            bool Int64(int64_t i64) { 
+                new (stack_.template Push<ValueType>()) ValueType(i64); 
+                return true; 
+            }
+            bool Uint64(uint64_t u64) { 
+                new (stack_.template Push<ValueType>()) ValueType(u64); 
+                return true; 
+            }
+            bool Double(double d) { 
+                new (stack_.template Push<ValueType>()) ValueType(d); 
+                return true; 
+            }
+            bool RawNumber(const Ch* str, SizeType length, bool copy) {
+                if(copy)
+                    new (stack_.template Push<ValueType>()) ValueType(str, length, GetAllocator());
+                else
+                    new (stack_.template Push<ValueType>()) ValueType(str, length);  
+                return true;   
+            }
+            bool String(const Ch* str, SizeType length, bool copy) {
+                if(copy)
+                    new (stack_.template Push<ValueType>()) ValueType(str, length, GetAllocator());
+                else
+                    new (stack_.template Push<ValueType>()) ValueType(str, length);  
+                return true;   
+            }
+            bool StartObject() {
+                new (stack_.template Push<ValueType>()) ValueType(kObjectType);// 开始解析一个JSON对象,创建一个kObjectType类型的GenericValue并推入栈中
+                return true;
+            }
+            bool Key(const Ch* str, SizeType length, bool copy) {
+                RAPIDJSON_ASSERT(IsString(str));
+                return String(str, length, copy);
+            }
+            bool EndObject(SizeType memberCount) {
+                typename ValueType::Member* members = stack_.template Pop<typename ValueType::Member>(memberCount);// 从栈中弹出memberCount个成员
+                stack_.template Top<ValueType>()->SetObjectRaw(members, memberCount, GetAllocator());// 通过SetObjectRaw将其关联到当前的GenericValue对象(即此时的栈顶对象)
+                return true;
+            }
+            bool StartArray() {
+                new (stack_.template Push<ValueType>()) ValueType(kArrayType);// 开始解析一个JSON数组,创建一个kArrayType类型的GenericValue并推入栈中
+                return true;
+            }
+            bool EndArray(SizeType elementCount) {
+                ValueType* elements = stack_.template Pop<ValueType>(elementCount);// 从栈中弹出memberCount个数组元素
+                stack_.template Top<ValueType>()->SetArrayRaw(elements, elementCount, GetAllocator());// 通过SetArrayRaw将其关联到当前的GenericValue对象(即此时的栈顶对象)
+                return true;
+            }
+        private:
+            GenericDocument(const GenericDocument&) = delete;
+            GenericDocument& operator=(const GenericDocument&) = delete;
+            // 清空当前GenericDocument对象的stack_,并释放栈中元素的内存
+            // 清空Clear:指将栈内的元素移除,但栈这个内存空间没有释放
+            // 释放内存Free:指完全清除对象占用的内存,即栈中的分配的每个内存都会被释放,这里还没有把stack_这个栈数据结构的内存释放
+            void ClearStack() {
+                if(Allocator::kNeedFree)
+                    while(stack_.GetSize()>0)
+                        (stack_.template Pop<ValueType>(1))->~ValueType();
+                else
+                    stack_.Clear();
+                stack_.ShrinkToFit();// 确保栈在Empty()后会调整其内部的内存分配,以释放未使用的空间,即释放stack_这个栈数据结构占据的内存
+            }
+            // 通过ownAllocator_释放内部动态分配的内存分配器
+            void Destroy() {
+                RAPIDJSON_DELETE(ownAllocator_);
+            }
+            static const size_t kDefaultStackCapacity = 1024;
+            Allocator* allocator_;// 若外部传入了分配器,那么指向外部传入的内存分配器;否则,指向内部定义的分配器
+            Allocator* ownAllocator_;// 指向GenericDocument对象内部动态分配的内存分配器
+            internal::Stack<StackAllocator> stack_;// 当前GenericDocument对象的栈
+            ParseResult parseResult_;// 解析过程中的解析结果
+
+
 
 
     };

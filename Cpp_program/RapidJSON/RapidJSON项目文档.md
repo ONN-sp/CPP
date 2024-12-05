@@ -739,3 +739,11 @@
 46. `stack_.ShrinkToFit();`:确保栈在`Empty()`后会调整其内部的内存分配,以释放未使用的空间,即释放`stack_`这个栈数据结构占据的内存
 47. 为什么`GenericDocument::StartObject()`和`Reader::StartObject()`为什么和`Writer::StartObject()`不同,`Writer::StartObject()`需要写入一个`{`,而其余两种不用,为什么?
     主要原因是`GenericDocument::StartObject()`和`Reader::StartObject()`并没有涉及实际的输出操作,它只是在解析`JSON`字符串时创建的一个新的对象并将相应解析出的数据进行`Handler`操作(如推入`stack_`中);而`Writer::StartObject()`是用于生成`JSON`字符串并写入传入的`JSON`数据,所以要输出`{`
+48. <mark>`GenericArray::PushBack()`会直接调用`GenericValue::PushBack()`,那定义一个`GenericArray`对象怎么保证其中的`value_`一定是`kArrayFlag`,明明在`GenericArray`构造函数中没有定义`value_`的`data_.flags`啊?</mark>
+   因为在使用`GenericArray`时不是直接定义这个容器对象的,而是通过使用`GenericValue::SetArray()`或`GenericValue::GetArray()`来得到一个`GenericArray`对象的,这样就能保证`kArrayFlag`,如`Document d1;d1.SetArray().PushBack(1, a).PushBack(2, a);`和`Value z;z.SetArray();`
+49. <mark>`GenericArray`其实就是定义的一个容器,然后把`GenericValue`中对于`flags =kArrayFlag`的相应方法封装到`GenericArray`这个容器中,即专门定义了一个处理`JSON`数组的容器类.`value_`就是有着`kArrayFlag`设置的一个`GenericValue`对象,所以`GenericArray`表示的是`JSON`数组</mark>
+50. `JSON`对象添加成员和`JSON`数组添加元素不一样,`JSON`数组添加/移除元素是像`vector`容器一样用`PushBack/PopBack`,而`JSON`对象是用`AddMember/RemoveMember
+51. `GenericObject`和`GenericArray`实现的目的一样,设计的过程基本也一样
+52. <mark>既然引用类型必须在定义时就要初始化,即绑定到一个已经存在的对象中,那么为什么在`GenericArray/GenericObject`中可以直接`ValueType& value_;`?</mark>
+    引用类型定义时必须初始化,对于`GenericArray/GenericObject`,因为这两个类的构造函数都会对`value_`进行初始化,所以定义和初始化其实是一起的,不是分离的,所以这是可行的
+

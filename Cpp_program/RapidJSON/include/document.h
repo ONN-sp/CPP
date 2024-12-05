@@ -1278,7 +1278,7 @@ namespace RAPIDJSON{
                     return ConstObject(*this);
                 }
                 /**
-                 * @brief 将当前对象设置为JSON对象
+                 * @brief 将当前对象设置为JSON数组
                  * 
                  * @return GenericValue& 
                  */
@@ -2653,17 +2653,266 @@ namespace RAPIDJSON{
             Allocator* ownAllocator_;// 指向GenericDocument对象内部动态分配的内存分配器
             internal::Stack<StackAllocator> stack_;// 当前GenericDocument对象的栈
             ParseResult parseResult_;// 解析过程中的解析结果
-
-
-
-
     };
-
-    
-
-
-
-
+    typedef GenericDocument<UTF8<>> Document;
+    /**
+     * @brief 定义一个泛型容器类GenericArray,封装了ValueT(一般就是GenericValue)类型的数组操作,提供了常用的数组操作接口
+     * value_就是一个数组元素,即一个GenericValue对象
+     * GenericArray类的实例可以通过GenericValue::GetArray()获得
+     * 
+     * @tparam Const 
+     * @tparam ValueT 通常就是GenericValue
+     */
+    template<bool Const, typename ValueT>
+    class GenericArray {
+        public:
+            typedef GenericArray<true, ValueT> ConstArray;// 常量版本
+            typedef GenericArray<true, ValueT> Array;// 非常量版本
+            typedef ValueT PlainType;// 
+            typedef typename internal::MaybeAddConst<Const, PlainType>::Type ValueType;
+            typedef ValueType* ValueIterator;// 非常量迭代器
+            typedef const ValueT* ConstValueIterator;// 常量迭代器
+            typedef typename ValueType::AllocatorType AllocatorType;
+            typedef typename ValueType::StringRefType StringRefType;
+            template<typename, typename>
+            friend class GenericValue;// 允许GenericValue类访问GenericArray的私有成员
+            GenericArray(const GenericArray& rhs)
+                : value_(rhs.value_)// value_就是当前JSON数组(其实就是一个GenericValue对象,只是表示的是JSON数组,然后我们将这个JSON数组单独用GenericArray表示)
+            {}
+            // 拷贝赋值运算符
+            GenericArray& operator=(const GenericArray& rhs) {
+                value_ = rhs.value_;
+            }
+            ~GenericArray() {}
+            // operator类型转换
+            operator ValueType&() const {return value_;}// operator的类型转换用法,将GenericArray->ValueType
+            // 常用成员函数
+            SizeType Size() const {return value_.size_();}
+            SizeType Capacity() const {return value_.Capacity();}
+            bool Empty() const {return value_.Empty();}
+            void Clear() const {value_.Clear();}
+            ValueType& operator[](SizeType index) const {return value_[index];}
+            // 迭代器函数
+            ValueIterator Begin() const {return value_.Begin();} 
+            ValueIterator End() const {return value_.End();}
+            // 常见的数组操作 push_back()   pop_back()  Erase()
+            GenericArray Reserve(SizeType newCapacity, AllocatorType& allocator) const {
+                value_.Reserve(newCapacity, allocator);
+                return*this;
+            }
+            GenericArray PushBack(ValueType& value, AllocatorType& allocator) const {
+                value_.PushBack(value, allocator);
+                return *this;
+            }
+            GenericArray PushBack(StringRefType value, AllocatorType& allocator) const {
+                value_.PushBack(value, allocator);
+                return *this;
+            }
+            #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                GenericArray PushBack(ValueType&& value, Allocator& allocator) const {
+                    value_.PushBack(value, allocator);
+                    return *this;
+                }
+            #endif
+            template<typename T> 
+            RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (const GenericArray&)) PushBack(T value, Allocator& allocator) const {
+                value_.PushBack(value, allocator);
+                return *this;
+            }
+            GenericArray PopBack() const {
+                value_.PopBack();
+                return *this;
+            }
+            ValueIterator Erase(ConstValueIterator pos) const {
+                return value_.Erase(pos);
+            }
+            ValueIterator Erase(ConstValueIterator first, ConstValueIterator last) const {
+                return value_.Erase(first, last);
+            }
+            // 支持C++11的for-range循环,适用于任何支持begin()和end()的范围表达式  for(a:container)  
+            #if RAPIDJSON_HAX_CXX11_RANGE_FOR
+                // 要实现C++11的for-range就必须支持begin()和end()
+                ValueIterator begin() const {
+                    return value_.Begin();
+                }
+                ValueIterator end() const {
+                    return value_.End();
+                }
+            #endif
+        private:
+            GenericArray();
+            GenericArray(ValueType& value) : value_(value) {}
+            ValueType& value_;// 表示JSON数组的GenericValue对象,即是一个flags=kArrayFlag的GenericValue对象
+    };
+    template<bool Const, typename ValueT>
+    class GenericObject {
+        public:
+            typedef GenericObject<true, ValueT> ConstObject;// 常量版本
+            typedef GenericObject<false, ValueT> Object;// 非常量版本
+            typedef ValueT PlainType;
+            typedef typename internal::MaybeAddConst<Const, PlainType>::Type ValueType;
+            typedef GenericMemberIterator<Const, typename ValueT::EncodingType, typename ValueT::AllocatorType> MemberIterator;// 非常量成员迭代器
+            typedef GenericMemberIterator<true, typename ValueT::EncodingType, typename ValueT::AllocatorType> ConstMemberIterator;// 常量成员迭代器
+            typedef typename ValueType::AllocatorType AllocatorType;
+            typedef typename ValueType::StringRefType StringRefType;
+            typedef typename ValueType::EncodingType EncodingType;
+            typedef typename ValueType::Ch Ch;
+            template<typename, typename>
+            friend class GenericValue;// 允许GenericValue类访问GenericArray的私有成员
+            GenericObject(const GenericObject& rhs)
+                : value_(rhs.value_)// value_就是当前JSON对象(其实就是一个GenericValue对象,只是表示的是JSON对象,然后我们将这个JSON对象单独用GenericObject表示)
+            {}
+            // 拷贝赋值运算符
+            GenericObject& operator=(const GenericObject& rhs) {
+                value_ = rhs.value_;
+            }
+            ~GenericObject() {}
+            // operator类型转换
+            operator ValueType&() const {return value_;}// operator的类型转换用法,将GenericArray->ValueType
+            // 常用成员函数
+            SizeType MemberCount() const {
+                return value_.MemberCount();
+            }
+            SizeType MemberCapacity() const {
+                return value_.MemberCapacity();
+            }
+            bool ObjectEmpty() const {
+                return value_.ObjectEmpty();
+            }
+            template<typename T>
+            ValueType& operator[](T* name) const {
+                return value_[name];
+            }
+            template<typename SourceAllocator>
+            ValueType& operator[](const GenericValue<EncodingType, SourceAllocator>& name) const {
+                return value_[name];
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                ValueType& operator[](const std::basic_string<Ch>& name) const {
+                    return value_[name];
+                }
+            #endif
+            // 迭代器函数
+            MemberIterator MemberBegin() const {
+                return value_.MemberBegin();
+            }
+            MemberIterator MemberEnd() const {
+                return value_.MemberEnd();
+            }
+            // 常见的数组操作 AddMember()   FindMember()  RemoveMember()
+            GenericObject MemberReserve(SizeType newCapacity, AllocatorType& allocator) const {
+                value_.MemberReserve(newCapacity, allocator);
+                return *this;
+            }
+            bool HasMember(const Ch* name) const {
+                return value_.HasMember(name);
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                bool HasMember(const std::basic_string<Ch>& name) const {
+                    return value_.HasMember(name);
+                }
+            #endif
+            template<typename SourceAllocator> 
+            bool HasMember(const GenericValue<EncodingType, SourceAllocator>& name) const {
+                return value_.HasMember(name);
+            }
+            MemberIterator FindMember(const Ch* name) const {
+                return value_.FindMember(name);
+            }
+            template<typename SourceAllocator>
+            MemberIterator FindMember(const GenericValue<EncodingType, SourceAllocator>& name) const {
+                return value_.FindMember(name);
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                MemberIterator FindMember(const std::basic_string<Ch>& name) const {
+                    return value_.FindMember(name);
+                }
+            #endif
+            GenericObject AddMember(ValueType& name, ValueType& value, Allocator& allocator) const {
+                value_.AddMember(name, value, allocator);
+                return *this;
+            }
+            GenericObject AddMember(ValueType& name, StringRefType value, Allocator& allocator) const {
+                value_.AddMember(name, value, allocator);
+                return *this;
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                GenericObject AddMember(ValueType& name, std::basic_string<Ch>& value, AllocatorType& allocator) const {
+                    value_.AddMember(name, value, allocator);
+                    return *this;
+                }
+            #endif
+            template <typename T> RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T> >), (ValueType&)) AddMember(ValueType& name, T value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
+            #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
+                GenericObject AddMember(ValueType&& name, ValueType&& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
+                GenericObject AddMember(ValueType&& name, ValueType& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
+                GenericObject AddMember(ValueType& name, ValueType&& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
+                GenericObject AddMember(StringRefType name, ValueType&& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
+            #endif // RAPIDJSON_HAS_CXX11_RVALUE_REFS
+            GenericObject AddMember(StringRefType name, ValueType& value, Allocator& allocator) const {
+                value_.AddMember(name, value, allocator);
+                return *this;
+            }
+            GenericObject AddMember(StringRefType name, StringRefType value, Allocator& allocator) const {
+                value_.AddMember(name, value, allocator);
+                return *this;
+            }
+            template<typename T>
+            RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (GenericObject)) AddMember(StringRefType name, T value, AllocatorType& allocator) const {
+                value_.AddMember(name, value, allocator);
+                return *this;
+            }
+            void RemoveAllMembers() {
+                value_.RemoveAllMembers();
+            }
+            bool RemoveMember(const Ch* name) const {
+                return value_.RemoveMember(name);
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                bool RemoveMember(const std::basic_string<Ch>& name) const {
+                    return value_.RemoveMember(name);
+                }
+            #endif
+            template<typename SourceAllocator>
+            bool RemoveMember(const GenericValue<EncodingType, SourceAllocator>& name) const {
+                return value_.RemoveMember(name);
+            }
+            MemberIterator RemoveMember(MemberIterator m) const {
+                return value_RemoveMember(m);
+            }
+            MemberIterator EraseMember(ConstMemberIterator pos) const {
+                return value_.EraseMember(pos);
+            }
+            MemberIterator EraseMember(ConstMemberIterator first, ConstMemberIterator last) const {
+                return value_.EraseMember(first, last);
+            } 
+            bool EraseMember(const Ch* name) const {
+                return value_.EraseMember(name);
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                bool EraseMember(const std::basic_string<Ch>& name) const {
+                    return value_.EraseMember(name);
+                }
+            #endif
+            template<typename SourceAllocator>
+            bool EraseMember(const GenericValue<EncodingType, SourceAllocator>& name) const {
+                return value_.EraseMember(name);
+            }
+            // 支持C++11的for-range循环,适用于任何支持begin()和end()的范围表达式  for(a:container)  
+            #if RAPIDJSON_HAS_CXX11_RANGE_FOR
+                // 要实现C++11的for-range就必须支持begin()和end()
+                MemberIterator begin() const {
+                    return value_.MemberBegin();
+                }
+                MemberIterator end() const {
+                    return value_.MemberEnd();
+                }
+            #endif
+        private:
+            GenericObject();
+            GenericObject(ValueType& value) : value_(value) {}
+            ValueType& value_;// 表示JSON对象的GenericValue对象,即是一个flags=kObjectFlag的GenericValue对象
+    };
 }
 
 #endif

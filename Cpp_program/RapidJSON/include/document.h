@@ -50,12 +50,12 @@ namespace RAPIDJSON{
     template<typename Encoding, typename Allocator>
     class GenericMember{
         public:
-            GenericValue<Encoding, Allocator> key;// 键
+            GenericValue<Encoding, Allocator> name;// 键
             GenericValue<Encoding, Allocator> value;// 值
             #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
             // 移动构造函数
             GenericMember(GenericMember&& rhs) RAPIDJSON_NOEXCEPT
-                : key(std::move(rhs.key)),
+                : name(std::move(rhs.name)),
                   value(std::move(rhs.value))
                 {}
             // 移动复制操作(对象整体)
@@ -66,7 +66,7 @@ namespace RAPIDJSON{
             // 移动语义的赋值操作(成员赋值)
             GenericMember& operator=(GenericMember& rhs) RAPIDJSON_NOEXCEPT{
                 if(RAPIDJSON_LIKELY(this!=&rhs)){
-                    key = rhs.key;
+                    name = rhs.name;
                     value = rhs.value;
                 }
                 return *this;
@@ -125,10 +125,10 @@ namespace RAPIDJSON{
             }
             // 重载+、-、+=、-=运算符
             Iterator operator+(DifferenceType n) const {
-                return Iterator(pyr_+n);
+                return Iterator(ptr_+n);
             }
             Iterator operator-(DifferenceType n) const {
-                return Iterator(pyr_-n);
+                return Iterator(ptr_-n);
             }
             Iterator& operator+=(DifferenceType n){
                 ptr_ += n;
@@ -219,6 +219,8 @@ namespace RAPIDJSON{
             GenericStringRef(CharType (&str)[N]) = delete;
             GenericStringRef& operator=(const GenericStringRef& rhs) = delete;
     };
+    template<typename CharType>
+    const CharType GenericStringRef<CharType>::emptyString[] = { CharType() };
     /**
      * @brief 提供一个简单的函数用于将普通字符指针包装为GenericStringRef对象,其实就是GenericStringRef类的上层封装
      * 
@@ -525,13 +527,13 @@ namespace RAPIDJSON{
                 // 布尔类型的JSON值构建
                 #ifndef RAPIDJSON_DOXYGEN_RUNNING
                     template<typename T>// 确保T必须是bool类型
-                    explicit GenericValue(T b, RAPIDJSON_ENABLEIF((internal::IsSame<bool, T>>))) RAPIDJSON_NOEXCEPT
+                    explicit GenericValue(T b, RAPIDJSON_ENABLEIF((internal::IsSame<bool, T>))) RAPIDJSON_NOEXCEPT
                 #else
                     explicit GenericValue(bool b) RAPIDJSON_NOEXCEPT
                 #endif
                         : data_(){
                             RAPIDJSON_STATIC_ASSERT((internal::IsSame<bool, T>::Value));
-                            data_.f.flags = b ? kTrueType :: kFalseType;
+                            data_.f.flags = b ? kTrueFlag : kFalseFlag;
                         }
                 // int类型的JSON值对象构造
                 explicit GenericValue(int i) RAPIDJSON_NOEXCEPT : data_() {
@@ -541,16 +543,16 @@ namespace RAPIDJSON{
                 // uint无符号类型的JSON值对象构造
                 explicit GenericValue(unsigned u) RAPIDJSON_NOEXCEPT : data_() {
                     data_.n.u64 = u;
-                    data.f.flags = (u&0x80000000) ? kNumberUintFlag : (kNumberUintFlag|kIntFlag|kInt64Flag);// (u&0x80000000)取的是u的最高位,若最高位为1那么只设置kNumberUintFlag标志(因为此时的u就超过了int可以表示的正数范围,即此时u不能用int表示了);若最高位为0,则此时u可以视为int来处理(因为int包括了此时u的范围),那么此时可以被视为无符号整数标志、带符号整数标志或int标志
+                    data_.f.flags = (u&0x80000000) ? kNumberUintFlag : (kNumberUintFlag|kIntFlag|kInt64Flag);// (u&0x80000000)取的是u的最高位,若最高位为1那么只设置kNumberUintFlag标志(因为此时的u就超过了int可以表示的正数范围,即此时u不能用int表示了);若最高位为0,则此时u可以视为int来处理(因为int包括了此时u的范围),那么此时可以被视为无符号整数标志、带符号整数标志或int标志
                 }
                 // int64_t类型的JSON值对象构造
-                explicit GenericValue(int64_t i64) RAPIDJSON_NOEXCEPT data_(){
+                explicit GenericValue(int64_t i64) RAPIDJSON_NOEXCEPT : data_(){
                     data_.n.i64 = i64;
                     data_.f.flags = kNumberInt64Flag;// 设置64位整数标记
                     if(i64>=0){// 非负的64位整数,此时int64可以视为uint64来处理
-                        data.f.flags |= kNumberUint64Flag;// 设置无符号uint64_t标记
+                        data_.f.flags |= kNumberUint64Flag;// 设置无符号uint64_t标记
                         if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x00000000)))// 查看i64的高32位是否为0,若为0则i64在uint32范围内
-                            data.f.flags |= kUintFlag;// 设置为uint无符号
+                            data_.f.flags |= kUintFlag;// 设置为uint无符号
                         if(!(static_cast<uint64_t>(i64)&RAPIDJSON_UINT64_C2(0xFFFFFFFF, 0x80000000)))// 查看i64的高32位和低32位,高32位=0,低32位的第一位=0,此时在int32有符号范围内
                             data_.f.flags |= kIntFlag;// 设置为int有符号
                     }
@@ -559,7 +561,7 @@ namespace RAPIDJSON{
                 }
                 // uint64_t类型的JSON值对象构造
                 explicit GenericValue(uint64_t u64) RAPIDJSON_NOEXCEPT : data_(){
-                    data.n.u64 = u64;
+                    data_.n.u64 = u64;
                     data_.f.flags = kNumberUint64Flag;// 设置为64位无符号整数标记
                     if(!(u64&RAPIDJSON_UINT64_C2(0x80000000, 0x00000000)))// u64高位为0,此时的uint64可以视为int64来处理
                         data_.f.flags |= kInt64Flag;
@@ -575,7 +577,7 @@ namespace RAPIDJSON{
                 }
                 // float类型的JSON值对象构造
                 explicit GenericValue(float f) RAPIDJSON_NOEXCEPT : data_() {
-                    data_.n.d = static_cast<double>(f>;
+                    data_.n.d = static_cast<double>(f);
                     data_.f.flags = kNumberDoubleFlag;
                 }
                 // 常量字符串const Ch*的JSON值对象构造
@@ -606,7 +608,7 @@ namespace RAPIDJSON{
                     a.value_.data_.f.flags = kArrayFlag;
                 }
                 // 将一个Object类型的对象转换位GenericValue对象
-                GenericValue(Object o) RAPIDJSON_NOEXCEPT : data_(o.value_.data_)P{
+                GenericValue(Object o) RAPIDJSON_NOEXCEPT : data_(o.value_.data_) {
                     o.value_.data_ = Data();// 清空Object对象的内部数据
                     o.value_.data_.f.flags = kObjectFlag;
                 }
@@ -746,7 +748,7 @@ namespace RAPIDJSON{
                     // 定义对称的==运算符,即用于任意类型T的值在左边,需要比较是否相等的GenericValue对象在右边  注意这个==重载不是对于当前对象的比较
                     template<typename T> friend RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator==(const T& lhs, const GenericValue& rhs) {return rhs==lhs;}
                     // 定义对称的!=运算符,即用于任意类型T的值在左边,需要比较是否不相等的GenericValue对象在右边  注意这个!=重载不是对于当前对象的比较
-                    template<typename T> RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator!=(const T& lhs, const GenericValue& rhs) {return !(rhs==lhs);}
+                    template<typename T> friend RAPIDJSON_DISABLEIF_RETURN((internal::IsGenericValue<T>), (bool)) operator!=(const T& lhs, const GenericValue& rhs) {return !(rhs==lhs);}
                 #endif
                 // 获取当前GenericValue对象对应的类型
                 Type GetType() const {return static_cast<Type>(data_.f.flags&kTypeMask);}
@@ -757,7 +759,7 @@ namespace RAPIDJSON{
                 bool IsBool() const {return (data_.f.flags&kBoolFlag)!=0;}
                 bool IsObject() const {return data_.f.flags == kObjectFlag;}
                 bool IsArray() const {return data_.f.flags == kArrayFlag;}
-                bool IsNumber() const {return (data.f.flags & kNumberFlag)!=0;}
+                bool IsNumber() const {return (data_.f.flags & kNumberFlag)!=0;}
                 bool IsInt() const {return (data_.f.flags & kIntFlag)!=0;}
                 bool IsUint() const {return (data_.f.flags & kUintFlag)!=0;}
                 bool IsInt64() const {return (data_.f.flags & kInt64Flag)!=0;}
@@ -776,12 +778,16 @@ namespace RAPIDJSON{
                     if(IsUint64()){
                         uint64_t u = GetUint64();// 将当前对象转换为uint64
                         volatile double d = static_cast<double>(u);
-                        return (d >= 0.0) && (d < static_cast<double>((std::numeric_limits<uint64_t>::max)())) && (u==static_cast<uint64_t>(d));
+                        return (d >= 0.0) 
+                            && (d < static_cast<double>((std::numeric_limits<uint64_t>::max)())) 
+                            && (u==static_cast<uint64_t>(d));
                     }
                     if(IsInt64()){
                         int64_t i = GetInt64();
                         volatile double d = static_cast<double>(i);
-                        return (d < static_cast<double>((std::numeric_limits<int64_t>::max)())) && (u>=static_cast<int64_t>(d)) && (i==static_cast<int64_t>(d));
+                        return (d >= static_cast<double>((std::numeric_limits<int64_t>::min)()))
+                            && (d < static_cast<double>((std::numeric_limits<int64_t>::max)())) 
+                            && (i==static_cast<int64_t>(d));
                     }
                     return true;
                 }
@@ -1301,7 +1307,7 @@ namespace RAPIDJSON{
                 // 判断当前JSON数组是否为空
                 bool Empty() const {
                     RAPIDJSON_ASSERT(IsArray());
-                    return data_.a.size == ;
+                    return data_.a.size == 0;
                 }
                 // 清空当前JSON数组
                 void Clear() {
@@ -1309,7 +1315,7 @@ namespace RAPIDJSON{
                     GenericValue* e = GetElementsPointer();
                     for(GenericValue* v=e;v!=e+data_.a.size;++v)
                         v->~GenericValue();
-                    data.a.size = 0;
+                    data_.a.size = 0;
                 }
                 /**
                  * @brief 通过一个下标index来访问当前JSON数组对应的值
@@ -1344,10 +1350,10 @@ namespace RAPIDJSON{
                     RAPIDJSON_ASSERT(IsArray());
                     return GetElementsPointer()+data_.a.size;
                 }
-                const ValueIterator Begin() const {
+                ConstValueIterator Begin() const {
                    return const_cast<GenericValue&>(*this).Begin();
                 }
-                const ValueIterator Begin() const {
+                ConstValueIterator End() const {
                     return const_cast<GenericValue&>(*this).End();
                 }
                 /**
@@ -1360,7 +1366,7 @@ namespace RAPIDJSON{
                 GenericValue& Reserve(SizeType newCapacity, Allocator& allocator){
                     RAPIDJSON_ASSERT(IsArray());// 确保是JSON数组
                     if(newCapacity > data_.a.capacity){// 如果新设容量不比之前大,就不重新设置了,免得多次分配内存,造成性能损失
-                        SetElementsPointer(reinterpret_cast<GenericValue*>(allocator.Realloc(GetElementsPointer(), data.a.capacity*sizeof(GenericValue), newCapacity*sizeof(GenericValue)));
+                        SetElementsPointer(reinterpret_cast<GenericValue*>(allocator.Realloc(GetElementsPointer(), data_.a.capacity*sizeof(GenericValue), newCapacity*sizeof(GenericValue))));
                         data_.a.capacity = newCapacity;
                     }
                     return *this;
@@ -1504,11 +1510,11 @@ namespace RAPIDJSON{
                 double GetDouble() const {
                     RAPIDJSON_ASSERT(IsNumber());
                     if((data_.f.flags&kDoubleFlag)!=0)// 如果当前对象为双精度值,则直接返回
-                        return data_n.d;
+                        return data_.n.d;
                     if((data_.f.flags&kIntFlag)!=0)// 如果当前对象是整数值,则以双精度形式返回,因为int转换为double是安全的隐式转换,所以不用static_cast<double>
-                        return data_n.i.i;
+                        return data_.n.i.i;
                     if((data_.f.flags&kUintFlag)!=0)// 如果当前对象是无符号整数值,则以双精度形式返回,因为Uint转换为double是安全的隐式转换,所以不用static_cast<double>
-                        return data_n.u.u;
+                        return data_.n.u.u;
                     if((data_.f.flags&kInt64Flag)!=0)// 如果当前对象是64位整数值,则以双精度形式返回,因为int64转换为double是可能会出现精度损失的情况,所以需要static_cast<double>
                         return static_cast<double>(data_.n.i64);
                     RAPIDJSON_ASSERT((data_.f.flags&kUint64Flag)!=0);// 剩余情况只能是无符号64位整数了
@@ -1637,7 +1643,7 @@ namespace RAPIDJSON{
                     return internal::TypeHelper<ValueType, T>::Is(*this);
                 }
                 // 返回当前GenericValue对象中T类型的值
-                template<T>
+                template<typename T>
                 T Get() const {
                     return internal::TypeHelper<ValueType, T>::Get(*this);
                 }
@@ -1700,30 +1706,31 @@ namespace RAPIDJSON{
                             else if(IsUint())
                                 return handler.Uint(data_.n.u.u);
                             else if(IsInt64())
-                                return handler.Int64(data_.n.ui64);
+                                return handler.Int64(data_.n.i64);
                             else
                                 return handler.Uint64(data_.n.u64);
                     }
                 }
             private:
                 template<typename, typename> friend class GenericValue;// 声明GenericValue是当前类的友元类,即它可以访问当前类的私有成员
-                template<typename, typename> friend class GenericDocument;// 声明GenericDocument是当前类的友元类,即它可以访问当前类的私有成员
+                template<typename, typename, typename> friend class GenericDocument;// 声明GenericDocument是当前类的友元类,即它可以访问当前类的私有成员
                 enum {
-                    kBoolFlag = 0x0008,
-                    kNumberFlag = 0x0010,
-                    kIntFlag = 0x0020,
-                    kUintFlag = 0x0040,
-                    kInt64Flag = 0x0080,
-                    kUint64Flag = 0x0100,
-                    kDoubleFlag = 0x0200,
-                    kStringFlag = 0x0400,
-                    kCopyFlag = 0x0800,
-                    kInlineStrFlag = 0x1000,// 标识内联字符串标志,通常用于标识字符串对象内联存储.ShortString就是内联存储的,即它的字符串直接存储在这个结构体内存中,而不是像String中那样字符串的存储位置用一个指向其他内存位置的指针来表示
+                    kBoolFlag       = 0x0008,
+                    kNumberFlag     = 0x0010,
+                    kIntFlag        = 0x0020,
+                    kUintFlag       = 0x0040,
+                    kInt64Flag      = 0x0080,
+                    kUint64Flag     = 0x0100,
+                    kDoubleFlag     = 0x0200,
+                    kStringFlag     = 0x0400,
+                    kCopyFlag       = 0x0800,
+                    // 标识内联字符串标志,通常用于标识字符串对象内联存储.ShortString就是内联存储的,即它的字符串直接存储在这个结构体内存中,而不是像String中那样字符串的存储位置用一个指向其他内存位置的指针来表示
+                    kInlineStrFlag  = 0x1000,
                     kNullFlag = kNullType,
                     // 定义复合标志
-                    kTrueFlag = static_cast<int>(kTrueType) | static_cast<int>(kBoolFlag);
-                    kFalseFlag = static_cast<int>(kFalseType) | static_cast<int>(kBoolFlag);
-                    kNumberIntFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberType | kIntFlag | kInt64Flag);
+                    kTrueFlag = static_cast<int>(kTrueType) | static_cast<int>(kBoolFlag),
+                    kFalseFlag = static_cast<int>(kFalseType) | static_cast<int>(kBoolFlag),
+                    kNumberIntFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberType | kIntFlag | kInt64Flag),
                     kNumberUintFlag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kUintFlag | kUint64Flag),
                     kNumberInt64Flag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kInt64Flag),
                     kNumberUint64Flag = static_cast<int>(kNumberType) | static_cast<int>(kNumberFlag | kUint64Flag),
@@ -1751,7 +1758,7 @@ namespace RAPIDJSON{
                     #else
                         char payload[sizeof(SizeType)*2+sizeof(void*)+2]// 14字节=2*4+4+2
                     #endif
-                        uint46_t flags;// 2字节
+                        uint64_t flags;// 2字节
                 };
                 /**
                  * @brief 用于存储字符串数据
@@ -1842,7 +1849,7 @@ namespace RAPIDJSON{
                     Flag f;
                 };
                 // 返回当前JSON数据中存储的字符串内容.kInlineStrFlag=>ShortString
-                static RAPIDJSON_FORCEINLINE const Ch* DataString(const Data&){
+                static RAPIDJSON_FORCEINLINE const Ch* DataString(const Data& data){
                     return (data.f.flags & kInlineStrFlag) ? data.ss.str : RAPIDJSON_GETPOINTER(Ch, data.s.str);
                 }
                 // 返回当前JSON数据中存储的字符串长度
@@ -2053,7 +2060,12 @@ namespace RAPIDJSON{
                     }
                     // 清空当前JSON对象的Member[]
                     void DoClearMembers() {
-                        for(for(MemberIterator m=MemberBegin();m!=MemberEnd();++m)
+                        for(MemberIterator m=MemberBegin();m!=MemberEnd();++m)
+                            m->~Member();
+                        Allocator::Free(GetMembersPointer());
+                    }
+                    void DoFreeMembers() {
+                        for (MemberIterator m = MemberBegin(); m != MemberEnd(); ++m)
                             m->~Member();
                         Allocator::Free(GetMembersPointer());
                     }
@@ -2068,7 +2080,7 @@ namespace RAPIDJSON{
                 void DoAddMember(GenericValue& name, GenericValue& value, Allocator& allocator) {
                     ObjectData& o = data_.o;
                     if(o.size >= o.capacity)// 检查当前容量是否满了,即是否需要扩容后再添加成员
-                        DoReserveMembers(o.capacity ? (o.capacity + (o.capacity+1)/2:kDefaultObjectCapacity, allocator));// 使用当前容量的加倍策略来增加容量
+                        DoReserveMembers(o.capacity ? (o.capacity + (o.capacity+1)/2):kDefaultObjectCapacity, allocator);// 使用当前容量的加倍策略来增加容量
                     Member* members = GetMembersPointer();// 获取指向成员数组的指针
                     Member* m = members+o.size;// 将m指向成员数组的下一个空位置,为了后续将新键值对添加进来
                     m->name.RawAssign(name);// name赋值给新键值对的name成员(即赋给m这个Member对象中的name成员)
@@ -2243,7 +2255,7 @@ namespace RAPIDJSON{
                     else {// 长字符串 String
                         data_.f.flags = kCopyStringFlag;
                         data_.s.length = s.length;
-                        str = static_cast<Ch*>(allocator.Malloc((s.length+1)*sizeof(Ch));
+                        str = static_cast<Ch*>(allocator.Malloc((s.length+1)*sizeof(Ch)));
                         SetStringPointer(str);
                     }
                     std::memcpy(str, s, s.length*sizeof(Ch));// 将s复制到str,因为data_.ss.str或data_.s.str与str指向同一个地址,所以直接复制到str即可
@@ -2500,6 +2512,10 @@ namespace RAPIDJSON{
                 return Parse<parseFlags, Encoding>(str, length);
             }
             // 默认的Parse()方法,即非模板成员函数,而是通用默认的成员函数
+            GenericDocument& Parse(const Ch* str) {
+                return Parse<kParseDefaultFlags>(str);
+            }
+            // 默认的Parse()方法,即非模板成员函数,而是通用默认的成员函数
             GenericDocument& Parse(const Ch* str, size_t length) {
                 return Parse<kParseDefaultFlags>(str, length);
             }
@@ -2613,7 +2629,6 @@ namespace RAPIDJSON{
                 return true;
             }
             bool Key(const Ch* str, SizeType length, bool copy) {
-                RAPIDJSON_ASSERT(IsString(str));
                 return String(str, length, copy);
             }
             bool EndObject(SizeType memberCount) {
@@ -2709,13 +2724,13 @@ namespace RAPIDJSON{
                 return *this;
             }
             #if RAPIDJSON_HAS_CXX11_RVALUE_REFS
-                GenericArray PushBack(ValueType&& value, Allocator& allocator) const {
+                GenericArray PushBack(ValueType&& value, AllocatorType& allocator) const {
                     value_.PushBack(value, allocator);
                     return *this;
                 }
             #endif
             template<typename T> 
-            RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (const GenericArray&)) PushBack(T value, Allocator& allocator) const {
+            RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (const GenericArray&)) PushBack(T value, AllocatorType& allocator) const {
                 value_.PushBack(value, allocator);
                 return *this;
             }
@@ -2828,11 +2843,11 @@ namespace RAPIDJSON{
                     return value_.FindMember(name);
                 }
             #endif
-            GenericObject AddMember(ValueType& name, ValueType& value, Allocator& allocator) const {
+            GenericObject AddMember(ValueType& name, ValueType& value, AllocatorType& allocator) const {
                 value_.AddMember(name, value, allocator);
                 return *this;
             }
-            GenericObject AddMember(ValueType& name, StringRefType value, Allocator& allocator) const {
+            GenericObject AddMember(ValueType& name, StringRefType value, AllocatorType& allocator) const {
                 value_.AddMember(name, value, allocator);
                 return *this;
             }
@@ -2849,11 +2864,11 @@ namespace RAPIDJSON{
                 GenericObject AddMember(ValueType& name, ValueType&& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
                 GenericObject AddMember(StringRefType name, ValueType&& value, AllocatorType& allocator) const { value_.AddMember(name, value, allocator); return *this; }
             #endif // RAPIDJSON_HAS_CXX11_RVALUE_REFS
-            GenericObject AddMember(StringRefType name, ValueType& value, Allocator& allocator) const {
+            GenericObject AddMember(StringRefType name, ValueType& value, AllocatorType& allocator) const {
                 value_.AddMember(name, value, allocator);
                 return *this;
             }
-            GenericObject AddMember(StringRefType name, StringRefType value, Allocator& allocator) const {
+            GenericObject AddMember(StringRefType name, StringRefType value, AllocatorType& allocator) const {
                 value_.AddMember(name, value, allocator);
                 return *this;
             }

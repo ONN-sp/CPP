@@ -16,7 +16,7 @@ namespace RAPIDJSON{
     class EncodedInputStream{
         RAPIDJSON_STATIC_ASSERT(sizeof(typename InputByteStream::Ch)==1);// 编译时断言,确保输入字节流中的字符类型大小为1字节
         public:
-            typedef typedef Encoding::Ch Ch;
+            typedef typename Encoding::Ch Ch;
             EncodedInputStream(InputByteStream& is) : is_(is){
                 current_ = Encoding::TakeBOM(is_);// 读取并处理(处理就是几次Take())可能存在的BOM
             }
@@ -57,7 +57,7 @@ namespace RAPIDJSON{
                     is_.Take();
             }
             Ch Peek() const {return is_.Peek();}
-            Ch Take() {is_.Take();}
+            Ch Take() {return is_.Take();}
             size_t Tell() const {return is_.Tell();}
             // 以下函数未实现，调用时会触发断言错误
             void Put(Ch) { RAPIDJSON_ASSERT(false); }
@@ -86,7 +86,7 @@ namespace RAPIDJSON{
                     Encoding::PutBOM(os_);
             }
             void Put(Ch c) {Encoding::Put(os_, c);}
-            void Flush() {oos_.Flush();}
+            void Flush() {os_.Flush();}
             // 以下函数未实现，调用时会触发断言错误
             Ch Peek() const { RAPIDJSON_ASSERT(false); return 0;}
             Ch Take() { RAPIDJSON_ASSERT(false); return 0;}

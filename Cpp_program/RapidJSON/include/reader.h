@@ -25,19 +25,18 @@
 #define RAPIDJSON_NOTHING /* deliberately empty */
 
 // 如果没有定义 RAPIDJSON_PARSE_ERROR_EARLY_RETURN
-#ifndef RAPIDJSON_PARSE_ERROR_EARLY_RETURN
 // 定义一个宏，用于在解析过程中检测解析错误
 // RAPIDJSON_PARSE_ERROR_EARLY_RETURN(value)<=>if (RAPIDJSON_UNLIKELY(HasParseError())) { return value; }
+#ifndef RAPIDJSON_PARSE_ERROR_EARLY_RETURN
 #define RAPIDJSON_PARSE_ERROR_EARLY_RETURN(value) \
     RAPIDJSON_MULTILINEMACRO_BEGIN \  
     if (RAPIDJSON_UNLIKELY(HasParseError())) { return value; } \
-    RAPIDJSON_MULTILINEMACRO_END // 结束多行宏定义
+    RAPIDJSON_MULTILINEMACRO_END
 #endif
 
 // 定义一个宏,用于在解析错误时返回空值
 #define RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID \
     RAPIDJSON_PARSE_ERROR_EARLY_RETURN(RAPIDJSON_NOTHING) // 调用前一个宏，传入空值
-
 //!@endcond
 
 // 如果没有定义 RAPIDJSON_PARSE_ERROR_NORETURN
@@ -48,7 +47,7 @@
     RAPIDJSON_MULTILINEMACRO_BEGIN \
     RAPIDJSON_ASSERT(!HasParseError()); \
     SetParseError(parseErrorCode, offset); \
-    RAPIDJSON_MULTILINEMACRO_END // 结束多行宏定义
+    RAPIDJSON_MULTILINEMACRO_END
 #endif
 
 // 如果没有定义 RAPIDJSON_PARSE_ERROR
@@ -58,7 +57,7 @@
     RAPIDJSON_MULTILINEMACRO_BEGIN \ 
     RAPIDJSON_PARSE_ERROR_NORETURN(parseErrorCode, offset); \
     RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID; \
-    RAPIDJSON_MULTILINEMACRO_END // 结束多行宏定义
+    RAPIDJSON_MULTILINEMACRO_END 
 #endif
 
 // 包含错误处理相关的头文件
@@ -810,8 +809,7 @@ namespace RAPIDJSON{
                         StackStream<typename TargetEncoding::Ch> stackStream(stack_);
                         ParseStringToStream<parseFlags, SourceEncoding, TargetEncoding>(s, stackStream);
                         RAPIDJSON_PARSE_ERROR_EARLY_RETURN_VOID;
-                        SizeType length = static_cast<SizeType>(stackStream.Length());
-                        RAPIDJSON_ASSERT(length <= 0xFFFFFFFF);
+                        SizeType length = static_cast<SizeType>(stackStream.Length())-1;// FUCK!!!  忘记-1,调试一下午
                         const typename TargetEncoding::Ch* const str = stackStream.Pop();
                         success = (isKey ? handler.Key(str, SizeType(length), true):handler.String(str, SizeType(length), true));// 用栈空间了,所以handler接口函数的copy=true
                     }

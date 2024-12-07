@@ -35,8 +35,8 @@ class PrettyWriter : public Writer<OutputStream, SourceEncoding, TargetEncoding,
               indentCharCount_(4),// 默认每级往里面缩进4个字符
               formatOptions_(kFormatDefault)
             {}
-        explicit PrettyWriter(StackAllocator* allocato=0, size_t levelDepth = Base::kDefaultLevelDepth)
-            : Base(os, allocator, levelDepth),
+        explicit PrettyWriter(StackAllocator* allocator=0, size_t levelDepth = Base::kDefaultLevelDepth)
+            : Base(allocator, levelDepth),
               indentChar_(' '),// 缩进使用空格(而不是Tab等)
               indentCharCount_(4),// 默认每级往里面缩进4个字符
               formatOptions_(kFormatDefault)
@@ -127,8 +127,8 @@ class PrettyWriter : public Writer<OutputStream, SourceEncoding, TargetEncoding,
         bool EndObject(SizeType memberCount=0){
             (void)memberCount;
             RAPIDJSON_ASSERT(Base::level_stack_.GetSize() >= sizeof(typename Base::Level));// 确保当前栈的大小>=Level大小,即确保当前栈至少包含一个完整的Level(false)结构(对于对象来说)
-            RAPIDJSON_ASSERT(!level_stack_.template Top<Level>()->inArray);// 确保不在数组内
-            RAPIDJSON_ASSERT(0==level_stack_.template Top<Level>()->valueCount % 2);// 确保对象的键值对数量为偶数,即有一个key就有一个value对应
+            RAPIDJSON_ASSERT(!Base::level_stack_.template Top<typename Base::Level>()->inArray);// 确保不在数组内
+            RAPIDJSON_ASSERT(0==Base::level_stack_.template Top<typename Base::Level>()->valueCount % 2);// 确保对象的键值对数量为偶数,即有一个key就有一个value对应
             bool empty = Base::level_stack_.template Pop<typename Base::Level>(1)->valueCount == 0;// 弹出当前对象的层级,并检查它是否为空
             if(!empty){// 对象不空,写入换行符和缩进
                 Base::os_->Put('\n');// 写入换行符
@@ -158,7 +158,7 @@ class PrettyWriter : public Writer<OutputStream, SourceEncoding, TargetEncoding,
         bool EndArray(SizeType memberCount=0){
             (void)memberCount;
             RAPIDJSON_ASSERT(Base::level_stack_.GetSize() >= sizeof(typename Base::Level));// 确保当前栈的大小>=Level大小,即确保当前栈至少包含一个完整的Level(true)结构(对于数组来说)
-            RAPIDJSON_ASSERT(level_stack_.template Top<Level>()->inArray);// 确保不在数组内
+            RAPIDJSON_ASSERT(Base::level_stack_.template Top<typename Base::Level>()->inArray);// 确保不在数组内
             bool empty = Base::level_stack_.template Pop<typename Base::Level>(1)->valueCount == 0;// 弹出当前对象的层级,并检查它是否为空
             if(!empty && !(formatOptions_&kFormatSingleLineArray)){// 数组不空&&非单行显示数据,写入换行符和缩进
                 Base::os_->Put('\n');// 写入换行符

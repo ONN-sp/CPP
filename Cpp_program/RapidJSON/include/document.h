@@ -2929,5 +2929,4 @@ namespace RAPIDJSON{
             ValueType& value_;// 表示JSON对象的GenericValue对象,即是一个flags=kObjectFlag的GenericValue对象
     };
 }
-
 #endif

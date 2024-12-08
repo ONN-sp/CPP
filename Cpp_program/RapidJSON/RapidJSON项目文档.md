@@ -771,5 +771,25 @@
    ```
    解析成一个`DOM`树后:
    ![](markdown图像集/2024-12-07-21-34-37.png)
-61. 测试结果:
+## 测试程序
     ![](markdown图像集/2024-12-07-17-18-48.png)
+# pointer
+1. `Pointer`是一个用于表示和解析`JSON`文档中路径的机制,类似`XPath`(用于`XML`文档的路径查询语言).它提供了一种通过路径精确定位`JSON`文档(`DOM`树)中某个值的方法.如:
+   ```C++
+   const char* json = R"({
+      "book": {
+         "title": "RAPIDJSON Tutorial",
+         "author": "John Doe",
+         "chapters": [
+            { "title": "Introduction", "page": 1 },
+            { "title": "Advanced Topics", "page": 50 }
+         ]
+      }
+      })";
+   Document doc;
+   doc.Parse(json);
+   Pointer pointer("/book/chapters/0/title");// 指向doc["book"]["chapters"][0]["title"]
+   ```
+2. `Pointer`解析的字符串有两种表示方式:
+   * 使用路径表达式,如:`"/foo/0"`
+   * 使用`URI`片段表达式,如:`"#/foo/0"`

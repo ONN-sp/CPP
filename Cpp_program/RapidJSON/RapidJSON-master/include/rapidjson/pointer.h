@@ -531,6 +531,8 @@ public:
 
         Use unresolvedTokenIndex to retrieve the token index.
     */
+    // 根据给定的JSON文档和根URI,解析和合成一个完整的URI地址,通过URI片段表达式来解析文档中的嵌套数据结构
+    // 最终得到的URI可以由传入的根URI和解析到的id字段进行合成,并返回
     UriType GetUri(ValueType& root, const UriType& rootUri, size_t* unresolvedTokenIndex = 0, Allocator* allocator = 0) const {
         static const Ch kIdString[] = { 'i', 'd', '\0' };
         static const ValueType kIdValue(kIdString, 2);

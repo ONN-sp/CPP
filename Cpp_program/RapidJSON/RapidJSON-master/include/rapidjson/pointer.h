@@ -533,8 +533,9 @@ public:
     */
     // 根据给定的JSON文档和根URI,解析和合成一个完整的URI地址,通过URI片段表达式来解析文档中的嵌套数据结构
     // 最终得到的URI可以由传入的根URI和解析到的id字段进行合成,并返回
+
     UriType GetUri(ValueType& root, const UriType& rootUri, size_t* unresolvedTokenIndex = 0, Allocator* allocator = 0) const {
-        static const Ch kIdString[] = { 'i', 'd', '\0' };
+        static const Ch kIdString[] = { 'i', 'd', '\0' };// 对于URI就是找id这个字段
         static const ValueType kIdValue(kIdString, 2);
         UriType base = UriType(rootUri, allocator);
         RAPIDJSON_ASSERT(IsValid());
@@ -546,7 +547,7 @@ public:
                     // See if we have an id, and if so resolve with the current base
                     typename ValueType::MemberIterator m = v->FindMember(kIdValue);
                     if (m != v->MemberEnd() && (m->value).IsString()) {
-                        UriType here = UriType(m->value, allocator).Resolve(base, allocator);
+                        UriType here = UriType(m->value, allocator).Resolve(base, allocator);// Resolve 操作实现了将通过 tokens 找到的 "id" 值加载到 base URI 后面的功能
                         base = here;
                     }
                     m = v->FindMember(GenericValue<EncodingType>(GenericStringRef<Ch>(t->name, t->length)));

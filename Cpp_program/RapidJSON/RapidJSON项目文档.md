@@ -793,3 +793,37 @@
 2. `Pointer`解析的字符串有两种表示方式:
    * 使用路径表达式,如:`"/foo/0"`
    * 使用`URI`片段表达式,如:`"#/foo/0"`
+3. `GetUri()`的一个例子,根据一个`JSON`文档(`DOM`树)和一系列`URI`片段(通常路径),解析得到一个最终的`URI`
+   ```C++
+   const char* json = R"({
+   "article": {
+      "id": "article/123",
+      "details": {
+         "id": "article/123/details"
+      }
+   },
+   "image": {
+      "id": "image/456"
+   }
+   })";
+   Document doc;
+   doc.Parse(json);
+   // 假设 rootUri 是基础 URI
+   UriType rootUri = UriType("http://example.com/", allocator);
+   // 假设 tokens_ 包含路径片段 ["article", "details"]  GetUri实际就是找每一个token对应的id字段,然后将其添加在当前rootUri后面
+   UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);
+   // 打印解析后的 URI
+   std::cout << finalUri.ToString() << std::endl;
+   =>
+   // http://example.com/article/123/details
+   ```
+4. `Token`结构体:
+   ```C++
+   struct Token {
+       const Ch* name;// 令牌名称,即JSON Pointer中当前部分的字符串表示
+       SizeType length;// 表示令牌名称的长度,不包括终止的空字符
+       SizeType index;// 如果令牌表示的是JSON数组的索引,这个字段就存储该索引的值.如果该令牌表示一个字符串(如JSON对象的键名),则index=kPointerInvalidIndex(如果不等于kPointerInvalidIndex,则为有效的JSON数组的索引)
+   };
+   ```
+5. `GenericPointer`有两类构造函数,一类是传入一个字符串或`URI`片段(即`source`),解析得到对应的`tokens`令牌(此时会创建动态内存);另一类是直接传入设定好的`tokens`令牌
+

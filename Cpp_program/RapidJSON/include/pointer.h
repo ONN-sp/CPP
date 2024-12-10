@@ -43,7 +43,7 @@ namespace RAPIDJSON{
             /**
              * @brief 从一个字符串或URI片段解析得到对应的tokens令牌
              * 
-             * @param source 
+             * @param source 当前对象传入的路径
              * @param allocator 
              */
             GenericPointer(const Ch* source, Allocator* allocator=nullptr)
@@ -123,6 +123,110 @@ namespace RAPIDJSON{
                 if(nameBuffer_)// nameBuffer_表示使用了自定义分配器用于存储tokens(即此时tokens不是外部直接提供的),此时要释放tokens_的内存
                     Allocator::Free(tokens_);
                 RAPIDJSON_DELETE(ownAllocator_);
+            }
+            GenericPointer& operator=(const GenericPointer& rhs) {
+                if(this!=rhs){// 禁止自我复制
+                    if(nameBuffer_)
+                        Allocator::Free(tokens_);
+                    tokenCount_ = rhs.tokenCount_;
+                    parseErrorOffset_ = rhs.parseErrorOffset_;
+                    parseErrorCode_ = rhs.parseErrorCode_;
+                    if(rhs.nameBuffer_)
+                        CopyFrom(rhs);// 拷贝解析得到的tokens_
+                    else {// 直接复制从外部直接传入的tokens
+                        tokens_ = rhs.tokens_;
+                        nameBuffer_ = 0;
+                    }
+                }
+                return *this;
+            }
+            /**
+             * @brief 交换当前GenericPointer对象与另一个GenericPointer对象的内容
+             * 
+             * @param other 
+             * @return GenericPointer& 
+             */
+            GenericPointer& Swap(GenericPointer& other) RAPIDJSON_NOEXCEPT {
+                internal::Swap(allocator_, other.allocator_);
+                internal::Swap(ownAllocator_, other.ownAllocator_);
+                internal::Swap(nameBuffer_, other.nameBuffer_);
+                internal::Swap(tokens_, other.tokens_);
+                internal::Swap(tokenCount_, other.tokenCount_);
+                internal::Swap(parseErrorOffset_, other.parseErrorOffset_);
+                internal::Swap(parseErrorCode_, other.parseErrorCode_);
+                return *this;
+            }
+            // 交换两个GenericPointer对象
+            friend inline void swap(GenericPointer& a, GenericPointer& b) RAPIDJSON_NOEXCEPT {
+                a.Swap(b);
+            }
+            /**
+             * @brief 将一个Token追加到当前GenericPointer的路径中,并返回一个新的GenericPointer对象
+             * 
+             * @param token 
+             * @param allocator 
+             * @return GenericPointer 
+             */
+            GenericPointer Append(const Token& token, Allocator* allocator=nullptr) const {
+                GenericPointer r;
+                r.allocator_ = allocator;
+                Ch* p = r.CopyFromRaw(*this, 1, token.length+1);// 复制当前GenericPointer对象到r,并会为额外的令牌token分配内存,最终返回的是一个指向新分配的名称缓冲区(nameBuffer_)中未被占用的第一个位置(即这个位置会被用来放额外的token)
+                std::memcpy(p, token.name, (token.length+1)*sizeof(Ch));
+                // 对r对象的tokens_进行追加
+                r.tokens_[tokenCount_].name = p;
+                r.tokens_[tokenCount_].length = token.length;
+                r.tokens_[tokenCount_].index = token.index;
+                return r;
+            }
+            // 接受一个name和length=>一个新的Token,然后将其添加到当前对象的路径中
+            GenericPointer Append(const Ch* name, SizeType length, Allocator* allocator=nullptr) const {
+                Token token = {name, length, kPointerInvalidIndex};
+                return Append(token, length);
+            }
+            // 允许将一个T*类型的name直接追加到当前对象的路径中
+            template<typename T>
+            RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericPointer)) Append(T* name, Allocator* allocator = nullptr) const {
+                return Append(name, internal::StrLen(name), allocator);
+            }
+            // C++11字符串对应的name=>token,追加到当前对象的路径中
+            #if RAPIDJSON_HAS_STDSTRING
+                GenericPointer Append(const std::basic_string<Ch>& name, Allocator* allocator=nullptr) const {
+                    return Append(name.c_str(), static_cast<SizeType>(name.size(), allocator));
+                }
+            #endif
+            /**
+             * @brief 将SizeType类型的索引转换为字符串,并将其追加到当前路径中
+             * 令牌可以是数字的形式,此时解释为索引
+             * @param index 
+             * @param allocator 
+             * @return GenericPointer 
+             */
+            GenericPointer Append(SizeType index, Allocator* allocator=nullptr) const {
+                char buffer[21];// 存储index转换为字符串的数组
+                char* end = sizeof(SizeType)==4?internal::u32toa(index, buffer) : internal::u64toa(index, buffer);// 根据SizeType的字节数来选择32位整数转换为字符串或64位转换为字符串
+                SizeType length = static_cast<SizeType>(end-buffer);
+                buffer[length] = '\0';// 构建为字符串的形式
+                if(sizeof(Ch)==1){// 此时Ch是单字节类型(如char),所以可以直接将buffer中的数据转换为Ch*
+                    Token token = {reinterpret_cast<Ch*>(buffer), length, index};
+                    return Append(token, allocator);
+                }
+                else {// 此时Ch是多字节类型(如wchar),所以要先将buffer转换为Ch数组,再Append
+                    Ch name[21];
+                    for(size_t i=0;i<=length;i++)
+                        name[i] = static_cast<Ch>(buffer[i]);
+                    Token token = {name, length, index};
+                    return Append(token, allocator);
+                }
+            }
+            // 
+            GenericPointer Append(const ValueType& token, Allocator* allocator=nullptr) const {
+                if(token.IsString())// 追加字符串
+                    return Append(token.GetString(), token.GetStringLength(), allocator);
+                else {// 追加索引
+                    RAPIDJSON_ASSERT(token.IsUint64());
+                    RAPIDJSON_ASSERT(token.GetUint64()<=SizeType(~0));
+                    return Append(static_cast<SizeType>(token.GetUint64()), allocator);
+                }
             }
 
     };

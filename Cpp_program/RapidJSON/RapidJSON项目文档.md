@@ -817,7 +817,8 @@
    =>
    // http://example.com/article/123/details
    ```
-4. `Token`结构体:
+4. `GenericPointe`对象传入的路径会被解析成`tokens_`
+5. `Token`结构体:
    ```C++
    struct Token {
        const Ch* name;// 令牌名称,即JSON Pointer中当前部分的字符串表示
@@ -825,5 +826,8 @@
        SizeType index;// 如果令牌表示的是JSON数组的索引,这个字段就存储该索引的值.如果该令牌表示一个字符串(如JSON对象的键名),则index=kPointerInvalidIndex(如果不等于kPointerInvalidIndex,则为有效的JSON数组的索引)
    };
    ```
-5. `GenericPointer`有两类构造函数,一类是传入一个字符串或`URI`片段(即`source`),解析得到对应的`tokens`令牌(此时会创建动态内存);另一类是直接传入设定好的`tokens`令牌
+6. <mark>`GenericPointer`有两类构造函数,一类是传入一个字符串或`URI`片段(即`source`),解析得到对应的`tokens`令牌(此时会创建动态内存`nameBuffer_`);另一类是直接传入设定好的`tokens`令牌</mark>
+7. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`执行的是传入`index`索引的追加`token`操作,即处理的是传入一个`JSON`数组索引的令牌`token`,并将其追加到当前`GenericPointer`中.会根据这个`index`,创建一个`token`(`name`对应`index`转换的字符串,`length`对应转换字符串的长度,`Token`结构体中的`index`就对应传入的`index`这个值)</mark>
+8. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`中为什么要将`index`转换为字符数组`char* buffer`后,还要讨论`Ch`的字节类型?</mark>
+   因为需要`Append()`到当前`GenericPointer`对象,所以要构建一个`Token`结构体,但是结构体中的`name`是`Ch`类型,所以要`Ch`的字节类型,若是单字节,则可以直接将`char* buffer`转换为`Ch* name`;如果是多字节,就需要一个字节一个字节的将`buffer[i]`转换为`name[i]`
 

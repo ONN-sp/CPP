@@ -454,7 +454,7 @@ public:
         ValueType* v = &root;
         bool exist = true;
         for (const Token *t = tokens_; t != tokens_ + tokenCount_; ++t) {
-            if (v->IsArray() && t->name[0] == '-' && t->length == 1) {
+            if (v->IsArray() && t->name[0] == '-' && t->length == 1) {// 单个负号,定义为数组最后一个元素的下一个元素,即一个新元素,此时相当于标志着需要进行Value::PushBack()
                 v->PushBack(ValueType().Move(), allocator);
                 v = &((*v)[v->Size() - 1]);
                 exist = false;

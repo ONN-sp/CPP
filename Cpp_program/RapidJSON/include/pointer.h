@@ -218,7 +218,6 @@ namespace RAPIDJSON{
                     return Append(token, allocator);
                 }
             }
-            // 
             GenericPointer Append(const ValueType& token, Allocator* allocator=nullptr) const {
                 if(token.IsString())// 追加字符串
                     return Append(token.GetString(), token.GetStringLength(), allocator);
@@ -227,6 +226,113 @@ namespace RAPIDJSON{
                     RAPIDJSON_ASSERT(token.GetUint64()<=SizeType(~0));
                     return Append(static_cast<SizeType>(token.GetUint64()), allocator);
                 }
+            }
+            bool IsValid() const {
+                return parseErrorCode_ = kPointerParseErrorNone;
+            }
+            size_t GetParseErrorOffset() const {
+                return parseErrorOffset_;
+            }
+            PointerParseErrorCode GetParseErrorCode() const {
+                return parseErrorCode_;
+            }
+            Allocator& GetAllocator() {
+                return *allocator_;
+            }
+            const Token* GetTokens() const {
+                return tokens_;
+            }
+            size_t GetTokenCount() const {
+                return tokenCount_;
+            }
+            bool operator==(const GenericPointer& rhs) const {
+                if(!IsValid() || !rhs.IsValid() || tokenCount_!=rhs.tokenCount_)
+                    return false;
+                for(size_t i=0;i<tokenCount_;i++) {
+                    if(token_[i].index != rhs.tokens_[i].index ||
+                       tokens_[i].length != rhs.tokens_[i].length ||
+                       (tokens_[i].length != 0&&std::memcmp(tokens_[i].name, rhs.tokens_[i].name, sizeof(Ch)* tokens_[i].length)!=0))
+                        return false;
+                }
+                return true;
+            }
+            bool operator!=(const GenericPointer& rhs) const {
+                return !(*this==rhs);
+            }
+            bool operator<(const GenericPointer& rhs) const {
+                if(!IsValid())
+                    return false;
+                if(!rhs.IsValid())// rhs这个Pointer对象无效,那么必然小于当前对象
+                    return true;
+                if(tokenCount_!=rhs.tokenCount_)// 先比较长度
+                    return tokenCount_ < rhs.tokenCount_;
+                for(size_t i=0;i<tokenCount_;i++) {
+                    if(tokens_[i].index!=rhs.tokens_[i].index)
+                        return tokens_[i].index < rhs.tokens_[i].index;
+                        if(tokens_[i].length!=rhs.tokens_[i].length)
+                            return tokens_[i].length<rhs.tokens_[i].length;
+                        if(int cmp=std::memcmp(tokens_[i].name, rhs.tokens_[i].name, sizeof(Ch)*tokens_[i].length))
+                            return cmp<0;
+                }
+                return false;
+            }
+            /**
+             * @brief 将当前GenericPointer对象的tokens_字符串化,然后写入输出流os
+             * 
+             * @tparam OutputStream 
+             * @param os 
+             * @return true 
+             * @return false 
+             */
+            template<typename OutputStream>
+            bool Stringify(OutputStream& os) const {
+                return Stringify<true, OutputStream>(os);
+            }
+            ValueType& Create(ValueType& root, typename ValueType::AllocatorType& allocator, bool* alreadyExist=false) const {
+                RAPIDJSON_ASSERT(IsValid());
+                ValueType* v=&root;
+                bool exist = true;
+                for(const Token* t=tokens_;t!=tokens_+tokenCount_;++t) {
+                    if(v->IsArray()&&t->name[0]=='-'&&t->length==1) {
+                        v->PushBack(ValueType().Move(), allocator);
+                        v = &((*v)[v->Size()-1]);
+                        exist = false;
+                    }
+                    else {
+                        if(t->index==kPointerInvalidIndex) {
+                            if(!v->IsObject())
+                                v->SetObject();
+                        }
+                        else {
+                            if(!v->IsArray()&&!v->IsObject())
+                                v->SetArray();
+                        }
+                        if(v->IsArray()) {
+                            if(t->index >= v->Size()) {// 需要扩容
+                                v->Reserve(t->index+1, allocator);
+                                while(t->index >= v->Size())
+                                    v->PushBack(ValueType().Move(), allocator);
+                                exist = false;
+                            }
+                            v = &((*v)[t->index]);
+                        }
+                        else {
+                            typename ValueType::MemberIterator m =v->FindMember(GenericValue<EncodingType>(GenericStringRef<Ch>(t->name, t->length)));
+                            if(m==v->MemberEnd()) {
+                                v->AddMember(ValueType(t->name, t->length, allocator).Move(), ValueType().Move(), allocator);
+                                m = v->MemberEnd();
+                                v = &(--m)->value;
+                                exist = false;
+                            }   
+                            else
+                                v = &m->value;
+                        }
+                            
+                    }
+                }
+                if(alreadyExist)
+                    *alreadyExist = exist;
+                return *v;
             }
 
     };

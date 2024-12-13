@@ -547,6 +547,7 @@ public:
                     // See if we have an id, and if so resolve with the current base
                     typename ValueType::MemberIterator m = v->FindMember(kIdValue);
                     if (m != v->MemberEnd() && (m->value).IsString()) {
+                        // Resolve()是将一个相对 URI（当前对象的URI）解析为一个绝对 URI，该绝对 URI 是通过将当前 URI 与给定的基础 URI（baseUri）结合而成的
                         UriType here = UriType(m->value, allocator).Resolve(base, allocator);// Resolve 操作实现了将通过 tokens 找到的 "id" 值加载到 base URI 后面的功能
                         base = here;
                     }

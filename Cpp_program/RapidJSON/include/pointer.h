@@ -297,7 +297,7 @@ namespace RAPIDJSON{
             bool Stringify(OutputStream& os) const {
                 return Stringify<false, OutputStream>(os);// 通过模板参数 uriFragment,该方法可以选择输出标准的JSON Pointer格式或URI Fragment格式
             }
-            // 将当前GenericPointer对象的tokens_字符串化为URI片段表示方式,然后写入输出流os
+            // 将当前GenericPointer对象的tokens_字符串转化为URI片段表示方式,然后写入输出流os
             template<typename OutputStream>
             bool StringifyUriFragment(OutputStream& os) const {
                 return Stringify<true, OutputStream>(os);
@@ -495,6 +495,237 @@ namespace RAPIDJSON{
             RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (ValueType&)) GetWithDefault(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, T defaultValue) const {
                 return GetWithDefault(document, defaultValue, document.GetAllocator());
             }
+            ValueType& Set(ValueType& root, ValueType& value, typename ValueType::AllocatorType& allocator) const {
+                return Create(root, allocator) = value;
+            }
+            ValueType& Set(ValueType& root, const ValueType& value, typename ValueType::AllocatorType& allocator) const {
+                return Create(root, allocator).CopyFrom(value, allocator);
+            }
+            ValueType& Set(ValueType& root, const Ch* value, typename ValueType::AllocatorType& allocator) const {
+                return Create(root, allocator) = ValueType(value, allocator).Move();
+            }
+            // 针对启用了std::string的情况             
+            #if RAPIDJSON_HAS_STDSTRING
+                ValueType& Set(ValueType& root, const std::basic_string<Ch>& value, typename ValueType::AllocatorType& allocator) const {
+                    return Create(root, allocator) = ValueType(value, allocator).Move();
+                }  
+            #endif
+            template<typename T, typename stackAllocator>
+            RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (ValueType&)) Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, T value) const {
+                return Create(document) = value;// 注意:这里其实是用的GenericValue中的赋值运算符的重载(RAPIDJSON_DISABLEIF_RETURN((internal::IsPointer<T>), (GenericValue&)) operator=(T value)).这里不是使用ValueType(value, allocator).Move(),因为GenericValue构造函数没有针对模板参数T的
+            }
+            /**
+             * @brief 根据当前Pointer对象中的tokens_得到的节点与传入的value进行交换
+             * 
+             * @param root 
+             * @param value 
+             * @param allocator 
+             * @return ValueType& 
+             */
+            ValueType& Swap(ValueType& root, ValueType& value, typename ValueType::AllocatorType& allocator) const {
+                Create(root, allocator).Swap(value);
+            }
+            template <typename stackAllocator>
+            ValueType& Swap(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, ValueType& value) const {
+                return Create(document).Swap(value);
+            }
+            /**
+             * @brief 从传入的root中(一般就是一个Document对象,即DOM树)删除根据当前Pointer对象中的tokens_解析到的节点
+             * 
+             * @param root 
+             * @return true 
+             * @return false 
+             */
+            bool Erase(ValueType& root) const {
+                RAPIDJSON_ASSERT(IsValid());
+                if(tokenCount_==0)
+                    return false;
+                ValueType* v = &root;
+                const Token* last = tokens_+(tokenCount_-1);
+                for(const Token* t=tokens_;t!=last;++t) {
+                    switch(v->GetType()) {
+                        case kObjectType:
+                            {
+                                typename ValueType::MemberIterator m = v->FindMember(GenericValue<EncodingType>(GenericStringRef<Ch>(t->name, t->length)));
+                                if(m==v->MemberEnd())
+                                    return false;
+                                v = &m->value;
+                            }
+                            break;
+                        case kArrayType:
+                            if(t->index==kPointerInvalidIndex||t->index>=v->Size())// 按当前token的索引t->index找不到
+                                return false;
+                            v = &((*v)[t->index]);
+                            break;
+                        default:
+                            return false;
+                    }
+                }
+                // 按照tokens_路径最终找到的节点就是此时last->name(即按tokens_的每个路径片段逐层找到最终节点)对应的节点或v->Begin()+last
+                switch(v->GetType()) {
+                    case kObjectType:
+                        return v->EraseMember(GenericStringRef<Ch>(last->name, last->length));
+                    case kArrayType:
+                        if(last->index==kPointerInvalidIndex || last->index>=v->Size())
+                            return false;
+                        v->Erase(v->Begin()+last=>index);
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        private:
+            /**
+             * @brief 将一个给定的Pointer对象rhs中的所有Token和相应的名称数据复制到当前对象中
+             * 它会分配内存,并将所有相关的数据从rhs复制到当前对象
+             * 返回新分配的nameBuffer_的结束位置,即下一个可用的(没被占用的)内存地址
+             * @param rhs 
+             * @param extraToken 
+             * @param extraNameBufferSize 
+             * @return Ch* 
+             */
+            Ch* CopyFromRaw(const GenericPointer& rhs, size_t extraToken=0, size_t extraNameBufferSize=0) {
+                if(!allocator_)// 如果当前对象没有分配allocator,则为其分配一个新的 allocator
+                    ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
+                // 计算nameBuffer的大小,nameBuffer用来存储所有token的名称(token.name)
+                size_t nameBufferSize = rhs.tokenCount_;// 每个token有一个'\0'终结符,所以以rhs.tokenCount_为起点开始加
+                for(Token* t=rhs.tokens_;t!=rhs.tokens_+rhs.tokenCount_;++t)
+                    nameBufferSize += t->length;// 累加每个token的名称name的长度
+                tokenCount_ = rhs.tokenCount_+extraToken;// 为tokenCount_增加额外的tokens(由extraToken指定)
+                // 分配内存:首先为tokens分配内存,再为nameBuffer分配内存(包含extraNameBufferSize指定的额外空间)
+                tokens_ = static_cast<Token*>(allocator_->Malloc(tokenCount_*sizeof(Token)+(nameBufferSize+extraNameBufferSize)*sizeof(Ch)));
+                nameBuffer_ = reinterpret_cast<Ch*>(tokens_+tokenCount_);// nameBuffer是存储所有token名称(token->name)的缓冲区,分配空间紧接在tokens_之后
+                if(rhs.tokenCount_>0)// 复制rhs中的tokens_数据
+                    std::memcpy(tokens_, rhs,tokens_, rhs.tokenCount_*sizeof(Token));
+                if(nameBufferSize > 0)// 复制rhs中的nameBuffer(即rhs中的tokens_的名称(token.name))
+                    std::memcpy(nameBuffer_, rhs.nameBuffer_, nameBufferSize*sizeof(Ch));
+                for(size_t i=0;i<rhs.tokenCount_;++i) {// 更新当前对象的每一个token.name
+                    std::ptrdiff_t name_offset = rhs.tokens_[i].name-rhs.nameBuffer_;
+                    tokens_[i].name = nameBuffer_+name_offset;
+                }
+                return nameBuffer_+nameBufferSize;// 返回新分配的nameBuffer的结束位置,即返回的指针是nameBuffer的最后位置
+            }  
+            // 确定字符c是否属于URI中不需要编码的安全字符集('0'-'9'、'a'-'z'、'A'-'Z'、'-'、'.'、'_'、'~'为安全字符集).安全字符集不用百分号编码(%+ASCII码值)
+            // 此函数在涉及到URI片段表示时可能使用(如:字符串化tokens_为uri片段表示方式时,即Stringify())
+            bool NeedPercentEncode(Ch c) const {
+                return !((c>='0'&&c<='9')||(c>='A'&&c<='Z')||(c>='a'&&c<='z')||c=='-'||c=='.'||c=='_'||c=='~');
+            }
+            /**
+             * @brief 解析一个源字符串source,并将结果保存在tokens_和nameBuffer_中
+             * source可能是普通的字符串表示,也可能是URI片段表示方式
+             * @param source 
+             * @param length 
+             */
+            void Parse(const Ch* source, size_t length) {
+                RAPIDJSON_ASSERT(source!=nullptr);
+                RAPIDJSON_ASSERT(nameBuffer_==0);// 使用Parse()的构造函数,那么此时是要定义nameBuffer_的,所以这里要确保要定义nameBuffer_
+                RAPIDJSON_ASSERT(tokens_==0);
+                if(!allocator_)// 如果当前对象没有分配allocator,则为其分配一个新的 allocator
+                    ownAllocator_ = allocator_ = RAPIDJSON_NEW(Allocator)();
+                tokenCount_ = 0;
+                for(const Ch* s=source;s!=source+length;++s)
+                    if(*s=='/')// 统计源字符串source中'/'字符的个数,即token的数量,将其作为tokenCount_
+                        tokenCount_++;
+                    Token* token = tokens_ = static_cast<Token*>(allocator_->Malloc(tokenCount_*sizeof(Token)+length*sizeof(Ch)));// 分配内存:首先为tokens分配内存,再为nameBuffer_分配内存
+                    Ch* name = nameBuffer_ = reinterpret_cast<Ch*>(tokens_+tokenCount_);// nameBuffer是存储所有token名称(token->name)的缓冲区,分配空间紧接在tokens_之后
+                    size_t i = 0;
+                    bool uriFragment = false;
+                    if(source[i]=='#') {// 以#为开头,就表示传入的这个source是URI片段表示形式的字符串
+                        uriFragment = true;
+                        i++;// 跳过'#'字符
+                    }
+                    if(i!=length&&source[i]!='/') {// 对于字符串表示方式,它的第一个字符应该是'/';对于URI片段表示方式,'#'后的第一个字符也应该是'/'
+                        parseErrorCode_ = kPointerParseErrorTokenMustBeginWithSolidus;
+                        goto error;// 跳转到error处理
+                    }
+                    while(i<length) {// 进行'/'后续的处理
+                        RAPIDJSON_ASSERT(source[i]=='/');
+                        i++;
+                        token->name = name;// 将token的name指向当前分段的开始位置(nameBuffer_)
+                        bool isNumber = true;// 对于'%'后的一般是数字
+                        while(i<length&&source[i]!='/') {
+                            Ch c = source[i];
+                            if(uriFragment) {// 为真则表示路径是URI片段,需要对某些字符进行百分号编码处理
+                                if(c=='%') {// 此时需要解码百分号编码
+                                    PercentDecodeStream is(&source[i], source+length);
+                                    GenericInsituStringStream<EncodingType> os(name);// 解码成功后会把解码后的字符写入到name指向的缓冲区
+                                    Ch* begin = os.PutBegin();
+                                    if(!Transcoder<UTF8<>, EncodingType>().Validate(is, os) || !is.IsValid()) {// 验证解码是否成功
+                                        parseErrorCode_ = kPointerParseErrorInvalidPercentEncoding;
+                                        goto error;
+                                    }
+                                    size_t len = os.PutEnd(begin);// 解码后的字符的长度
+                                    i += is.Tell()-1;// 跳过已解码的字符
+                                    if(len==1)// 如果解码后的字符只有一个字符,则直接用解码后的字符*name赋给c
+                                        c = *name;// 赋给c后便于后续的*name++=c的操作的统一
+                                    else {// 解码后有多个字符
+                                        name += len;// 将指针name移动len个位置,跳过已解码的字符(其实在解码的时候name指针指向的内存已经赋值解码后的字符了)
+                                        isNumber = false;
+                                        i++;
+                                        continue;
+                                    }
+                                }
+                                else if(NeedPercentEncode(c)) {// 如果c不是'%',且c是需要百分号编码的字符(即非安全字符集的字符)此时会报错,因为在一个合合法的URI片段中,不可能还会有未进行百分号编码的非安全字符
+                                    parseErrorCode_ = kPointerParseErrorCharacterMustPercentEncode;
+                                    goto error;
+                                }
+                            } 
+                            i++;
+                            // 处理转义字符,即:"~0" -> '~', "~1" -> '/'
+                            if(c=='~') {
+                                if(i<length) {
+                                    c = source[i];
+                                    if(c=='0')
+                                        c = '~';// '~0'='~'
+                                    else if(c=='1')
+                                        c = '/';// '~1'=>'/'
+                                    else {
+                                        parseErrorCode_ = kPointerParseErrorInvalidEscape;
+                                        goto error;
+                                    }
+                                    i++;
+                                }
+                                else {
+                                    parseErrorCode_ = kPointerParseErrorInvalidEscape;
+                                    goto error;
+                                }
+                            }
+                            if(c<'0'||c>'9')// 检查当前字符是否是数字
+                                isNumber = false;
+                            *name++ = c;
+                        }
+                        token->length = static_cast<SizeType>(name-token->name);// 计算当前解析这个token的长度
+                        if(token->length==0)
+                            isNumber = false;
+                        *name++ = '\0';// 添加终止符
+                        if(isNumber&&token->length>1&&token->name[0]=='0')// 此时这个token是一个有着前导零的路径片段表示,表示它不是数字,因为数字不会有前导零
+                            isNumber = false;
+                        SizeType n = 0;
+                        if(isNumber) {// 将表示数字的token转换为数值类型SizeType
+                            for(size_t j=0;j<token->length;++j) {// 按位转换为对应数值
+                                SizeType m = n*10+static_cast<SizeType>(token->name[j]-'0');
+                                if(m < n) {// 转换过程中发生溢出,则终止转换
+                                    isNumber = false;
+                                    break;
+                                }
+                                n = m;
+                            }
+                        }
+                        token->index = isNumber?n:kPointerInvalidIndex;// 保存当前解析后写入的token的索引
+                        token++;// 解析下一个token
+                    }
+                    RAPIDJSON_ASSERT(name<=nameBuffer_+length);
+                    parseErrorCode_ = kPointerParseErrorNone;// 解析没错的话,就是kPointerParseErrorNone
+                    return;
+                error:// Parse()解析过程中发生错误,会跳转到当前这个error标签,并执行下面的代码
+                    Allocator::Free(tokens_);
+                    nameBuffer_ = 0;
+                    tokens_ = 0;
+                    tokenCount_ = 0;
+                    parseErrorOffset_ = i;
+                    return;
+            }
+
     };
 }
 

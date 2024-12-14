@@ -790,7 +790,7 @@
    doc.Parse(json);
    Pointer pointer("/book/chapters/0/title");// 指向doc["book"]["chapters"][0]["title"]
    ```
-2. `Pointer`解析的字符串有两种表示方式:
+2. `Pointer`解析的字符串(`source`)有两种表示方式:
    * 使用路径表达式,如:`"/foo/0"`
    * 使用`URI`片段表达式,如:`"#/foo/0"`
 3. `GetUri()`的一个例子,根据一个`JSON`文档(`DOM`树)和一系列`URI`片段(通常路径),解析得到一个最终的`URI`
@@ -830,15 +830,29 @@
 7. `token`的`index==kPointerInvalidIndex`:表示当前令牌名称(即这个`token.name`)是对象的名称,而不是数组索引
 8. `tokens_`就是用于路径解析中的令牌数组,即它的每一个元素就是一个令牌,每个令牌指向`JSON`数据结构(如`JSON`文档)中的某个节点,即`DOM`树的某个节点
 9.  <mark>`GenericPointer`有两类构造函数,一类是传入一个字符串或`URI`片段(即`source`),解析得到对应的`tokens`令牌(此时会创建动态内存`nameBuffer_`);另一类是直接传入设定好的`tokens`令牌</mark>
-10. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`执行的是传入`index`索引的追加`token`操作,即处理的是传入一个`JSON`数组索引的令牌`token`,并将其追加到当前`GenericPointer`中.会根据这个`index`,创建一个`token`(`name`对应`index`转换的字符串,`length`对应转换字符串的长度,`Token`结构体中的`index`就对应传入的`index`这个值)</mark>
-11. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`中为什么要将`index`转换为字符数组`char* buffer`后,还要讨论`Ch`的字节类型?</mark>
+10. <mark>`nameBuffer_`只有在构造`Pointer`对象时传入`Ch* source`时才会使用,对于传入`tokens`的构造对象时不会使用.`nameBuffer_`是一个内存缓冲区,用来存储多个路径片段字符串(即每一个`token.name`),这个指针指向的内存是`tokens_`这个结构体数组内存后面紧接着的内存地址,即`nameBuffer_`紧随`tokens_`后面,保证它们之间没有内存冲突.具体让`nameBuffer_[i]=tokens_[i].name`是在`Parse()`中实现的</mark>,如:`CopyFromRaw()`
+   ```C++
+   // 分配内存:首先为tokens分配内存,再为nameBuffer分配内存(包含extraNameBufferSize指定的额外空间)
+   tokens_ = static_cast<Token*>(allocator_->Malloc(tokenCount_*sizeof(Token)+(nameBufferSize+extraNameBufferSize)*sizeof(Ch)));
+   nameBuffer_ = reinterpret_cast<Ch*>(tokens_+tokenCount_);// nameBuffer是存储所有token名称(token->name)的缓冲区,分配空间紧接在tokens_之后
+   ```
+11. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`执行的是传入`index`索引的追加`token`操作,即处理的是传入一个`JSON`数组索引的令牌`token`,并将其追加到当前`GenericPointer`中.会根据这个`index`,创建一个`token`(`name`对应`index`转换的字符串,`length`对应转换字符串的长度,`Token`结构体中的`index`就对应传入的`index`这个值)</mark>
+12. <mark>`GenericPointer Append(SizeType index, Allocator* allocator=nullptr)`中为什么要将`index`转换为字符数组`char* buffer`后,还要讨论`Ch`的字节类型?</mark>
    因为需要`Append()`到当前`GenericPointer`对象,所以要构建一个`Token`结构体,但是结构体中的`name`是`Ch`类型,所以要`Ch`的字节类型,若是单字节,则可以直接将`char* buffer`转换为`Ch* name`;如果是多字节,就需要一个字节一个字节的将`buffer[i]`转换为`name[i]`
-12. <sapn style="color:red;">`GenericPointer`的`JSON Pointer`有两种表示方式:字符串表示方式、`URI`片段表示方式.下图中两种表示方式都对应的同一种`Pointer token`</span>
+13. <sapn style="color:red;">`GenericPointer`的`JSON Pointer`有两种表示方式:字符串表示方式、`URI`片段表示方式.下图中两种表示方式都对应的同一种`Pointer token`</span>
     ![](markdown图像集/2024-12-12-22-16-34.png)
-13. <mark>`GenericPointer::Create()`:根据当前`Pointer`对象中的`tokens_`,动态地在`root`(一般是一个`Document`对象,即`DOM`树)中创建或查找相应的节点值,如果查找不到,就会在`tokens_`表示的路径处对应的`JSON`文档处创建一个空节点(`ValueType()`)</mark>
-14. `GetUri()`它是按照当前`Pointer`对象的`tokens_`找`uri`,并和给定的`rootUri`合成在一起.在这个合成的过程中,遵循的是:按照这个`tokens_`路径查找的时候,是逐层找是否有`id`字段,然后会把每一层的`id`字段的`uri`值都合成到当前的`uri`(从`rootUri`开始,在`GetUri()`中是`base`)后面,即一进来它会先检查传入的`root`这个`DOM`树根节点是否有`id`这个成员,如果有,就把它的`uri`值合成到`rootUri`后面,然后往下一层走
-15. <mark>`Uri`只会存在于`JSON`对象的键值对中,即等于`id`这个键对应的值中,因此`GetUri()`只会在`kObjectType`中处理(`Resolve()`)`uri`.如:`UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);`:表示的是从当前`JSON`文档`doc`中按`["article","details"]`路径进行合成`uri`,即首先会找`doc`这个根节点中是否有`id`成员,如果有,就先把最外面的`uri`合成到`rootUri`中;然后,再找`doc["article"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中;最后,再找`doc["article"]["details"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中</mark>
-16. <mark>明明`uri`信息只会存在于`JSON`对象的成员中,那么`GetUri()`为什么要处理数组类型?</mark>
+14. <mark>`GenericPointer::Create()`:根据当前`Pointer`对象中的`tokens_`,动态地在`root`(一般是一个`Document`对象,即`DOM`树)中创建或查找相应的节点值,如果查找不到,就会在`tokens_`表示的路径处对应的`JSON`文档处创建一个空节点(`ValueType()`)</mark>
+15. `GetUri()`它是按照当前`Pointer`对象的`tokens_`找`uri`,并和给定的`rootUri`合成在一起.在这个合成的过程中,遵循的是:按照这个`tokens_`路径查找的时候,是逐层找是否有`id`字段,然后会把每一层的`id`字段的`uri`值都合成到当前的`uri`(从`rootUri`开始,在`GetUri()`中是`base`)后面,即一进来它会先检查传入的`root`这个`DOM`树根节点是否有`id`这个成员,如果有,就把它的`uri`值合成到`rootUri`后面,然后往下一层走(注意`GetUri()`不是只将通过`tokens_`路径找到的最后一个`id`对应的`uri`,而是将每一层路径都合成到当前`rooturi`中)
+16. <mark>`Uri`只会存在于`JSON`对象的键值对中,即等于`id`这个键对应的值中,因此`GetUri()`只会在`kObjectType`中处理(`Resolve()`)`uri`.如:`UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);`:表示的是从当前`JSON`文档`doc`中按`["article","details"]`路径进行合成`uri`,即首先会找`doc`这个根节点中是否有`id`成员,如果有,就先把最外面的`uri`合成到`rootUri`中;然后,再找`doc["article"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中;最后,再找`doc["article"]["details"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中</mark>
+17. <mark>明明`uri`信息只会存在于`JSON`对象的成员中,那么`GetUri()`为什么要处理数组类型?</mark>
    如果不处理数组,解析类似"/person/friends/0"(要找`doc["person"]["friends"][0]`路径上的`id`对应的`uri`,如果不处理数组索引,就处理不了`tokens_`中表示的数组索引)这样的路径时,函数将无法正确地处理数组索引,导致解析失败.通过数组的处理,`GetUri()`可以在路径中遇到数组时正确地解析出索引对应的值
-17. `Get()`:根据当前`Pointer`对象中的`tokens_`返回要找的节点,如果某个`token`路径片段找不到就会返回`nullptr`
+18. `Get()`:根据当前`Pointer`对象中的`tokens_`返回要找的节点,如果某个`token`路径片段找不到就会返回`nullptr`
+19. `CopyFrom()`:
+20. `std::ptrdiff_t`:这是`C++`标准库中定义的整数类型,用于表示指针之间的差值(即两个指针相减的结果),通常用来表示内存中的地址偏移量
+   ```C++
+   typedef long ptrdiff_t; // 在某些平台上，可能是 long 类型
+   ```
+21. `NeedPercentEncode()`:
+22. `Parse()`:
+23. `goto error`:
 

@@ -541,8 +541,8 @@ namespace RAPIDJSON{
                 if(tokenCount_==0)
                     return false;
                 ValueType* v = &root;
-                const Token* last = tokens_+(tokenCount_-1);
-                for(const Token* t=tokens_;t!=last;++t) {
+                const Token* last = tokens_+(tokenCount_-1);// tokens_的尾地址
+                for(const Token* t=tokens_;t!=last;++t) {// 遍历访问每一个token
                     switch(v->GetType()) {
                         case kObjectType:
                             {
@@ -627,7 +627,7 @@ namespace RAPIDJSON{
                     if(*s=='/')// 统计源字符串source中'/'字符的个数,即token的数量,将其作为tokenCount_
                         tokenCount_++;
                     Token* token = tokens_ = static_cast<Token*>(allocator_->Malloc(tokenCount_*sizeof(Token)+length*sizeof(Ch)));// 分配内存:首先为tokens分配内存,再为nameBuffer_分配内存
-                    Ch* name = nameBuffer_ = reinterpret_cast<Ch*>(tokens_+tokenCount_);// nameBuffer是存储所有token名称(token->name)的缓冲区,分配空间紧接在tokens_之后
+                    Ch* name = nameBuffer_ = reinterpret_cast<Ch*>(tokens_+tokenCount_);// nameBuffer_是存储所有token名称(token->name)的缓冲区,分配空间紧接在tokens_之后
                     size_t i = 0;
                     bool uriFragment = false;
                     if(source[i]=='#') {// 以#为开头,就表示传入的这个source是URI片段表示形式的字符串
@@ -657,7 +657,7 @@ namespace RAPIDJSON{
                                     size_t len = os.PutEnd(begin);// 解码后的字符的长度
                                     i += is.Tell()-1;// 跳过已解码的字符
                                     if(len==1)// 如果解码后的字符只有一个字符,则直接用解码后的字符*name赋给c
-                                        c = *name;// 赋给c后便于后续的*name++=c的操作的统一
+                                        c = *name;// 赋给c目的是便于后续的*name++=c的操作的统一
                                     else {// 解码后有多个字符
                                         name += len;// 将指针name移动len个位置,跳过已解码的字符(其实在解码的时候name指针指向的内存已经赋值解码后的字符了)
                                         isNumber = false;
@@ -725,8 +725,113 @@ namespace RAPIDJSON{
                     parseErrorOffset_ = i;
                     return;
             }
-
+            template<bool uriFragment, typename OutputStream>
+            bool Stringify(OutputStream& os) const {
+                RAPIDJSON_ASSERT(IsValid());
+                if(uriFragment)
+                    os.Put('#');
+                for(Token* t=tokens_;t!=tokens_+tokenCount_;++t) {
+                    os.Put('/');
+                    for(size_t j=0;j<t->length;++j) {
+                        Ch c = t->name[j];
+                        if(c=='~') {// 编码转义字符'~'
+                            os.Put('~');
+                            os.Put('0');
+                        }
+                        else if(c=='/') {// 编码转义字符'/'
+                            os.Put('~');
+                            os.Put('1');
+                        }
+                        else if(uriFragment&&NeedPercentEncode(c)) {// 编码URI中的非安全字符
+                            GenericStringStream<typename ValueType::EncodingType> source(&t->name[j]);
+                            PercentEncodeStream<OutputStream> target(os);
+                            if(!Transcoder<EncodingType, UTF<>>().Validate(source, target))
+                                return false;
+                            j += source.Tell()-1;
+                        }
+                        else// 其余情况,直接写入
+                            os.Put(c);
+                    }
+                }
+                return true;
+            }
+            /**
+             * @brief 解码URL编码得到的字符串序列
+             * %XY=>对应字符
+             * 
+             */
+            class PercentDecodeStream {
+                public:
+                    typedef typename ValueType::Ch Ch;
+                    PercentDecodeStream(const Ch* source, const Ch* end)
+                        : src_(source),
+                          end_(end),
+                          valid_(true)
+                        {}
+                    Ch Take() {
+                        if(*src_!='%' || src_+3>end_) {// %XY表示至少要有三个字符
+                            valid_ = false;
+                            return 0;
+                        }
+                        src_++;
+                        Ch c = 0;
+                        for(int j=0;j<2;++j) {// 解析%后的两个十六进制
+                            c = static_cast<Ch>(c<<4);
+                            Ch h = *src_;
+                            if (h >= '0' && h <= '9') 
+                                c = static_cast<Ch>(c + h - '0');// 字符为'0'-'9'
+                            else if (h >= 'A' && h <= 'F')// 如果是'A'-'F'或'a'-'f',则将其转换为相应的数字值(如'A'对应10,'F'对应15)
+                                c = static_cast<Ch>(c + h - 'A' + 10);
+                            else if (h >= 'a' && h <= 'f') 
+                                c = static_cast<Ch>(c + h - 'a' + 10);
+                            else {
+                                valid_ = false;
+                                return 0;
+                            }
+                            src_++;
+                        }
+                        return c;
+                    }
+                    size_t Tell() const {
+                        return static_cast<size_t>(src_-head_);
+                    }
+                    bool IsValid() const {
+                        return valid_;
+                    }
+                private:
+                    const Ch* src_;
+                    const Ch* head_;
+                    const Ch* end_;
+                    bool valid_;
+            };
+            /**
+             * @brief 将传入的字符流中的字符,按照URL编码方式转换成%XY格式的编码,其中X和Y是十六进制数
+             * 
+             * @tparam OutputStream 
+             */
+            template<typename OutputStream>
+            class PercentEncodeStream {
+                public:
+                    PercentEncodeStream(OutputStream& os) os_(os) {}
+                    void Put(char c) {
+                        unsigned char u = static_cast<unsigned char>(c);
+                        static const char hexDigits[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+                        os_.Put('%');// 写入'%'
+                        os_.Put(static_cast<typename OutputStream::Ch>(hexDigits[u>>4]));// 得到高四位并写入
+                        os_.Put(static_cast<typename OutputStream::Ch>(hexDigits[u&15]));// 得到低四位并写入
+                    }
+                private:
+                    OutputStream& os_;
+            };
+            Allocator* allocator_;// 当前分配器.它要么由用户提供,要么等于ownAllocator_
+            Allocator* ownAllocator_;// 当前对象所指向的分配器
+            Ch* nameBuffer_;// 一个缓冲区,包含tokens_的所有名称(name)
+            Token* tokens_;// token数组
+            size_t tokenCount_;// tokens_中的token数目
+            size_t parseErrorOffset_;// 解析失败时的代码单位偏移量
+            PointerParseErrorCode parseErrorCode_;// 解析失败的错误码
     };
+    
 }
 
 #endif

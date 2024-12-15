@@ -841,18 +841,25 @@
    因为需要`Append()`到当前`GenericPointer`对象,所以要构建一个`Token`结构体,但是结构体中的`name`是`Ch`类型,所以要`Ch`的字节类型,若是单字节,则可以直接将`char* buffer`转换为`Ch* name`;如果是多字节,就需要一个字节一个字节的将`buffer[i]`转换为`name[i]`
 13. <sapn style="color:red;">`GenericPointer`的`JSON Pointer`有两种表示方式:字符串表示方式、`URI`片段表示方式.下图中两种表示方式都对应的同一种`Pointer token`</span>
     ![](markdown图像集/2024-12-12-22-16-34.png)
+    从图中可以看出,`URI`片段表示中第一个字符一定是`#`,对于属于`URI`非安全的字符会使用`%+ASCII`码的方式进行表示
 14. <mark>`GenericPointer::Create()`:根据当前`Pointer`对象中的`tokens_`,动态地在`root`(一般是一个`Document`对象,即`DOM`树)中创建或查找相应的节点值,如果查找不到,就会在`tokens_`表示的路径处对应的`JSON`文档处创建一个空节点(`ValueType()`)</mark>
 15. `GetUri()`它是按照当前`Pointer`对象的`tokens_`找`uri`,并和给定的`rootUri`合成在一起.在这个合成的过程中,遵循的是:按照这个`tokens_`路径查找的时候,是逐层找是否有`id`字段,然后会把每一层的`id`字段的`uri`值都合成到当前的`uri`(从`rootUri`开始,在`GetUri()`中是`base`)后面,即一进来它会先检查传入的`root`这个`DOM`树根节点是否有`id`这个成员,如果有,就把它的`uri`值合成到`rootUri`后面,然后往下一层走(注意`GetUri()`不是只将通过`tokens_`路径找到的最后一个`id`对应的`uri`,而是将每一层路径都合成到当前`rooturi`中)
 16. <mark>`Uri`只会存在于`JSON`对象的键值对中,即等于`id`这个键对应的值中,因此`GetUri()`只会在`kObjectType`中处理(`Resolve()`)`uri`.如:`UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);`:表示的是从当前`JSON`文档`doc`中按`["article","details"]`路径进行合成`uri`,即首先会找`doc`这个根节点中是否有`id`成员,如果有,就先把最外面的`uri`合成到`rootUri`中;然后,再找`doc["article"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中;最后,再找`doc["article"]["details"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中</mark>
 17. <mark>明明`uri`信息只会存在于`JSON`对象的成员中,那么`GetUri()`为什么要处理数组类型?</mark>
    如果不处理数组,解析类似"/person/friends/0"(要找`doc["person"]["friends"][0]`路径上的`id`对应的`uri`,如果不处理数组索引,就处理不了`tokens_`中表示的数组索引)这样的路径时,函数将无法正确地处理数组索引,导致解析失败.通过数组的处理,`GetUri()`可以在路径中遇到数组时正确地解析出索引对应的值
 18. `Get()`:根据当前`Pointer`对象中的`tokens_`返回要找的节点,如果某个`token`路径片段找不到就会返回`nullptr`
-19. `CopyFrom()`:
+19. `CopyFrom()`:该函数实现了从另一个`GenericPointer (rhs)`复制所有的 `token`和名称`token.name`到当前对象.它确保了每个`token`的`name`成员指向新的`nameBuffer_`中相应的名称,同时分配了足够的内存来处理额外的`token`(`extraToken`)和名称空间.最后返回的是新的`nameBuffer_`的结束位置,这通常用于方便后续的操作或内存管理
 20. `std::ptrdiff_t`:这是`C++`标准库中定义的整数类型,用于表示指针之间的差值(即两个指针相减的结果),通常用来表示内存中的地址偏移量
    ```C++
    typedef long ptrdiff_t; // 在某些平台上，可能是 long 类型
    ```
-21. `NeedPercentEncode()`:
-22. `Parse()`:
-23. `goto error`:
+21. `NeedPercentEncode()`:确定字符`c`是否属于`URI`中不需要编码的安全字符集(`'0'-'9'、'a'-'z'、'A'-'Z'、'-'、'.'、'_'、'~'`为安全字符集).安全字符集不用`URL`编码(也叫百分号编码)(`%`+`16进制`码值)
+22. `Parse()`:解析一个源字符串`source`,并将结果保存在`tokens_`和`nameBuffer_`中,`source`可能是普通的字符串表示,也可能是`URI`片段表示方式.从`Parse()`中可知:
+    * 字符串表示和`URI`片段表示第一个字符一定是`'/'`
+    * 以`#`为开头,表示传入的这个`source`是`URI`片段表示形式的字符串
+    * 对于`URI`片段表示中,需要对`%16进制`(`%XY`)进行百分号解码,解码后写入到`token`对应的`name`中
+    * `URI`片段表示的转义字符:`'~0' -> '~', '~1' -> '/'`
+23. `goto error`:这是`C/C++`中用于跳转到指定标签的一种控制流语句.它被用来在发生错误时跳转到特定的错误处理区域,这样做可以简化错误处理
+24. `PercentEncodeStream()`:将传入的字符流中的字符,按照`URL`编码方式转换成`%XY`格式的编码,其中`X`和`Y`是十六进制数.`X`为高四位,`Y`为低四位
+25. `PercentDecodeStream()`:由`URL`编码得到的解码后的字符串序列
 

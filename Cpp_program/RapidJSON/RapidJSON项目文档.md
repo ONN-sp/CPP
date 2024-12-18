@@ -867,4 +867,29 @@
    ![](markdown图像集/2024-12-17-21-40-13.png)
 2. 对应的在`GeneriUri`中:`uri_`存储完整的`uri`字符串,包含了`uri`所有组成部分;`base_`存储`uri`去掉`fragment`部分的内容;`scheme_`存储`uri`中的`scheme`部分;`auth_`存储`uri`中用户信息部分;`path_`存储`uri`中的路径部分;`query_`存储`uri`中查询字符串部分;`frag_`存储`uri`中的片段标识符`fragment`部分
    ![](markdown图像集/2024-12-17-21-40-34.png)
+3. `Resolve()`:解析一个相对`URI`(当前`URI`对象)相对于一个基准`URI`(`baseuri`)的绝对`URI`.它会根据`URI`组成部分(`shceme、auth、path、query、frag`)来拼接、修改并返回解析后的`URI`.如:
+   ```C++
+   1. 
+   baseuri = "http://example.com/path/to/resource"
+   relativeuri = "d/e/f"// 此时没有指定scheme、auth、query、frag部分,只有path且为相对路径部分"d/e/f"
+   =>
+   http://example.com/path/to/resource/d/e/f
+   2. 
+   baseuri = "http://example.com/path/to/resource"
+   relativeuri = "https://anotherexample.com/other/path"// 此时指定了scheme部分("https"),auth部分("anotherexample.com"),path部分("other/path").无query、frag部分
+   =>
+   // 此时因为当前URI就有scheme部分,所以直接使用当前URI对象的uri各个部分,不会拼接baseuri,此时根本就不会使用baseuri的各个部分
+   https://anotherexample.com/other/path
+   // 此时会执行Resolve()函数的第一个if()然后直接调到276行resuri.base_ = CopyPart(resuri.frag_, frag_, GetFragStringLength());
+   ```
+   <span style="color:red;">总的来说,`Resolve()`处理的拼接是只有`path`部分,其余部分不会拼接.具体来说:
+   * `cururi`有`scheme`部分,此时`Resolve()`返回的`URI`对象就是`cururi`
+   * `cururi`无`scheme`部分有`auth`部分,此时`Resolve()`返回的`URI`对象就是`baseuri`的`scheme`部分加`cururi`的所有部分
+   * `cururi`无`scheme`、`auth`部分有`path`,此时`Resolve()`返回的`URI`对象就是`baseuri`的`scheme`、`auth`部分加`baseuri`的`path`和`cururi`的`path`拼接后的部分
+   * `cururi`无`scheme`、`auth`、`path`部分有/无`query`,此时`Resolve()`返回的`URI`对象就是`baseuri`的`scheme`、`auth`、`path`部分加`cururi`的`query`/`baseuri`的`query`部分
+   * `frag`部分只有`cururi`中有,`baseuri`不考虑</span>
+4. <mark>`Allocate()`中为什么分配内存`size_t total = (3*len+7)*sizeof(Ch);`?</mark>
+   理论上,`URI`的每个部分的长度可能接近整个`URI`的长度,因此你可能需要分配大约3倍的空间,以保证可以容纳所有的部分.不乘以6是因为可能会导致过度分配内存,乘3是一个合理的估算.加7的目的:这是为了保证内存对齐,并为不同的`URI`部分之间留出足够的空间.具体来说,7是为了避免由于内存对齐规则(通常是8字节对齐)而产生的浪费或错位
+   
+
 

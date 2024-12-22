@@ -101,8 +101,8 @@ namespace RAPIDJSON{
                 : allocator_(),
                   ownAllocator_(),
                   nameBuffer_(),
-                  tokens_(const_cast<Token*>(tokens)),
-                  tokenCount_(tokenCount),
+                  tokens_(),
+                  tokenCount_(),
                   parseErrorOffset_(),
                   parseErrorCode_(kPointerParseErrorNone)
                 {
@@ -112,8 +112,8 @@ namespace RAPIDJSON{
                 : allocator_(allocator),
                   ownAllocator_(),
                   nameBuffer_(),
-                  tokens_(const_cast<Token*>(tokens)),
-                  tokenCount_(tokenCount),
+                  tokens_(),
+                  tokenCount_(),
                   parseErrorOffset_(),
                   parseErrorCode_(kPointerParseErrorNone)
                 {
@@ -229,7 +229,7 @@ namespace RAPIDJSON{
             }
             // 检查当前的GenericPointer是否有效
             bool IsValid() const {
-                return parseErrorCode_ = kPointerParseErrorNone;
+                return parseErrorCode_ == kPointerParseErrorNone;
             }
             // 返回解析错误时的偏移量,即错误发生的位置
             size_t GetParseErrorOffset() const {
@@ -256,7 +256,7 @@ namespace RAPIDJSON{
                 if(!IsValid() || !rhs.IsValid() || tokenCount_!=rhs.tokenCount_)
                     return false;
                 for(size_t i=0;i<tokenCount_;i++) {
-                    if(token_[i].index != rhs.tokens_[i].index ||
+                    if(tokens_[i].index != rhs.tokens_[i].index ||
                        tokens_[i].length != rhs.tokens_[i].length ||
                        (tokens_[i].length != 0&&std::memcmp(tokens_[i].name, rhs.tokens_[i].name, sizeof(Ch)* tokens_[i].length)!=0))
                         return false;
@@ -514,6 +514,25 @@ namespace RAPIDJSON{
             RAPIDJSON_DISABLEIF_RETURN((internal::OrExpr<internal::IsPointer<T>, internal::IsGenericValue<T>>), (ValueType&)) Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, T value) const {
                 return Create(document) = value;// 注意:这里其实是用的GenericValue中的赋值运算符的重载(RAPIDJSON_DISABLEIF_RETURN((internal::IsPointer<T>), (GenericValue&)) operator=(T value)).这里不是使用ValueType(value, allocator).Move(),因为GenericValue构造函数没有针对模板参数T的
             }
+            template <typename stackAllocator>
+            ValueType& Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, ValueType& value) const {
+                return Create(document) = value;
+            }
+            template <typename stackAllocator>
+            ValueType& Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, const ValueType& value) const {
+                return Create(document).CopyFrom(value, document.GetAllocator());
+            }
+            template <typename stackAllocator>
+            ValueType& Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, const Ch* value) const {
+                return Create(document) = ValueType(value, document.GetAllocator()).Move();
+            }
+            #if RAPIDJSON_HAS_STDSTRING
+                //! Sets a std::basic_string in a document.
+                template <typename stackAllocator>
+                ValueType& Set(GenericDocument<EncodingType, typename ValueType::AllocatorType, stackAllocator>& document, const std::basic_string<Ch>& value) const {
+                    return Create(document) = ValueType(value, document.GetAllocator()).Move();
+                }
+            #endif
             /**
              * @brief 根据当前Pointer对象中的tokens_得到的节点与传入的value进行交换
              * 
@@ -568,7 +587,7 @@ namespace RAPIDJSON{
                     case kArrayType:
                         if(last->index==kPointerInvalidIndex || last->index>=v->Size())
                             return false;
-                        v->Erase(v->Begin()+last=>index);
+                        v->Erase(v->Begin()+last->index);
                         return true;
                     default:
                         return false;
@@ -745,7 +764,7 @@ namespace RAPIDJSON{
                         else if(uriFragment&&NeedPercentEncode(c)) {// 编码URI中的非安全字符
                             GenericStringStream<typename ValueType::EncodingType> source(&t->name[j]);
                             PercentEncodeStream<OutputStream> target(os);
-                            if(!Transcoder<EncodingType, UTF<>>().Validate(source, target))
+                            if(!Transcoder<EncodingType, UTF8<>>().Validate(source, target))
                                 return false;
                             j += source.Tell()-1;
                         }
@@ -812,7 +831,7 @@ namespace RAPIDJSON{
             template<typename OutputStream>
             class PercentEncodeStream {
                 public:
-                    PercentEncodeStream(OutputStream& os) os_(os) {}
+                    PercentEncodeStream(OutputStream& os)  : os_(os) {}
                     void Put(char c) {
                         unsigned char u = static_cast<unsigned char>(c);
                         static const char hexDigits[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};

@@ -26,7 +26,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(allocator),
+                  allocator_(allocator),
                   ownAllocator_()
                 {}
             // 
@@ -38,7 +38,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(allocator),
+                  allocator_(allocator),
                   ownAllocator_()
                 {
                     Parse(uri, len);// 将传入的uri字符串的各个部分解析到URI对象中表示各个部分的内存中
@@ -51,7 +51,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(allocator),
+                  allocator_(allocator),
                   ownAllocator_()
                 {
                     Parse(uri, internal::StrLen<Ch>(uri));
@@ -65,7 +65,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(allocator),
+                  allocator_(allocator),
                   ownAllocator_()
                 {
                     const Ch* u = uri.template Get<const Ch*>();
@@ -80,7 +80,7 @@ namespace RAPIDJSON {
                       path_(),
                       query_(),
                       frag_(),
-                      allocator(allocator),
+                      allocator_(allocator),
                       ownAllocator_()
                     {
                         Parse(uri.c_str(), internal::StrLen<Ch>(uri.c_str()));
@@ -94,7 +94,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(),
+                  allocator_(),
                   ownAllocator_()
                 {
                     *this = rhs;
@@ -107,7 +107,7 @@ namespace RAPIDJSON {
                   path_(),
                   query_(),
                   frag_(),
-                  allocator(allocator),
+                  allocator_(allocator),
                   ownAllocator_()
                 {
                     *this = rhs;
@@ -146,7 +146,7 @@ namespace RAPIDJSON {
             const Ch* GetString() const { return  uri_;}
             SizeType GetStringLength() const { return uri_==0?0:internal::StrLen<Ch>(uri_);}
             const Ch* GetBaseString() const { return base_;}
-            SizeType GetBaseStringLength() const { return base_==0?0::internal::StrLen<Ch>(base_);}
+            SizeType GetBaseStringLength() const { return base_==0?0:internal::StrLen<Ch>(base_);}
             const Ch* GetSchemeString() const { return scheme_; }
             SizeType GetSchemeStringLength() const { return scheme_ == 0 ? 0 : internal::StrLen<Ch>(scheme_);}
             const Ch* GetAuthString() const { return auth_; }
@@ -241,7 +241,7 @@ namespace RAPIDJSON {
                     }
                     else {// 如果进一步当前URI没有auth,则使用baseuri的auth
                         resuri.path_ = CopyPart(resuri.auth_, baseuri.auth_, baseuri.GetAuthStringLength());
-                        if(GetPathStringLength()=0) {// 如果当前URI没有path部分,则使用baseuri的path
+                        if(GetPathStringLength()==0) {// 如果当前URI没有path部分,则使用baseuri的path
                             resuri.query_ = CopyPart(resuri.path_, baseuri.path_, baseuri.GetPathStringLength());
                             if(GetQueryStringLength()==0)// 如果当前URI没有query部分,则使用baseuri的query
                                 resuri.frag_ = CopyPart(resuri.query_, baseuri.query_, baseuri.GetQueryStringLength());
@@ -280,7 +280,7 @@ namespace RAPIDJSON {
                     return resuri;
                 }
             }
-            Allocator& GetAllocator() { return *allocator; }
+            Allocator& GetAllocator() { return *allocator_; }
         private:
             /**
              * @brief 负责为一个URI对象的各个部分(scheme_,auth_,query_,frag_,uri_)分配内存
@@ -375,7 +375,7 @@ namespace RAPIDJSON {
                                 break;
                             if(uri[pos2]=='?')
                                 break;
-                            if(uri[pos]=='#')
+                            if(uri[pos2]=='#')
                                 break;
                             pos2++;
                         }
@@ -446,7 +446,7 @@ namespace RAPIDJSON {
              */
             void SetBase() {
                 Ch* next = base_;
-                std::memcpy(next, scheme_, GetBaseStringLength()*sizeof(Ch));
+                std::memcpy(next, scheme_, GetSchemeStringLength()*sizeof(Ch));
                 next += GetSchemeStringLength();
                 std::memcpy(next, auth_, GetAuthStringLength()*sizeof(Ch));
                 next += GetAuthStringLength();
@@ -501,7 +501,7 @@ namespace RAPIDJSON {
                         slashpos++;
                     }
                     // 检查当前路径段是否为'..',若是就回退到上一个路径段
-                    if(slashpos==2&&path_[pathpos]=='.'&&path[pathpos+1]=='.') {
+                    if(slashpos==2&&path_[pathpos]=='.'&&path_[pathpos+1]=='.') {
                         RAPIDJSON_ASSERT(newpos==0||path_[newpos-1]=='/');
                         size_t lastslashpos = newpos;// 用lastslashpos来返回上一个有效路径段的结束位置
                         if(lastslashpos > 1) {

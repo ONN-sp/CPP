@@ -7,6 +7,29 @@
    * 跳过空白字符的优化算法:利用SIMD实现的
    * 字符串处理算法:优化算法处理转义字符
    * 使用经过优化的Grisu2算法(`dtoa.h`)和专门的浮点数解析算法->`double-conversion`中自定义的`DIY-FP`算法(`diyfp.h strtod.h`) (标准库的`strtod()`函数较缓慢(因为它是面向广泛情况,即包括了异常值、极端情况、错误处理等,所以较为缓慢),因此自己重新实现了) (大多数`JSON`文档中的浮点数往往是常见的简单小数,而不需要处理极端情况.相比之下,`strtod()`在处理任何浮点数时都必须走标准的复杂路径,导致性能开销较大)
+3. 本项目不支持`JSON Schema`(在当今的数据驱动时代,`JSON(JavaScript Object Notation)`已经成为数据交换和存储的常用格式(`schema.h`主要用于`JSON Schema`校验,它为 `RAPIDJSON`提供了一些用于验证`JSON`数据是否符合特定模式的功能.使用`JSON Schema`校验,你可以确保传入的`JSON`数据符合预定的结构、类型、格式等约束条件).然而,`JSON`本身并不包含任何数据验证规则,这可能导致数据不一致或格式错误的问题.为了解决这个问题,`JSON Schema`诞生了.它为`JSON`数据提供了强有力的验证机制,确保数据的完整性和准确性.`JSON Schema`是一种用于验证`JSON`数据的规范,它可以帮助我们确保数据的完整性和准确性).`JSON Schema`提供了一种约定和工具来确保`JSON`数据符合特定的结构和规则,`JSON Schema`本身就是一个`JSON`文档.总的来说,`JSON Schema`就相当于提前规定了一个统一的规范,即提前为每个字段分配了规则,如果不符合条件就会验证错误,从而不需要开发人员一个一个去检查字段.在没有`JSON Schema`的情况下,你可能需要手动检查数据的正确性,这会导致维护成本高、出错风险大.使用`JSON Schema`可以提高开发效率、减少错误,并确保数据的一致性和可维护性.举一个`JSON Schema`:
+   ```json
+      {
+   "type": "object",
+   "properties": {
+      "age": {
+         "type": "integer",
+         "minimum": 18
+      },
+      "name": {
+         "type": "string"
+      }
+   },
+   "required": ["age", "name"]
+      }
+      // 在这个例子中，JSON Schema 明确指定了 age 必须是一个整数，且必须大于等于 18，name 必须是字符串，并且这两个字段都是必需的
+   ```
+4. <mark>`Reader`和`Value`是直接调用`Handler`的,一般是会从外部传入一个`Handler`;而`Writer`和`Document`本身就可以作为`Handler`进行调用</mark>
+   ![](markdown图像集/2024-12-24-13-03-28.png)
+5. 给出一个`SAX`和`DOM`的`API`都依赖的`Allocator/Encoding/Stream`
+   ![](markdown图像集/2024-12-24-13-04-08.png)
+6. 迭代解析`JSON`的状态图
+   ![](markdown图像集/2024-12-24-13-04-46.png)
 # JSON
 1. `JSON`是一种轻量级的数据交换格式,常用于客户端和服务器之间的数据传输:
    * 易于阅读和编写
@@ -616,6 +639,7 @@
     ![](markdown图像集/2024-11-17-20-24-39.png)
 33. `Reader`是`JSON`的`SAX`风格解析器,而`Writer`则是`JSON`的`SAX`风格生成器
 34. `Reader::ParseString()`中的`RAPIDJSON_ASSERT(s.Peek()=='\"');`:这个断言的作用是确保在解析字符串时,输入流的当前字符是双引号`"`(`\"`被编译器处理为`"`,这个`\`会被编译器给识别后处理掉),这是`JSON`格式的要求,而不是要求输入流中的双引号必须以转义形式存在(此时可以以转义形式存在`"{\"key\": \"value\" }"`;也可以原始字符串形式`R"({ "key": "value" })"`)
+35. `strtod()`可以将字符串解析为`double`,但它毕竟缓慢.本项目使用的是`internal::StrtodNormalPrecision()`和`internal::StrtodFullPrecision()`
 ## 测试程序
 1. `const char json[] = " { \"hello\" : \"world\", \"t\" : true , \"f\" : false, \"n\": null, \"i\":123, \"pi\": 3.1416, \"a\":[1, 2, 3, 4] } ";`和`const char json[] = R"({ "hello" : "world", "t" : true, "f" : false, "n": null, "i":123, "pi": 3.1416, "a":[1, 2, 3, 4] })";`:`C++`的原始字符串是为了方便程序员定义字符串,允许字符串内容中包含未转义的特殊字符.原始字符串在代码中表现为不需要转义,但在内存中,它和普通字符串的内容是完全一样的、
 2. 测试结果:
@@ -629,9 +653,9 @@
 6. 本项目中`Document`对象就是`JSON`数据
 7. `GenericMember`是用于表示`JSON`对象中的一个成员(即一个键值对)
 8. `GenericMemberIterator`为`JSON`对象的成员(对象的键值对)提供标准化的迭代器功能(类似标准库的`<Iterator>`,`vector<int> s;s.begin()`,此项目中就是`Value v;v.MemberBegin();v.MemberEnd()`).`GenericMemberIterator`是一个随机访问迭代器,符合`ISO/IEC C++`标准对迭代器的要求.通过实现标准迭代器接口,`GenericMemberIterator`可以轻松地与标准算法(如`std::sort、std::find`等)兼容,从而简化开发流程.此时不需要直接操作指向对象的成员的底层指针,而是对这个对象的成员用迭代器进行访问
-10. 为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
+9.  为什么`GenericMemberIterator`定义的迭代器就能像`<Iterator>`标准库中的迭代器一样直接可以用于`std::sort()`等函数上?
    因为它严格遵守了`C++`迭代器的概念规范(如:可拷贝和可赋值、递增\递减、随机访问、比较操作、`iterator_traits`支持等),并实现了随机访问迭代器的所有必要接口
-11. `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
+10. `GenericValue`用来表示一个`JSON值`,可以是任意`JSON`数据类型(这里不是指的对象中的键值对中的值)对应的值,如:
    ```C++
    1.
    typedef GenericValue<UTF8<>> Value; 
@@ -655,11 +679,11 @@
    document.AddMember(ageKey, ageValue, allocator);
    document.AddMember(marriedKey, marriedValue, allocator);
    ```
-12. <mark>`placement new`:它是`C++`中一种特殊的`new`运算符,允许在已分配的内存地址上构造对象.与标准`new`运算符不同,`placement new`并不负责内存的分配,而是将对象的构造操作直接放置在已分配的内存中</mark>
+11. <mark>`placement new`:它是`C++`中一种特殊的`new`运算符,允许在已分配的内存地址上构造对象.与标准`new`运算符不同,`placement new`并不负责内存的分配,而是将对象的构造操作直接放置在已分配的内存中</mark>
     ```C++
     new (pointer) Type(args);// 在一个已分配内存地址pointer上构造一个Type(args)对象
     ```
-13. `uint64_t`:`0-2^64-1`;`int64_t`:`-2^63-2^63-1`.对于一个整数做`flags`标记时,它可能可以同时被标记为几个`flag`,如:
+12. `uint64_t`:`0-2^64-1`;`int64_t`:`-2^63-2^63-1`.对于一个整数做`flags`标记时,它可能可以同时被标记为几个`flag`,如:
    ```C++
    1.
    data.f.flags = (u&0x80000000) ? kNumberUintFlag : (kNumberUintFlag|kIntFlag|kInt64Flag);
@@ -673,7 +697,7 @@
       data_.f.flags |= kIntFlag;// 设置为int有符号
    }
    ```
-14. <mark>本项目中`JSON数组`既可以用`GenericArray`表示,也可以用`GenericValue`这种更通用的方式表示.`GenericValue`是一个通用的数据类型,可以表示`JSON`数组、对象、数字、字符串等.它通过`flags`字段来标识当前数据类型.而`GenericArray`是专门用于表示和操作`JSON`数组的类,这个类操作起来更直观,`GenericArray`主要提供了数组级别的操作,如增加、删除元素,访问数组中的元素等.它是一个专用的容器类型,类似于`C++`标准库中的`std::vector`</mark>
+13. <mark>本项目中`JSON数组`既可以用`GenericArray`表示,也可以用`GenericValue`这种更通用的方式表示.`GenericValue`是一个通用的数据类型,可以表示`JSON`数组、对象、数字、字符串等.它通过`flags`字段来标识当前数据类型.而`GenericArray`是专门用于表示和操作`JSON`数组的类,这个类操作起来更直观,`GenericArray`主要提供了数组级别的操作,如增加、删除元素,访问数组中的元素等.它是一个专用的容器类型,类似于`C++`标准库中的`std::vector`</mark>
     ```C++
     1. 利用GenericValue表示JSON数组
     GenericValue<UTF8<>, Allocator> jsonArray(kArrayType);
@@ -685,79 +709,79 @@
     jsonArray.PushBack(GenericValue<UTF8<>, Allocator>(1), allocator);
     // 直接用GenericArray表示JSON数组,它其实就是一个容器类,封装了GenericValue的数组,可以更方便地进行数组操作,即GenericArray其实是一个GenericValue数组,其每个数组元素就是一个GenericValue对象.这个PushBack()宏观上看就是一个往GenericArray中添加GenericValue的操作了
     ```
-15. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
+14. `IsLosslessFloat()`中既然是把当前对象先转换为`double`类型的`a`,再进行判断转换为`float`是否无损.为什么不先判断是否可以无损表示为`double`,而直接判断转换后的`double a`是否可以无损转换为`float`呢?
    因为如果是有损表示为`double`,那么当用这个有损的`double`值来判断得出可以无损转换为`float`,此时也说明可以无损转换为`float`(即使`int64_t`到`double`有损,这并不一定意味着它无法无损表示为`float`)
-16. `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
-17. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`),数组中的`ValueIterator`其实就是指针,即数组只有指针访问的形式
-18. `RemoveMember()`和`EraseMember()`是实现的类似`vector`的`std::remove()`和`vec.erase()`方法,最终底层调用的函数传入的参数都是迭代器.即这样设计就是为了将本项目中的`JSON`对象访问其成员时,设计成类似`std::vector`中通过迭代器而对元素删除的高效操作(`std::remove() erase()`)
-19. <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
+15. `RAPIDJSON_DISABLEIF_RETURN((internal::NotExpr<internal::IsSame<typename internal::RemoveConst<T>::Type, Ch>>), (GenericValue&))`:`internal::NotExpr`:取反;`internal::IsSame`:检查两个参数是否相同;`internal::RemoveConst`:若`T`有`const`,则去掉`T`中的`const`.此行代码的含义是:当去掉`const`后的`T`与`Ch`一样,则条件不成立.此时模板函数的返回类型为`GenericValue&`;若条件成立,则禁用这个模板函数
+16. 本项目中`JSON`对象可以用迭代器访问,也可以用索引`[]`方式访问;而数组没有用迭代器访问的方法,只有索引访问的方式(`GenericValue`中对于对象和数组都分别设计了重载的索引方式访问`[]`),数组中的`ValueIterator`其实就是指针,即数组只有指针访问的形式
+17. `RemoveMember()`和`EraseMember()`是实现的类似`vector`的`std::remove()`和`vec.erase()`方法,最终底层调用的函数传入的参数都是迭代器.即这样设计就是为了将本项目中的`JSON`对象访问其成员时,设计成类似`std::vector`中通过迭代器而对元素删除的高效操作(`std::remove() erase()`)
+18. <mark>对于`DoRemoveMember()`(它返回的是指向删除位置的迭代器),它的删除逻辑采用了"如果对象中有多个成员且删除的不是最后一个,则将最后一个成员移动到被删除的位置",为什么要这样?</mark>
    这样做虽然会破坏内部的顺序,但是只需要一次覆盖操作(如果整体往前移,就需要多次覆盖).这种涉及不需要频繁地移动大量数据,尤其当对象中有很多成员时,这种方法可以显著提升性能
-20. `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
-21. <span style="color:red;">`C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数</span>
+19. `C++`允许非`const`参数向`const`参数隐式转换,因此`EraseMember(const GenericValue<Encoding, SourceAllocator>& name)`中的`EraseMember(m);`,`m`虽然是`MemberIterator`,但在调用`EraseMember(m);`时会隐式转换为`ConstMemberIterator`,即最终会匹配`MemberIterator EraseMember(ConstMemberIterator pos)`这个函数
+20. <span style="color:red;">`C++`的引用折叠:在`C++11`中,右值引用可以与左值引用相互转换,特别是当它们作为函数参数传递时,允许临时对象或优质对象作为左值引用传递给参数</span>
    ```C++
    GenericValue& PushBack(GenericValue&& value, Allocator& allocator){
       return PushBack(value, allocator);// 这里使用了C++11的引用折叠
    }
    // 这里的PushBack(value, allocator);调用了底层的GenericValue& PushBack(GenericValue& value, Allocator& allocator),这里使用了引用折叠,即将右值引用(&&)参数直接绑定到左值引用(&)参数上了,这不会报错
    ```
-22. `std::memmove`:`void* memmove(void* dest, const void* src, size_t count);`:将内存从`src`位置拷贝到`dest`位置,拷贝的内存大小是`count`
-23. <mark>在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`</mark>
-24. <span style="color:red;">`GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`<span>
-25. `GeneriValue`中其实就是表示一个`JSON`值(注意:这里说的`JSON`值不是指的`JSON`对象中键值对的值,而是指的所有`JSON`的可能值,如:数字、字符串、逻辑值、数字、对象、`null`的等),它可以是`JSON`数组、对象、基本类型元素等,其具体的就是操作`Data`这个共用体(即针对`Data`中不同的`JSON`值进行不同的重载函数操作)
-26. <mark>标志位枚举类中为什么`kTypeMask=0x07`,它有什么用?</mark>
+21. `std::memmove`:`void* memmove(void* dest, const void* src, size_t count);`:将内存从`src`位置拷贝到`dest`位置,拷贝的内存大小是`count`
+22. <mark>在`GetDouble()`中,因为在`C++`中,`int`和`unsigned`类型到`double`类型的转换是安全的隐式类型转换(这是因为`double`可以表示`int`和`unsigned`的所有可能值,且`double`的范围比`int`和`unsigned`大得多,则此时不会发生精度损失的情况),所以不用`static_cat<double>`;然而,对于`int64_t`和`uint64_t`的位数更大,它转换为`double`类型可能会出现精度损失的情况,所以它不会自动进行从`int64_t`或`uint64_t`到`double`的隐式转换,此时就需要显示地使用`static_cast<double>`</mark>
+23. <span style="color:red;">`GenericValue::Accept()`:接受并处理传入的`Handler`对象,它对当前`GenericValue`对象进行遍历并根据不同的数据类型执行指定的`Handler`操作,`Handler`通常是用户自定义从外部传入的.对于`JSON`对象的键值对的值和`JSON`数组的元素,它们可以是任意类型,所以在遍历的时候需要进一步调用`Accept()`,即如`for(ConstMemberIterator m=MemberBegin();m!=MemberEnd();++m) if(RAPIDJSON_UNLIKELY(!m->value.Accept(handler))) return false;`<span>
+24. `GeneriValue`中其实就是表示一个`JSON`值(注意:这里说的`JSON`值不是指的`JSON`对象中键值对的值,而是指的所有`JSON`的可能值,如:数字、字符串、逻辑值、数字、对象、`null`的等),它可以是`JSON`数组、对象、基本类型元素等,其具体的就是操作`Data`这个共用体(即针对`Data`中不同的`JSON`值进行不同的重载函数操作)
+25. <mark>标志位枚举类中为什么`kTypeMask=0x07`,它有什么用?</mark>
     `kTypeMask`用于在标志中提取类型信息的掩码,通过最低3位来标识数据的基本类型(从`rapidjson.h`中的枚举类`Type`中可知,所有类型可以用3位二进制表示完,因为只有7种),则等于`0x07=0x00000111`,这样就能提取中标志位的最低3位,对于标志位来说最低3位都是不用来表示`flag`的,如`kBoolFlag=0x0008,kInlineStrFlag=0x1000`,最低3位就是八进制中最后一位,都是0,因此可以直接从标志位中通过`kTypeMask`按位与就能获得类型
-27. `Flag`结构体中`payload`用于存储与指针相关的内存数据和其它优化信息,对于不同的系统,使用了不同的填充字节,如:64位系统中`char payload[sizeof(SizeType)*2+sizeof(void*)+6];`:用了6个填充字节,这是因为`sizeof(SizeType)*2+sizeof(void*)`=16字节,而`flags`又占2字节,因此这个结构体位18字节,64位系统中内存对齐通常是8字节,此时18字节未对齐,因此填充了6个字节;32位系统也是同理的.至于为什么要用`sizeof(SizeType)*2+sizeof(void*)`:个人猜测是因为`payload`后续会被用在`ShortString`的定义中,而从`String`结构体可知,通常由两个`SizeType`+一个`char*`指针构成,因此`payload`设置成这样
-28. <mark>`ShortString`需注意:</mark>
+26. `Flag`结构体中`payload`用于存储与指针相关的内存数据和其它优化信息,对于不同的系统,使用了不同的填充字节,如:64位系统中`char payload[sizeof(SizeType)*2+sizeof(void*)+6];`:用了6个填充字节,这是因为`sizeof(SizeType)*2+sizeof(void*)`=16字节,而`flags`又占2字节,因此这个结构体位18字节,64位系统中内存对齐通常是8字节,此时18字节未对齐,因此填充了6个字节;32位系统也是同理的.至于为什么要用`sizeof(SizeType)*2+sizeof(void*)`:个人猜测是因为`payload`后续会被用在`ShortString`的定义中,而从`String`结构体可知,通常由两个`SizeType`+一个`char*`指针构成,因此`payload`设置成这样
+27. <mark>短字符串优化技术`ShortString`需注意:</mark>
     * 在字符串`Ch str[MaxChars];`中,最后一个字节存储的是该字符串长度的信息
     * `MaxChars = sizeof(static_cast<Flag*>(0)->payload)/sizeof(Ch),MaxSize = MaxChars-1,LenPos = MaxSize`和`Ch str[MaxChars];`:对于32位系统,`str`就是有13字节的有效字符的字符串;64位就对应的是21字节
     * 在`ShortString`中,我们使用的是反向方式来间接存储该字符串的长度,即`str[LenPos]`保存的不是直接的该字符串的长度,而是最大有效字节数`MaxSize`减去该字符串的长度.这样做的好处:
       - 节省存储空间:这样做就不需要单独用一个字节去表示字符串的实际长度,而是直接用`MaxSize-len`
       - 防止直接暴露长度信息:这样做隐藏了实际的字符串长度,从而为开发者带来一些"安全性" 
     * `Ch str[MaxChars];`这是直接存储在`ShortString`这个结构体里了,所以称作内联存储,因此对应的是`kInlineStrFlag`标志(`ShortString`的字符串直接存储在这个结构体内存中,而不是像`String`中:它表示的字符串的存储位置用一个指向其他内存位置的指针来表示)  
-29. <mark>`GetMapLayoutSize()`是用于计算内存布局后存储`Map`映射这种数据结构所使用的内存字节数,这里使用了对齐操作`RAPIDJSON_ALIGN()`.我们定义的内存布局为`[Map*][SizeType][Member[capacity]][MapIterator[capacity]]`,即在内存中映射数据结构以这种方式存储在内存中,具体实现这样存储的操作是`GetMapCapacity() GetMapMembers() GetMapIterators()`三个函数实现的.对于一个`Map* maps;`,要通过该映射找成员指针`Member*=GetMapMembers(maps)`,`maps`指的是`Map`的指针,而后续`Member*`或`MapIterator*`要按照内存布局中存储的顺序往后就能找到</mark>
-30. 按照此内存布局,映射表、成员数组、迭代器是相关联的,即对应同一个`JSON`键值对的索引在三个地方都是一样的,即`Map* map;Member* members;MapIterator* Iterators;`中,`map->begin()(第一个键值对);memebers[0](第一个成员);Iterators[0](第一个迭代器)`都是指的第一个`JSON`键值对
-31. <mark>如何能确保`GetMapMembers()/GetMapIterators()/GetMap()`得到的`Member*/MapIterator*/Map*`就是指向的传入的映射表中的键值对,即如何让`Member[]`数组存储的映射表的键值对?</mark>
+28. <mark>`GetMapLayoutSize()`是用于计算内存布局后存储`Map`映射这种数据结构所使用的内存字节数,这里使用了对齐操作`RAPIDJSON_ALIGN()`.我们定义的内存布局为`[Map*][SizeType][Member[capacity]][MapIterator[capacity]]`,即在内存中映射数据结构以这种方式存储在内存中,具体实现这样存储的操作是`GetMapCapacity() GetMapMembers() GetMapIterators()`三个函数实现的.对于一个`Map* maps;`,要通过该映射找成员指针`Member*=GetMapMembers(maps)`,`maps`指的是`Map`的指针,而后续`Member*`或`MapIterator*`要按照内存布局中存储的顺序往后就能找到</mark>
+29. 按照此内存布局,映射表、成员数组、迭代器是相关联的,即对应同一个`JSON`键值对的索引在三个地方都是一样的,即`Map* map;Member* members;MapIterator* Iterators;`中,`map->begin()(第一个键值对);memebers[0](第一个成员);Iterators[0](第一个迭代器)`都是指的第一个`JSON`键值对
+30. <mark>如何能确保`GetMapMembers()/GetMapIterators()/GetMap()`得到的`Member*/MapIterator*/Map*`就是指向的传入的映射表中的键值对,即如何让`Member[]`数组存储的映射表的键值对?</mark>
     这个过程是通过`DoAddMember()`实现的,我们规定了内存布局,然后通过`DoAddMember()`会将给定的成员的`name`和`value`存储再`Member[]`中.同时,它还会更新映射表`map`,以及迭代器`MapIterator`.此函数通过`GetMap(members)`保证了将成员`insert`的就是内存布局中与`Member*`相关联的映射表;`GetMapIterator(map)`保证了拷贝到的迭代器就是`map`映射表在内存布局中对应的迭代器(因此,若要使用此内存布局形式的映射表、成员数组、迭代器,要先使用`DoAddMember()`初始化这个内存布局,即把成员放到该放的地方,并使映射表、成员数组、迭代器三个部分都与传入的`JSON`键值对相关联)
-32.  `GetMapCapacity() GetMapMembers() GetMapIterators()`这三个函数共同作用,通过精确的内存偏移计算确保`Map*、SizeType、Member[]`和`MapIterator[]`在内存中的顺序.`Map*`在最前面;紧随其后的是`SizeType`,即表示容量的字段;`Member[]`紧接在`SizeType`后面;最后是`MapIterator[]`,在`Member[]`之后
-33. `GetMapMembers() GetMapIterators()`不仅确保了`Member[]`和`MapIterator[]`在内存布局中的位置,而且返回得到的`Member* MapIterator*`就是传入的`map`的键值对指针和迭代器
-34. `DropMapIterator()`明明返回的新迭代器和传入的旧迭代器是一样的,为什么要换成新的迭代器进行返回?
+31.  `GetMapCapacity() GetMapMembers() GetMapIterators()`这三个函数共同作用,通过精确的内存偏移计算确保`Map*、SizeType、Member[]`和`MapIterator[]`在内存中的顺序.`Map*`在最前面;紧随其后的是`SizeType`,即表示容量的字段;`Member[]`紧接在`SizeType`后面;最后是`MapIterator[]`,在`Member[]`之后
+32. `GetMapMembers() GetMapIterators()`不仅确保了`Member[]`和`MapIterator[]`在内存布局中的位置,而且返回得到的`Member* MapIterator*`就是传入的`map`的键值对指针和迭代器
+33. `DropMapIterator()`明明返回的新迭代器和传入的旧迭代器是一样的,为什么要换成新的迭代器进行返回?
    这样做可以返回一个安全的迭代器,即这个新的迭代器当前是没有被外部持有的,而传入的旧的迭代器可能在外部某个地方被持有了,我们在这个函数内就将旧的给析构了,然后重新用一个外部目前每持有的新的迭代器,就算这个迭代器和之前的旧迭代器一样也是有意义的
-35. 本项目对于`JSON`数组和`JSON`对象中的成员的扩容操作都是使"用当前容量的加倍策略来增加容量",类似于`vector`
-36. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
-37. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
-38. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
-39. `GenericDocument`中的`ownAllocator_`和`allocator_`在外部没传入内存分配器时,不就是在程序中会设为一样的吗,那么为什么还要单独用`ownAllocator_`?
+34. 本项目对于`JSON`数组和`JSON`对象中的成员的扩容操作都是使"用当前容量的加倍策略来增加容量",类似于`vector`
+35. <mark>`typedef std::multimap<Data, SizeType, Less, StdAllocator<Pair, Allocator>> Map;``Map`中存储的是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引,而不是`JSON`键与`JSON`值的映射</mark>
+36. `DoEraseMembers()`中将`first-last`的成员删除后,还需要将`last`后未被删除的成员移到已删除的位置,即往前移,移到`first`位置
+37. <mark>本项目在处理`JSON`对象成员时,使用了两种方式,一种是使用`std::multimap`构建一个映射表,进而可以直接调用这个容器的一些处理方法(`erase find`等)(`C++11`),需要注意的是这个映射表的内容是`JSON`对象成员的键(`key`)与该成员在对象中的位置索引的映射(只有`JSON`对象才设计映射表处理);另一种就是不使用映射表,直接使用迭代器、指针等进行删除、添加等方法</mark>
+38. `GenericDocument`中的`ownAllocator_`和`allocator_`在外部没传入内存分配器时,不就是在程序中会设为一样的吗,那么为什么还要单独用`ownAllocator_`?
     `allocator_`是外部传入的内存分配器,表示用户在创建`GenericDocument`时提供的分配器,如果用户没有提供分配器,那么会`new`一个分配器然后赋给`allocator_`.`ownAllocator_`是用来管理内部分配器的,即若外部提供了,那么`ownAllocator_`就没用了,虽然在内部`new`分配器时,`ownAllocator_=allocator_`,但是它们两个设计的目的不同,`ownAllocator_`的存在确保了`GenericDocument`即使在没有外部分配器时,依然能够自动创建并管理一个内部分配器,以确保内存能够正确地分配和释放(从`Destory()`中的`RAPIDJSON_DELETE(ownAllocator_);`可以看出)
-40. `GenericDocument::~GenericDocument()`中的`ValueType::SetNull()`其作用是将当前`JSON`文档的内容清空,设置为`Null`,而不会说把这个`JSON`文档内存给释放,因为在`SetNull`中,其实会重新分配内存,只是此时是空的而已.`Destory()`的作用是销毁`ownAllocator_`指向的内存,即释放`ownAllocator_`指向的分配器本身的内存(因为动态`new`了一个内存分配器),而不会释放由分配器管理的内存
-41. 在派生类`GenericDocument::Swap`方法中,首先要调用基类`GenericValue`的 `Swap`方法来交换基类的成员数据(`ValueType::Swap(rhs);`).这样做是为了确保基类的数据能够正确交换,因为基类的数据是派生类对象的一部分.基类的数据交换完毕后,接下来才是交换派生类特有的成员数据.这样可以确保派生类特有的数据在基类部分已经交换之后再进行交换
-42. `Populate(Generator& g)`:通过生成器填充当前`GenericDocument`对象,函数中的`g(*this)`会向当前`GenericDocument`对象发送`SAX`事件,即解析过程中触发回调事件时就会调用`GenericDocument`的`Handler`操作,然后通过这个`Handler`操作把解析的`JSON`数据保存到当前`GenericDocument`对象的`stack_`中.最后,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`调用了当前`GenericDocument`对象`stack_`栈中的赋值操作符,即从栈中弹出解析的`JSON`数据,然后将其赋值到当前`GenericDocument`对象对应的基类`GenericValue`的数据`data_`中
-43. `GenericDocument::ParseStream()`实际底层是根据不同解析标志调用`Reader::Parse`
-44. 为什么需要`operator ParseResult()`?
+39. `GenericDocument::~GenericDocument()`中的`ValueType::SetNull()`其作用是将当前`JSON`文档的内容清空,设置为`Null`,而不会说把这个`JSON`文档内存给释放,因为在`SetNull`中,其实会重新分配内存,只是此时是空的而已.`Destory()`的作用是销毁`ownAllocator_`指向的内存,即释放`ownAllocator_`指向的分配器本身的内存(因为动态`new`了一个内存分配器),而不会释放由分配器管理的内存
+40. 在派生类`GenericDocument::Swap`方法中,首先要调用基类`GenericValue`的 `Swap`方法来交换基类的成员数据(`ValueType::Swap(rhs);`).这样做是为了确保基类的数据能够正确交换,因为基类的数据是派生类对象的一部分.基类的数据交换完毕后,接下来才是交换派生类特有的成员数据.这样可以确保派生类特有的数据在基类部分已经交换之后再进行交换
+41. `Populate(Generator& g)`:通过生成器填充当前`GenericDocument`对象,函数中的`g(*this)`会向当前`GenericDocument`对象发送`SAX`事件,即解析过程中触发回调事件时就会调用`GenericDocument`的`Handler`操作,然后通过这个`Handler`操作把解析的`JSON`数据保存到当前`GenericDocument`对象的`stack_`中.最后,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`调用了当前`GenericDocument`对象`stack_`栈中的赋值操作符,即从栈中弹出解析的`JSON`数据,然后将其赋值到当前`GenericDocument`对象对应的基类`GenericValue`的数据`data_`中
+42. `GenericDocument::ParseStream()`实际底层是根据不同解析标志调用`Reader::Parse`
+43. 为什么需要`operator ParseResult()`?
     这是一个类型转换运算符,可以将一个`GenericDocument`对象直接转换为`ParseResult`类型对象.对于如果一个`GenericDocument`对象包含了相应的`ParseResult`,那么可以直接通过类型转换运算符访问解析状态.这样就不需要显式地访问`parseResult_`成员变量了
-45. 利用`GenericDocument`的`Parse`会将当前`GenericDocument`对象作为调用底层`Reader::Parse()`时的`Handler`进行传入,然后在解析过程中,会回调`GenericDocument`实现的`Handler`的`API`,如`Key() EndObject()`等.从实现的`API`函数可知,用`GenericDocument`作为`Handler`,会把解析的`JSON`数据先存储在当前`GenericDocument`对象的`stack_`中,然后再通过`SetObjectRaw() SetArrayRaw()`传到当前这个`GenericValue`对象中,重新组织成了一个完整的`JSON`对象或数组
-46. <span style="color:red;">`ValueType::operator=(*stack_.template Pop<ValueType>(1));`:这一句程序是实现`GenericDocument`将解析后的`JSON`数据存储在当前`GenericDocument`对象中的关键,因为`GenericDocument::Parse()`会在解析过程先用`stack_`暂存`JSON`解析过程中产生的`JSON`数据,最终解析到`EndObject() EndArray()`时,将栈中的数据构建成完整的对象或数组(栈中逐渐构成了一个树状结构`DOM`树),然后通过`SetObjectRaw()`或`SetArrayRaw()`将它们关联到当前的对象或数组(这个当前对象和当前数值位于`stack_`此时的栈顶).因此,利用`GenericDocument`解析得到的最终`JSON`结果会存储在`stack_`的栈顶,这个栈顶元素就是最终的解析结果,代表整个`JSON`文档(它可能是一个对象或者数组,内部也嵌套了很多对象或数组).那么,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`就实现了在解析成功时,将存储在栈顶的`JSON`结果,赋值到当前这个`GenericDocument`对象(由于`GenericDocument`继承自`GenericValue`,它的内部成员`data_`会持有`JSON`解析后的数据),即当前`GenericDocument`对象也是一个存储了`JSON`解析结果的`DOM`树</span>
-47. `ValueType::operator=(*stack_.template Pop<ValueType>(1));`这是一个成员函数的调用,即等价于`ValueType temp = *stack_.template Pop<ValueType>(1);this->operator=(temp);`.而重载的赋值运算符也可以写作`A=B`的形式,即`*this = *stack_.template Pop<ValueType>(1);`
-48. `stack_.ShrinkToFit();`:确保栈在`Empty()`后会调整其内部的内存分配,以释放未使用的空间,即释放`stack_`这个栈数据结构占据的内存
-49. 为什么`GenericDocument::StartObject()`和`Reader::StartObject()`为什么和`Writer::StartObject()`不同,`Writer::StartObject()`需要写入一个`{`,而其余两种不用,为什么?
+44. 利用`GenericDocument`的`Parse`会将当前`GenericDocument`对象作为调用底层`Reader::Parse()`时的`Handler`进行传入,然后在解析过程中,会回调`GenericDocument`实现的`Handler`的`API`,如`Key() EndObject()`等.从实现的`API`函数可知,用`GenericDocument`作为`Handler`,会把解析的`JSON`数据先存储在当前`GenericDocument`对象的`stack_`中,然后再通过`SetObjectRaw() SetArrayRaw()`传到当前这个`GenericValue`对象中,重新组织成了一个完整的`JSON`对象或数组
+45. <span style="color:red;">`ValueType::operator=(*stack_.template Pop<ValueType>(1));`:这一句程序是实现`GenericDocument`将解析后的`JSON`数据存储在当前`GenericDocument`对象中的关键,因为`GenericDocument::Parse()`会在解析过程先用`stack_`暂存`JSON`解析过程中产生的`JSON`数据,最终解析到`EndObject() EndArray()`时,将栈中的数据构建成完整的对象或数组(栈中逐渐构成了一个树状结构`DOM`树),然后通过`SetObjectRaw()`或`SetArrayRaw()`将它们关联到当前的对象或数组(这个当前对象和当前数值位于`stack_`此时的栈顶).因此,利用`GenericDocument`解析得到的最终`JSON`结果会存储在`stack_`的栈顶,这个栈顶元素就是最终的解析结果,代表整个`JSON`文档(它可能是一个对象或者数组,内部也嵌套了很多对象或数组).那么,`ValueType::operator=(*stack_.template Pop<ValueType>(1));`就实现了在解析成功时,将存储在栈顶的`JSON`结果,赋值到当前这个`GenericDocument`对象(由于`GenericDocument`继承自`GenericValue`,它的内部成员`data_`会持有`JSON`解析后的数据),即当前`GenericDocument`对象也是一个存储了`JSON`解析结果的`DOM`树</span>
+46. `ValueType::operator=(*stack_.template Pop<ValueType>(1));`这是一个成员函数的调用,即等价于`ValueType temp = *stack_.template Pop<ValueType>(1);this->operator=(temp);`.而重载的赋值运算符也可以写作`A=B`的形式,即`*this = *stack_.template Pop<ValueType>(1);`
+47. `stack_.ShrinkToFit();`:确保栈在`Empty()`后会调整其内部的内存分配,以释放未使用的空间,即释放`stack_`这个栈数据结构占据的内存
+48. 为什么`GenericDocument::StartObject()`和`Reader::StartObject()`为什么和`Writer::StartObject()`不同,`Writer::StartObject()`需要写入一个`{`,而其余两种不用,为什么?
     主要原因是`GenericDocument::StartObject()`和`Reader::StartObject()`并没有涉及实际的输出操作,它只是在解析`JSON`字符串时创建的一个新的对象并将相应解析出的数据进行`Handler`操作(如推入`stack_`中);而`Writer::StartObject()`是用于生成`JSON`字符串并写入传入的`JSON`数据,所以要输出`{`
-50. <mark>`GenericArray::PushBack()`会直接调用`GenericValue::PushBack()`,那定义一个`GenericArray`对象怎么保证其中的`value_`一定是`kArrayFlag`,明明在`GenericArray`构造函数中没有定义`value_`的`data_.flags`啊?</mark>
+49. <mark>`GenericArray::PushBack()`会直接调用`GenericValue::PushBack()`,那定义一个`GenericArray`对象怎么保证其中的`value_`一定是`kArrayFlag`,明明在`GenericArray`构造函数中没有定义`value_`的`data_.flags`啊?</mark>
    因为在使用`GenericArray`时不是直接定义这个容器对象的,而是通过使用`GenericValue::SetArray()`或`GenericValue::GetArray()`来得到一个`GenericArray`对象的,这样就能保证`kArrayFlag`,如`Document d1;d1.SetArray().PushBack(1, a).PushBack(2, a);`和`Value z;z.SetArray();`
-51. <mark>`GenericArray`其实就是定义的一个容器,然后把`GenericValue`中对于`flags =kArrayFlag`的相应方法封装到`GenericArray`这个容器中,即专门定义了一个处理`JSON`数组的容器类.`value_`就是有着`kArrayFlag`设置的一个`GenericValue`对象,所以`GenericArray`表示的是`JSON`数组</mark>
-52. `JSON`对象添加成员和`JSON`数组添加元素不一样,`JSON`数组添加/移除元素是像`vector`容器一样用`PushBack/PopBack`,而`JSON`对象是用`AddMember/RemoveMember
-53. `GenericObject`和`GenericArray`实现的目的一样,设计的过程基本也一样
-54. <mark>既然引用类型必须在定义时就要初始化,即绑定到一个已经存在的对象中,那么为什么在`GenericArray/GenericObject`中可以直接`ValueType& value_;`?</mark>
+50. <mark>`GenericArray`其实就是定义的一个容器,然后把`GenericValue`中对于`flags =kArrayFlag`的相应方法封装到`GenericArray`这个容器中,即专门定义了一个处理`JSON`数组的容器类.`value_`就是有着`kArrayFlag`设置的一个`GenericValue`对象,所以`GenericArray`表示的是`JSON`数组</mark>
+51. `JSON`对象添加成员和`JSON`数组添加元素不一样,`JSON`数组添加/移除元素是像`vector`容器一样用`PushBack/PopBack`,而`JSON`对象是用`AddMember/RemoveMember
+52. `GenericObject`和`GenericArray`实现的目的一样,设计的过程基本也一样
+53. <mark>既然引用类型必须在定义时就要初始化,即绑定到一个已经存在的对象中,那么为什么在`GenericArray/GenericObject`中可以直接`ValueType& value_;`?</mark>
     引用类型定义时必须初始化,对于`GenericArray/GenericObject`,因为这两个类的构造函数都会对`value_`进行初始化,所以定义和初始化其实是一起的,不是分离的,所以这是可行的
-55. <span style="color:red;">`GenericValue`中提供两个`String`的存储策略.一个是`copy-string`:分配缓冲区,然后把源数据复制至它;一个是`const-string`:简单地存储字符串的指针(字符串字面量的优化,此时无需额外分配).这两种存储方式分别是用`SetStringRaw(StringRefType s)`和`SetStringRaw(StringRefType s, Allocator& allocator)`管理的,前一个表示`const-string`存储,即不需要`allocator`,只是按简单传递字面量</span>
-56. <mark>对于`JSON`数组,我们采用的是流畅接口,可以链式调用,即几个`PushBack()`写在一起,如`PushBack()/PopBack()`,它们返回的是当前`GenericArray`对象,而不像`STL`库中的`std::vector`等的`push_back`返回的是`void`类型,即不能链式调用</mark>
-57. `CopyFrom`实现了对当前`DOM`树深拷贝的功能(为新对象分配新的内存)赋值
-58. 本项目中对于`Value`<=>`GenericValue`对象使用了转移语义(`Move()`).这样做对性能十分友好,这样就可以减少大量没必要的内存分配/释放过程,以及内存复制
+54. <span style="color:red;">`GenericValue`中提供两个`String`的存储策略.一个是`copy-string`:分配缓冲区,然后把源数据复制至它;一个是`const-string`:简单地存储字符串的指针(字符串字面量的优化,此时无需额外分配).这两种存储方式分别是用`SetStringRaw(StringRefType s)`和`SetStringRaw(StringRefType s, Allocator& allocator)`管理的,前一个表示`const-string`存储,即不需要`allocator`,只是按简单传递字面量</span>
+55. <mark>对于`JSON`数组,我们采用的是流畅接口,可以链式调用,即几个`PushBack()`写在一起,如`PushBack()/PopBack()`,它们返回的是当前`GenericArray`对象,而不像`STL`库中的`std::vector`等的`push_back`返回的是`void`类型,即不能链式调用</mark>
+56. `CopyFrom`实现了对当前`DOM`树深拷贝的功能(为新对象分配新的内存)赋值
+57. 本项目中对于`Value`<=>`GenericValue`对象使用了转移语义(`Move()`).这样做对性能十分友好,这样就可以减少大量没必要的内存分配/释放过程,以及内存复制
    ```C++
    GenericValue& operator=(GenericValue&& rhs) RAPIDJSON_NOEXCEPT{
                      return *this = rhs.Move();// 调用rhs.Move()将右值rhs转换为左值,然后使用前面重载的拷贝赋值操作符将其赋给当前对象this
                   }
    ```
-59. `document.h`可以解析一个`JSON`至`DOM`,然后就可以轻松查询及修改`DOM`,并最终转换回`JSON`(`writer.h/prettywriter.h`)
-60. 举一个例子:
+58. `document.h`可以解析一个`JSON`至`DOM`,然后就可以轻松查询及修改`DOM`,并最终转换回`JSON`(`writer.h/prettywriter.h`)
+59. 举一个例子:
    ```json
    {
    "hello": "world",
@@ -841,27 +865,33 @@
    因为需要`Append()`到当前`GenericPointer`对象,所以要构建一个`Token`结构体,但是结构体中的`name`是`Ch`类型,所以要`Ch`的字节类型,若是单字节,则可以直接将`char* buffer`转换为`Ch* name`;如果是多字节,就需要一个字节一个字节的将`buffer[i]`转换为`name[i]`
 13. <sapn style="color:red;">`GenericPointer`的`JSON Pointer`有两种表示方式:字符串表示方式、`URI`片段表示方式.下图中两种表示方式都对应的同一种`Pointer token`</span>
     ![](markdown图像集/2024-12-12-22-16-34.png)
-    从图中可以看出,`URI`片段表示中第一个字符一定是`#`,对于属于`URI`非安全的字符会使用`%+ASCII`码的方式进行表示
+    从图中可以看出,`URI`片段表示中第一个字符一定是`#`,对于属于`URI`非安全的字符会使用`%+十六进制`码的方式进行表示
 14. <mark>`GenericPointer::Create()`:根据当前`Pointer`对象中的`tokens_`,动态地在`root`(一般是一个`Document`对象,即`DOM`树)中创建或查找相应的节点值,如果查找不到,就会在`tokens_`表示的路径处对应的`JSON`文档处创建一个空节点(`ValueType()`)</mark>
-15. `GetUri()`它是按照当前`Pointer`对象的`tokens_`找`uri`,并和给定的`rootUri`合成在一起.在这个合成的过程中,遵循的是:按照这个`tokens_`路径查找的时候,是逐层找是否有`id`字段,然后会把每一层的`id`字段的`uri`值都合成到当前的`uri`(从`rootUri`开始,在`GetUri()`中是`base`)后面,即一进来它会先检查传入的`root`这个`DOM`树根节点是否有`id`这个成员,如果有,就把它的`uri`值合成到`rootUri`后面,然后往下一层走(注意`GetUri()`不是只将通过`tokens_`路径找到的最后一个`id`对应的`uri`,而是将每一层路径都合成到当前`rooturi`中)
-16. <mark>`Uri`只会存在于`JSON`对象的键值对中,即等于`id`这个键对应的值中,因此`GetUri()`只会在`kObjectType`中处理(`Resolve()`)`uri`.如:`UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);`:表示的是从当前`JSON`文档`doc`中按`["article","details"]`路径进行合成`uri`,即首先会找`doc`这个根节点中是否有`id`成员,如果有,就先把最外面的`uri`合成到`rootUri`中;然后,再找`doc["article"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中;最后,再找`doc["article"]["details"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中</mark>
-17. <mark>明明`uri`信息只会存在于`JSON`对象的成员中,那么`GetUri()`为什么要处理数组类型?</mark>
+15. 在`Create()`中,`-`负号表示数组最后元素的下一个元素,即相当于要把此时传入的`value`给`PushBack`进这个数组中
+   ```C++
+   Document d;
+   d.Parse("{\"foo\":[123]}");
+   SetValueByPointer(d, "/foo/-", 456);// 等价于Value::PushBack()  { "foo" : [123, 456] }
+   ```
+16. `GetUri()`它是按照当前`Pointer`对象的`tokens_`找`uri`,并和给定的`rootUri`合成在一起.在这个合成的过程中,遵循的是:按照这个`tokens_`路径查找的时候,是逐层找是否有`id`字段,然后会把每一层的`id`字段的`uri`值都合成到当前的`uri`(从`rootUri`开始,在`GetUri()`中是`base`)后面,即一进来它会先检查传入的`root`这个`DOM`树根节点是否有`id`这个成员,如果有,就把它的`uri`值合成到`rootUri`后面,然后往下一层走(注意`GetUri()`不是只将通过`tokens_`路径找到的最后一个`id`对应的`uri`,而是将每一层路径都合成到当前`rooturi`中)
+17. <mark>`Uri`只会存在于`JSON`对象的键值对中,即等于`id`这个键对应的值中,因此`GetUri()`只会在`kObjectType`中处理(`Resolve()`)`uri`.如:`UriType finalUri = Pointer("/article/details").GetUri(doc, rootUri);`:表示的是从当前`JSON`文档`doc`中按`["article","details"]`路径进行合成`uri`,即首先会找`doc`这个根节点中是否有`id`成员,如果有,就先把最外面的`uri`合成到`rootUri`中;然后,再找`doc["article"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中;最后,再找`doc["article"]["details"]`对应的`GenericValue`对象是否是一个`JSON`对象且是否有`id`成员,如果有,就把这一层的`uri`合成到当前的`rootUri`中</mark>
+18. <mark>明明`uri`信息只会存在于`JSON`对象的成员中,那么`GetUri()`为什么要处理数组类型?</mark>
    如果不处理数组,解析类似"/person/friends/0"(要找`doc["person"]["friends"][0]`路径上的`id`对应的`uri`,如果不处理数组索引,就处理不了`tokens_`中表示的数组索引)这样的路径时,函数将无法正确地处理数组索引,导致解析失败.通过数组的处理,`GetUri()`可以在路径中遇到数组时正确地解析出索引对应的值
-18. `Get()`:根据当前`Pointer`对象中的`tokens_`返回要找的节点,如果某个`token`路径片段找不到就会返回`nullptr`
-19. `CopyFrom()`:该函数实现了从另一个`GenericPointer (rhs)`复制所有的 `token`和名称`token.name`到当前对象.它确保了每个`token`的`name`成员指向新的`nameBuffer_`中相应的名称,同时分配了足够的内存来处理额外的`token`(`extraToken`)和名称空间.最后返回的是新的`nameBuffer_`的结束位置,这通常用于方便后续的操作或内存管理
-20. `std::ptrdiff_t`:这是`C++`标准库中定义的整数类型,用于表示指针之间的差值(即两个指针相减的结果),通常用来表示内存中的地址偏移量
+19. `Get()`:根据当前`Pointer`对象中的`tokens_`返回要找的节点,如果某个`token`路径片段找不到就会返回`nullptr`
+20. `CopyFrom()`:该函数实现了从另一个`GenericPointer (rhs)`复制所有的 `token`和名称`token.name`到当前对象.它确保了每个`token`的`name`成员指向新的`nameBuffer_`中相应的名称,同时分配了足够的内存来处理额外的`token`(`extraToken`)和名称空间.最后返回的是新的`nameBuffer_`的结束位置,这通常用于方便后续的操作或内存管理
+21. `std::ptrdiff_t`:这是`C++`标准库中定义的整数类型,用于表示指针之间的差值(即两个指针相减的结果),通常用来表示内存中的地址偏移量
    ```C++
    typedef long ptrdiff_t; // 在某些平台上，可能是 long 类型
    ```
-21. `NeedPercentEncode()`:确定字符`c`是否属于`URI`中不需要编码的安全字符集(`'0'-'9'、'a'-'z'、'A'-'Z'、'-'、'.'、'_'、'~'`为安全字符集).安全字符集不用`URL`编码(也叫百分号编码)(`%`+`16进制`码值)
-22. `Parse()`:解析一个源字符串`source`,并将结果保存在`tokens_`和`nameBuffer_`中,`source`可能是普通的字符串表示,也可能是`URI`片段表示方式.从`Parse()`中可知:
+22. `NeedPercentEncode()`:确定字符`c`是否属于`URI`中不需要编码的安全字符集(`'0'-'9'、'a'-'z'、'A'-'Z'、'-'、'.'、'_'、'~'`为安全字符集).安全字符集不用`URL`编码(也叫百分号编码)(`%`+`16进制`码值)
+23. `Parse()`:解析一个源字符串`source`,并将结果保存在`tokens_`和`nameBuffer_`中,`source`可能是普通的字符串表示,也可能是`URI`片段表示方式.从`Parse()`中可知:
     * 字符串表示和`URI`片段表示第一个字符一定是`'/'`
     * 以`#`为开头,表示传入的这个`source`是`URI`片段表示形式的字符串
     * 对于`URI`片段表示中,需要对`%16进制`(`%XY`)进行百分号解码,解码后写入到`token`对应的`name`中
     * `URI`片段表示的转义字符:`'~0' -> '~', '~1' -> '/'`
-23. `goto error`:这是`C/C++`中用于跳转到指定标签的一种控制流语句.它被用来在发生错误时跳转到特定的错误处理区域,这样做可以简化错误处理
-24. `PercentEncodeStream()`:将传入的字符流中的字符,按照`URL`编码方式转换成`%XY`格式的编码,其中`X`和`Y`是十六进制数.`X`为高四位(一个`F`对应四个二进制位`1111`),`Y`为低四位
-25. `PercentDecodeStream()`:由`URL`编码得到的解码后的字符串序列
+24. `goto error`:这是`C/C++`中用于跳转到指定标签的一种控制流语句.它被用来在发生错误时跳转到特定的错误处理区域,这样做可以简化错误处理
+25. `PercentEncodeStream()`:将传入的字符流中的字符,按照`URL`编码方式转换成`%XY`格式的编码,其中`X`和`Y`是十六进制数.`X`为高四位(一个`F`对应四个二进制位`1111`),`Y`为低四位
+26. `PercentDecodeStream()`:由`URL`编码得到的解码后的字符串序列
 # uri.h
 1. `URI`是一个用于标识字眼的字符串,`URI`分为不同的部分:`scheme://user:password@host:port/path?query#fragment`.`scheme`指定如何访问资源的协议或方法(如`http`等);`user info`指定访问资源时的用户名和密码;`host`指定资源所在的服务器或计算机的名称或`IP`地址;`port`指定与主机连接的端口号;`path`指定资源再服务器上的位置;`query`用于传递额外的信息参数,通常用来标识资源的某个特定子集,查询字符串以`?`开头,并由`&`分隔多个键值对;`fragment`指定资源的一部分,通常用来跳转到某个页面或文档中的特定位置,以`#`开头
    ![](markdown图像集/2024-12-17-21-40-13.png)

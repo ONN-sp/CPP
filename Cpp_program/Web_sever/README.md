@@ -5,7 +5,7 @@
 4. 项目详细记录及过程文档见`https://github.com/ONN-sp/CPP/blob/main/Cpp_program/Web_sever/Web_server%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3.md`
 5. 项目构建方法`Linux`:
    * git clone git@github.com:ONN-sp/CPP.git
-   * 解压缩 unzip CPP-main.zip
+   * (解压缩) unzip CPP-main.zip
    * cd Cpp_program/Web_server/Base
    * bash build.sh
    * cd Cpp_program/Web_server/Net

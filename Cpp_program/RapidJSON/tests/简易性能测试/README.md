@@ -1,0 +1,1 @@
+1. 这里仅对`Simple-RapidJSON`和`JsonCpp`两种`JSON`解析器进行的性能对比,并且只对比了`SAX`解析的性能

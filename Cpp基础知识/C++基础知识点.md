@@ -170,6 +170,12 @@
     * 列表初始化禁止缩窄转换;
 7. ![Alt text](markdown图像集/image-10.png)字符串(字符数组)其实可以看作字符串起来再加一个`'\0'`
 8. <mark>字符串的索引`str[i]`是一个字符类型(`char`)</mark>
+9. 标准`C++`时不支持变长数组的,即数组的大小不能传入变量
+    ```C++
+    int n=10;
+    int A[n];
+    // 这是错的
+    ```
 # 字符串
 1. C++处理字符串有两种方式:
     * C-风格字符串:以空字符`'\0'`结尾,在利用初始化列表`{'l','o','v','e','\0'}`初始化字符串时,<mark>要显示的在最后一位给`'\0'`,否则不是字符串</mark>
@@ -1280,7 +1286,7 @@ void Swap(AnyType &a, AnyType &b);
    ```
 3. 头文件常包含的内容:
    ![Alt text](markdown图像集/image-11.png)
-   <mark>模板定义通常也是放在头文件中评的,否则可能发送链接错误</mark>
+   <mark>模板定义通常也是放在头文件中的,否则可能发送链接错误</mark>
 4. <mark>`" "`文件名包含在双引号中,则编译器将首先查找当前的工作目录或源代码目录;如果没找到,则在标准位置查找.`< >`文件名若包含在尖括号中,则编译器将在存储标准头文件的主句系统的文件系统中查找</mark>
 5. 自动变量:函数中不加关键字`static`声明的编译系统都视为自动变量,形参+局部变量.`C++`中将自动变量存储在栈中
 6. 命名空间的定义:
@@ -1703,6 +1709,29 @@ void Swap(AnyType &a, AnyType &b);
         }
     ```
 19. <mark>`C++`中类的成员默认是`private`,结构体默认是`public`</mark>
+20. 在类的定义中,成员变量常常不直接进行初始化(虽然从语法角度来说也可以直接初始化),如果要初始化有两种方法:
+   * 使用构造函数进行初始化(如用初始化列表:`path_(path)`)
+   * 可以将成员变量声明为`static`或`const`常量
+21. <mark>在`C++`的类中,类似`vector`这种的成员变量如果直接初始化那么会被编译器误解为这是在声明一个函数,而不是声明一个成员变量.如:</mark>
+    ```C++
+    class Solution {
+        private:
+            int n;// 边的数量
+            int N = 1001;
+            vector<int> father(N, 0);// vector<int> father(N, 0);会报错,因为在类中会把它误认为是一个函数声明
+    ...
+    };
+    ```
+    可以将它改为:
+    ```C++
+    class Solution {
+        private:
+            int n;// 边的数量
+            int N = 1001;
+            vector<int> father = vector<int> (N,0);
+    ...
+    };
+    ```
 # 类模板
 1. 类模板和结构体模板在实例化时不能像函数模板那样利用参数推导来省略尖括号 `<>`
     ```C++
@@ -2666,7 +2695,7 @@ void Swap(AnyType &a, AnyType &b);
             return a > b; // 最大堆
         }
         std::priority_queue<int, std::vector<int>, decltype(&compare)> pq(&compare);
-        //也可以不用取地址符,因为函数名在大多数时候就是函数指针
+        // 也可以不用取地址符,因为函数名在大多数时候就是函数指针
         std::priority_queue<int, std::vector<int>, decltype(compare)> pq(compare);
     1.2
         class Solution {
@@ -2681,7 +2710,7 @@ void Swap(AnyType &a, AnyType &b);
                     sort(people.begin(), people.end(), cmp);
                     for(int i=0;i<people.size();i++){
                         int position=people[i][1];
-                        res.insert(res.begin()+position, people[i]);加不同
+                        res.insert(res.begin()+position, people[i]);
                     }
                     return res;
                 }

@@ -1282,7 +1282,7 @@ void Swap(AnyType &a, AnyType &b);
    ```s
    头文件:包含结构声明和使用这些结构的函数的原型
    源代码文件:包含与结构有关的函数的代码(other.cpp)
-   源代码文件:包含调用与结构相关的函数的带啊吗(main.cpp)
+   源代码文件:包含调用与结构相关的函数的代码(main.cpp)
    ```
 3. 头文件常包含的内容:
    ![Alt text](markdown图像集/image-11.png)

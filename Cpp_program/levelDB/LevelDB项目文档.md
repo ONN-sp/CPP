@@ -1,4 +1,4 @@
-1. 本项目是对`LevelDB`项目的学习
+1. 本项目是对`Google`公司的`LevelDB`项目的学习
 2. `LeveldDB`项目是对`Google`的`Bigtable`技术原理的体现
 3. `LevelDB`是一个`C++`编写的高效键值嵌入式数据库,目前对亿级的数据有着非常好的读写性能
 4. `LevelDB`的优点:
@@ -11,8 +11,18 @@
    * 采用`Google`的`Snappy`压缩算法对数据进行压缩,以减少存储空间
    * 基本不依赖其它第三方模块,可非常容易地移植到`Windows、Linux、UNIX、Android、iOS`
 5. `LevelDB`的缺点:
-   * 不是传统的关系数据库,不支持`SQL`查询与索引
+   * 不是传统的关系数据库,不支持`SQL`(用于管理和操作关系型数据库的标准编程语言)查询与索引
    * 只支持单进程,不支持多进程
    * 不支持多种数据类型
    * 不支持客户端-服务器的访问模式.用户在应用时,需要自己进行网络服务的封装
-6. `LevelDB`的两个衍生产品——`RocksDB`、`SSDB`
+   * 不支持分布式存储,无法直接扩展到多台机器,即为单机存储
+6. `LevelDB`的两个衍生产品——`RocksDB`(`Facebook`)、`SSDB`     
+7. `LevelDB`的核心操作:
+   * 写操作
+      - 写操作首先写入`Log`文件
+      - 然后将数据插入到`MeeTable`中
+      - 当`MemTable`达到一定大小时,会转换为`Immutable MemTable`,并出触发后台线程将其写入磁盘,生成`SSTable`文件
+   * 读操作
+      - 首先在`MemTable`中查找数据
+      - 如果未找到,则在`Immutable MemTable`中查找
+      - 如果仍未找到,则在各级`SSTable`文件中查找(从`Level 0`开始逐级查找)                                                                 

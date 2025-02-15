@@ -53,7 +53,9 @@ namespace leveldb {
             virtual const Snapshot* GetSnapshot() = 0;
             // 释放先前获取的快照
             virtual void ReleaseSnapshot(const Snapshot* snapshot) = 0;
+            // 获取数据库的某个属性
             virtual bool GetProperty(const Slice& property, std::string* value) = 0;
+            // 获取指定范围内键的近似大小
             virtual void GetApproximateSizes(const Range* range, int n, uint64_t* sizes) = 0;
             // 压缩键范围 [*begin,*end] 的底层存储
             virtual void CompactRange(const Slice* begin, const Slice* end) = 0;

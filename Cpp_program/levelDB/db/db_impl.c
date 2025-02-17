@@ -170,6 +170,173 @@ namespace leveldb {
         if(owns_cache_)
             delete options_.block_cache;// 如果拥有 block_cache，则删除
     }
+    /**
+     * @brief 创建一个新的数据库
+     * 
+     * @return Status 
+     */
+    Status DBImpl::NewDB() {
+        VersionEdit new_db;// 创建一个新的版本编辑对象
+        new_db.SetComparatorName(user_comparator()->Name());// 设置比较器名称
+        new_db.SetLogNumber(0);// 设置日志文件编号为0
+        new_db.SetNextFile(2);// 设置下一个文件编号为2
+        new_db.SetLastSequence(0);// 设置最后一个序列号为0
+        const std::string manifest = DescriptorFileName(dbname_, 1);// 生成清单文件名
+        WritableFile* file;
+        Status s = env_->NewWritableFile(manifest, &file);// 创建清单文件
+        if(!s.ok())
+            return s;
+        log::Writer log(file);// 创建日志写入器
+        std::string record;// 定义记录字符串
+        new_db.EncodeTo(&record);// 将版本编辑对象编码为记录
+        s = log.AddRecord(record);// 将记录写入日志
+        if(s.ok())
+            s = file->Sync();// 同步文件，确保数据写入磁盘
+        if(s.ok())
+            s = file->Close();
+        delete file;
+        if(s.ok())
+            s = SetCurrentFile(env_, dbname_, 1);// 创建Current文件,指向新的清单文件
+        else
+            env_->RemoveFile(manifest);
+        return s;
+    }
+    /**
+     * @brief 根据配置决定是否忽略错误
+     * 
+     * @param s 
+     */
+    void DBImpl::MaybeIgnoreError(Status* s) const {
+        if(s->ok() || options_paranoid_checks)// 如果状态正常s->ok()或启用了严格检查options_.paranoid_checks,则不进行任何处理
+
+        else {
+            Log(options_.info_log, "Ignoring error %s", s->ToString().c_str());// 记录错误信息
+            *s = Status::OK();
+        }
+    }
+    /**
+     * @brief 删除不再需要的旧文件
+     * 
+     */
+    void DBImpl::RemoveObsoleteFiles() {
+        mutex_.AssertHeld();// 确保当前线程持有互斥锁
+        if(!bg_error_.ok())// 如果后台任务发生了错误，无法确定是否有新版本被提交，因此不能安全地进行垃圾回收,则直接return
+            return;
+        std::set<uint64_t> live = pending_outputs_;// 正在进行的压缩操作生成的文件 pending_outputs_存储了当前正在进行的压缩操作生成的文件
+        versions_->AdLiveFiles(&live);// 从版本集合中添加活跃的文件
+        stdLLvector<std::string> filenames;
+        env_->GetChildren(dbname_, &filenames);// 获取数据库目录下的所有文件
+        uint64_t number;// 文件编号
+        FileType type;// 文件类型
+        std::vector<std::string> files_to_delete;// 待删除的文件列表
+        for(std::string& filename : filenames) {
+            if(ParseFileName(filename, &number, &type)) {// 解析文件名，获取文件编号和类型
+                bool keep = true;// 是否保留该文件
+                switch(type) {
+                    case kLogFile:
+                        // 保留当前日志文件或前一个日志文件
+                        keep = (((number>=versions_->LogNumber())) ||
+                                (number==versions_->PrevLogNumber()));
+                        break;
+                    case kDescriptorFile:
+                        // 保留当前的清单文件或更新的清单文件
+                        keep = (number>=versions_->ManifestFileNumber());
+                        break;
+                    case kTableFile:
+                        // 保留活跃的 SSTable 文件
+                        keep = (live.find(number)!=live.end());
+                        break;
+                    case kTempFile:
+                        // 保留正在写入的临时文件
+                        keep = (live.find(number)!=live.end());
+                        break;
+                    case kCurrentFile:
+                    case kDBLockFile:
+                    case kInfoLogFile:
+                        // 始终保留 CURRENT 文件、锁文件和信息日志文件
+                        keep = true;
+                        break;
+                }
+                if(!keep) {// 不保留的文件就加入到待删除文件列表files_to_delete中
+                    files_to_delete.push_back(std::move(filename));
+                    if(type==kTableFile)// 如果是不需要保留文件且是SSTable文件,则从表缓存中移除
+                        table_cache_->Evict(number);
+                    Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type), static_cast<unsigned long long>(number));// 记录删除操作 
+                }
+            }
+        }
+        mutex_.Unlock();// 释放当前线程持有的锁
+        for(const std::string& filename : files_to_delete) // 遍历 files_to_delete 列表，删除所有需要删除的文件
+            env_->RemoveFile(dbname_+"/"+filename);// 删除文件
+        mutex_.Lock();// 重新加锁
+    }
+    /**
+     * @brief 用于在数据库启动时进行恢复操作，处理可能存在的日志文件、版本信息等，确保数据库处于一致状态
+     * 
+     * @param edit 
+     * @param save_manifest 
+     * @return Status 
+     */
+    Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
+        mutex_.AssertHeld();
+        env_->CreateDir(dbname_);// 创建数据库目录（允许目录已存在）
+        assert(db_lock_==nullptr);// 确保数据库锁初始为空
+        Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);// 尝试锁定数据库文件
+        if(!s.ok())
+            return s;// 上锁失败直接返回错误
+        // 检查 CURRENT 文件是否存在
+        if(!env_->FileExists(CurrentFileName(dbname_))) {// CURRENT文件不存在
+            if(options_.create_if_missing) {
+                Log(options_.info_log, "Creating DB %s since it was missing.", dbname_.c_str());
+                s = NewDB();// 创建新的数据库
+                if(!s.ok())
+                    return s;
+            }
+            else
+                return Status::InvalidArgument(dbname_, "does not exist (create_if_missing is false)");
+        }
+        else if(options_.error_if_exists) 
+                return Status::InvalidArgument(dbname_, "exists (error_if_exists if true)");
+        s = versions_->Recover(save_manifest);// 从 MANIFEST 恢复版本信息
+        if(!s.ok())
+            return s;
+        SequenceNumber max_sequence(0);
+        const uint64_t min_log = versions_->LogNumber(); // 当前日志编号
+        const uint64_t prev_log = versions_->PrevLogNumber();;// 旧日志编号
+        std::vector<std::string> filenames;
+        s = env_->GetChildren(dbname_, &filenames);// 获取数据库目录下所有文件名,存储在filenames中
+        if(!s.ok())
+            return s;
+        std::set<uint64_t> expected;
+        versions_->AddLiveFiles(&expected);// expected存储当前版本(version)中所有存活的SSTable文件编号.这些文件编号是 LevelDB 在崩溃前通过 Manifest 记录的有效数据文件，恢复时必须确保它们全部存在于磁盘上，否则会触发数据损坏(Corruption)错误
+        uint64_t number;
+        FileType type;
+        std::vector<uint64_t> logs;// 存储需要恢复的日志文件编号
+        for(size_t i=0;i<filenames.size();i++) {
+            if(ParseFileName(filenames[i], &number, &type)) {
+                expected.erase(number);// 移除实际存在的文件
+                if(type==kLogFile && ((number>=min_log) || (number==prev_log)))
+                    logs.emplace_back(number);
+            }
+        }
+        if(!expected.empty()) {// 存在缺失文件
+            char buf[50];
+            std::snprintf(buf, sizeof(buf), "%d missing files; e.g.", static_cast<int>(expected.size()));
+            return Status::Corruption(buf, TableFileName(dbname_, *(expected.begin())));
+        }
+        std::sort(logs.begin(), logs.end());// 按编号升序排序
+        for(size_t i=0;i<logs.size();++i) {
+            s = RecoverLogFile(logs[i], (i==logs.size()-1), save_manifest, edit, &max_sequence);
+            if(!s.ok())
+                return s;
+        }
+        versions_->MarkFileNumberUsed(logs[i]);
+        if(versions_->LastSequence() < max_sequence)// 确保后续写入操作的序列号大于已恢复的所有操作
+            versions_->SetLastSequence(max_sequence);
+        return Status::OK();
+    }
+
+
 
 
 }

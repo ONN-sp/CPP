@@ -2804,6 +2804,9 @@ void Swap(AnyType &a, AnyType &b);
     }
     // 在拷贝构造函数中,利用new生成了新的data对象,即obj2与obj1的data对象是不同的,但是obj1的资源复制给obj2了,所以称作深拷贝
     ```
+# POSIX
+1. `POSIX`(`Portable Operating System Interface`,可移植操作系统接口)是一套由`IEEE`制定的操作系统接口标准,旨在统一不同类`UNIX`系统的行为,使软件能够跨平台兼容.而`Linux`是一个具体的操作系统内核,其用户空间工具和接口遵循`POSIX`标准,但并非完全等同于`POSIX`.`Linux`发行版(如`Ubuntu`、`CentOS`)提供的命令行工具(`ls`、`grep`)和`Shell`(`bash`)遵循`POSIX`规范
+   ![](markdown图像集/2025-02-17-21-55-18.png)
 
 
 

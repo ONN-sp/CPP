@@ -272,7 +272,7 @@ namespace leveldb {
     }
     /**
      * @brief 用于在数据库启动时进行恢复操作，处理可能存在的日志文件、版本信息等，确保数据库处于一致状态
-     * 
+     * 日志文件->MemTable(SST)
      * @param edit 
      * @param save_manifest 
      * @return Status 
@@ -335,8 +335,141 @@ namespace leveldb {
             versions_->SetLastSequence(max_sequence);
         return Status::OK();
     }
-
-
+    /**
+     * @brief 用于从指定的日志文件中恢复数据到内存表(MemTable),确保数据库重启时未持久化的操作能正确恢复.核心流程包括日志解析、数据写入 MemTable、触发内存表持久化到 Level 0 的 SSTable，并处理日志文件的复用
+     * 
+     * @param log_number 需恢复的日志文件编号
+     * @param last_log 标记是否为当前最新的日志文件
+     * @param save_manifest 输出参数，指示是否需要更新 Manifest 文件
+     * @param edit 版本编辑对象，记录 SSTable 的增删操作
+     * @param max_sequence 输出当前恢复过程中最大的序列号
+     * @return Status 
+     */
+    Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log, bool* save_manifest, VersionEdit* edit, SequenceNumber* max_sequence) {
+        struct LogReporter : public log::Reader::Reporter {
+            Env* env;// 环境接口（用于文件操作）
+            Logger* info_log;// 日志记录器
+            const char* fname;// 当前处理的日志文件名
+            Status* statue;// 错误状态指针
+            void Corruption(size_t bytes, const Status& s) override {// 日志损坏时的回调函数
+                Log(info_log, "%s%s: dropping %d bytes; %s", (this->status==nullptr?"(ignoring error) " : ""), fname, 
+                    static_cast<int>(bytes), s.ToString().c_str());
+                if(this->status!=nullptr && this->status->ok())
+                    *this->status = s;
+            }
+        };
+        mutex_.AssertHeld();
+        std::string fname = LogFileName(dbname_, log_number);
+        SequentialFile* file;
+        Status status = env_->NewSequentialFile(fname, &file);
+        if(!status.ok()) {
+            MaybeIgnoreError(&status);// 根据配置决定是否忽略错误（如文件不存在）
+            return status;
+        }
+        // 初始化日志读取器,强制启用校验和检查
+        LogReporter reporter;
+        reporter.env = env_;
+        reporter.info_log = options_.info_log;
+        reporter.fname = fname.c_str();
+        reporter.status = (options_.paranoid_checks ? &status:nullptr);
+        log::Reader reader(file, &reporter, true, 0);
+        Log(options_.info_log, "Recovering log #%llu", (unsigned long long)long_number);
+        // 读取日志记录并应用到MemTable中
+        std::string scratch;
+        Slice record;
+        WriteBatch batch;
+        int compactions = 0;// 记录触发的 Compaction 次数
+        MemTable* mem = nullptr;
+        while(reader.ReadRecord(&record, &scratch)&&status.ok()) {
+            if(record.size() < 12) {// 校验记录长度（每条记录至少包含 12 字节的头部信息）
+                reporter.Corruption(record.size(), Status::Corruption("log record too small"));
+                continue;
+            }
+            WriteBatchInternal::SetContents(&batch, record);// 将日志文件中的记录反序列化解析到batch
+            if(mem==nullptr) {// 如果当前没有 MemTable，则创建一个新的 MemTable
+                mem = new MemTable(internal_comparator_);
+                mem->Ref();
+            }
+            status = WriteBatchInternal::InsertInto(&batch, mem);// 将WriteBatch插入MemTable
+            MaybeIgnoreError(&status);
+            if(!status.ok())
+                break;
+            const SequenceNumber last_seq = WriteBatchInternal::Sequence(&batch) + WriteBatchInternal::Count(&batch)-1;
+            if(last_seq > *max_sequence)// 更新最大序列号
+                *max_sequence = last_seq;
+            if(mem->ApproximateMemoryUsage() > options_.write_buffer_size) {// 若 MemTable 超过写缓冲区大小，触发持久化到 Level 0
+                compactions++;// MemTable->SST会触发一次压缩操作
+                *save_manifest = true;// 标记需要更新 Manifest
+                status = WriteLevel0Table(mem, edit, nullptr);// 写入 SSTable
+                mem->Unref();
+                mem = nullptr;
+                if(!status.ok())
+                    break;
+            }
+        }
+        delete file;// 关闭日志文件
+        // 日志复用:最后一个日志若满足特定条件,那么后续日志文件可以直接在最后一条日志文件上追加,而不是新建
+        if(status.ok() && options_.reuse_logs && last_log && compactions==0) {
+            assert(logfile_ == nullptr);
+            assert(log_ == nullptr);
+            assert(mem_ == nullptr);
+            uint64_t lfile_size;
+            if(env_->GetFileSize(fname, &lfile_size).ok() && env_->NewAppendableFile(fname, &logfile_).ok()) {
+                Log(options_.info_log, "Reusing old log %s \n", fname.c_str());
+                log_ = new log::Writer(logfile_, lfile_size);
+                logfile_number_ = log_number;
+                if(mem!=nullptr) {
+                    mem_ = mem;
+                    mem = nullptr;
+                }
+                else {
+                    mem_ = new MemTable(internal_comparator_);
+                    mem_->Ref();
+                }
+            }
+        }
+        // 若循环结束后仍有未处理的 MemTable，强制持久化到 Level 0
+        if(mem!=nullptr) {
+            if(status.ok()) {
+                *save_manifest = true;
+                status = WriterLevel0Table(mem, edit, nullptr);
+            }
+            mem->Unref();
+        }
+        return status;
+    }
+    Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base) {
+        mutex_.AssertHeld();
+        const uint64_t start_micros = env_->NowMicros();
+        FileMetaData meta;
+        meta.number = versions_->NewFileNumber();
+        pending_outputs-.insert(meta.number);
+        Iterator* iter = mem->NewIterator();
+        Log(options_.info_log, "Level 0 table #%llu: started", (unsigned long long)meta.number);
+        Status s;
+        {
+            mutex_.Unlock();
+            s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+            mutex_.Lock();
+        }
+        Log(options_.info_log, "Level 0 table #%llu: %lld bytes %s", (unsigned long long)meta.number, (unsigned long long)meta.file_size,
+            s.ToString().c_str());
+        delete iter;
+        pending_outputs_.erase(meta.number);
+        int level = 0;
+        if(s.ok() && meta.file_size>0) {
+            const Slice min_user_key = meta.smallest.user_key();
+            const Slice max_user_key = meta.largest.user_key();
+            if(base != nullptr) 
+                level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
+            edit->AddFile(level, meta.number, meta.file_size, meta.smallest, meta.largest);
+        }
+        CompactionStats stats;
+        stats.micros = env_->NowMicros()-start_micros;
+        stats.bytes_written = meta.file_size;
+        stats_[level].Add(stats);
+        return s;
+    }
 
 
 }

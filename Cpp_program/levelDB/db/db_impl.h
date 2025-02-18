@@ -175,7 +175,7 @@ namespace leveldb {
             // 在 paranoid 模式下是否遇到过后台错误
             Status bg_error_ GUARDED_BY(mutex_);
             // 每层的压缩统计信息
-            CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+            CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);// GUARDED_BY(mutex_)表示stats_这个变量要被锁保护的注解,这本身并不自动为stats_提供锁保护,而是表示一个注解.如果开发者未正确对该变量使用锁,那么编译器会发出警告
     };
     // 清理数据库选项
     Options SanitizeOptions(const std::string& db,

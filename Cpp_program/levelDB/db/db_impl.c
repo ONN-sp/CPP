@@ -438,6 +438,14 @@ namespace leveldb {
         }
         return status;
     }
+    /**
+     * @brief 将内存(MemTable)中的数据写入到磁盘上的SST文件中,并将其添加到数据库的Level0层
+     * 1. 将内存表数据写入磁盘;2. 更新数据库版本(将新生成的 SST 文件添加到数据库的版本管理中,即写到Manifest(通过 VersionEdit));3. 更新压缩统计信息
+     * @param mem 
+     * @param edit 
+     * @param base 
+     * @return Status 
+     */
     Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base) {
         mutex_.AssertHeld();
         const uint64_t start_micros = env_->NowMicros();
@@ -462,13 +470,39 @@ namespace leveldb {
             const Slice max_user_key = meta.largest.user_key();
             if(base != nullptr) 
                 level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
-            edit->AddFile(level, meta.number, meta.file_size, meta.smallest, meta.largest);
+            edit->AddFile(level, meta.number, meta.file_size, meta.smallest, meta.largest);// 更新数据库版本
         }
+        // 更新压缩统计信息
         CompactionStats stats;
         stats.micros = env_->NowMicros()-start_micros;
         stats.bytes_written = meta.file_size;
         stats_[level].Add(stats);
         return s;
+    }
+
+    void DBImpl::CompactMemTable() {
+        mutex_.AssertHeld();
+        assert(imm_!=nullptr);
+        VersionEdit edit;
+        Version* base = versions_->current();
+        base->Ref();
+        Status s = WriteLevel0Table(imm_, &edit, base);
+        base->Unref();
+        if(s.ok() && shutting_down_.load(std::memory_order_acquire))
+            s = Status::IOError("Deleting DB during memtable compaction");
+        if(s.ok()) {
+            edit.SetPreLogNumber(0);
+            diet.SetLogNumber(logfile_number_);
+            s = versions_->LogAndApply(&edit, &mutex_);
+        }
+        if(s.ok()) {
+            imm_->Unref();
+            imm_ = nullptr;
+            has_immI.store(false, std::memory_order_release);
+            RemoveObsoleteFiles();
+        }
+        else    
+            RecordBackgroundError(s);
     }
 
 

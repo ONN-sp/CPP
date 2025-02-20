@@ -1,6 +1,6 @@
 1. 本项目是对`Google`公司的`LevelDB`项目的学习
 2. `LevelDB`是基于`LSM`树进行存储
-3. `LeveldDB`项目是对`Google`的`Bigtable`技术原理的体现,`LevelDB`是`Bigtable`的单机版
+3. `LevelDB`项目是对`Google`的`Bigtable`技术原理的体现,`LevelDB`是`Bigtable`的单机版
 4. `LevelDB`是一个`C++`编写的高效键值嵌入式数据库,目前对亿级的数据有着非常好的读写性能
 5. `LevelDB`的优点:
    * `key`和`value`采用字符串形式,且长度没有限制
@@ -22,12 +22,18 @@
    * 写操作
       - 写操作首先写入`Log`文件
       - 然后将数据插入到`MeeTable`中
-      - 当`MemTable`达到一定大小时,会转换为`Immutable MemTable`,并出触发后台线程将其写入磁盘,生成`SSTable`文件
+      - 当`MemTable`达到一定大小时(默认为4MD),会转换为一个不可修改的`Immutable MemTable`,与此同时创建一个新的`memtable`,供用户继续进行读写操作.当一个`immutable memtable`被创建时,会触发后台线程将其写入磁盘,生成`SSTable`文件
    * 读操作
       - 首先在`MemTable`中查找数据
       - 如果未找到,则在`Immutable MemTable`中查找
       - 如果仍未找到,则在各级`SSTable`文件中查找(从`Level 0`开始逐级查找)   
-9. <mark>`LevelDB`中磁盘数据读取与缓存均以块为单位,并且实际存储中所有的数据记录均以`key`进行顺序存储.根据排序结果,相邻的`key`所对应的数据记录一般均会存储在同一个块中.因此,在针对需要经常同时访问的数据时,其`key`在命名时,可以通过将这些`key`设置相同的前缀保证这些数据的`key`是相邻近的,从而使这些数据可存储在同一个块内</mark>        
+9. <mark>`LevelDB`中磁盘数据读取与缓存均以块为单位,并且实际存储中所有的数据记录均以`key`进行顺序存储.根据排序结果,相邻的`key`所对应的数据记录一般均会存储在同一个块中.因此,在针对需要经常同时访问的数据时,其`key`在命名时,可以通过将这些`key`设置相同的前缀保证这些数据的`key`是相邻近的,从而使这些数据可存储在同一个块内</mark>  
+10. `LevelDB`不属于`Redis`,它们是两个不同的数据库系统
+    * `Redis`:主要将数据存储在内存中,虽然也有一些机制可以将数据持久化到磁盘,如`RDB`和 `AOF`,但其核心优势在于内存高速存取.例如,`Redis`的数据操作速度可以达到微秒级甚至更快,这是因为内存的访问速度远远高于磁盘
+    * `LevelDB`:将数据存储在磁盘上,它使用一种名为日志结构合并树(`Log-Structured Merge-Tree`,`LSM`树)的数据结构来组织数据.`LSM`树通过将写操作写入内存的`MemTable`,并在后台将`MemTable`的数据按照一定规则刷写到磁盘上的`SSTable`文件中,来实现高效的写入性能.`LevelDB`的这种存储机制使得它在写入密集型的应用场景中表现出色  
+11. 本项目的整体架构:
+   ![](markdown图像集/2025-02-20-21-49-03.png)
+   本项目是一种基于`operation log`的文件系统,是`LSM`的典型代表,它把随机的磁盘写操作,变成了对`op log`的`append`操作,提高了`IO`效率,最新的数据存储在内存`MemTable`中,当`op log`文件超过限定值时,就定时做`check point`.`Leveldb`会生成新的`Log`文件和`Memtable`,后台调度会将`Immutable Memtable`的数据导出到磁盘,形成一个新的`SSTable`文件.`SSTable`就是由内存中的数据不断导出并进行`Compaction`操作后形成的,而且`SSTable`的所有文件是一种层级结构,第一层为`Level 0`,第二层为`Level 1`,依次类推,层级逐渐增高,这也是为何称之为`LevelDB`的原因
 # Slice
 1. `Slice`是`LevelDB`中的一种基本的、以字节为继承的数据存储单元,既可以存储`key`,也可以存储数据(`data`)
 2. `Slice`是一种包含字节长度与指针的简单数据结构
@@ -58,23 +64,36 @@
    一方面,因为文件删除操作(`env_->RemoveFile`)涉及磁盘`I/O`,通常比较耗时.如果在持有锁的情况下执行删除操作,其他线程可能会被阻塞,导致系统并发性能下降.另一方面,在`RemoveObsoleteFiles`函数中,删除操作的目标是磁盘上的文件,而不是内存中的共享数据结构,因此删除操作不会影响数据库的核心状态(如内存表、版本信息等),所以不需要在锁的保护下进行   
 3. 在`LevelDB`中,`DBImpl::Recover()`是从磁盘上的持久化数据(主要是`Manifest`文件(`Recover()`通过读取`Manifest`文件,恢复数据库的层级结构和文件信息,见下图)和日志文件)中恢复数据库的状态,并将其恢复到内存(`MemTable、SST`)中,`Recover()`会调用`RecoverLogFile()`
    ![](markdown图像集/2025-02-18-21-56-39.png)     
-4. `Recover()`全过程举例:
+   上图表示的是`Recover()`中的`version`信息的恢复
+4. 真正的内存表(`MemTable`)中掉电后需要恢复的数据是依赖于日志文件恢复的(`RecoverLogFile()`).`LevelDB`在写入数据时,会先将数据写入日志文件,然后再写入内存中的`MemTable`.这种“先日志后内存”的写入顺序确保了即使在写入过程中发生掉电或异常退出,数据仍然可以通过日志文件恢复.`Recover()`全过程举例:
    ![](markdown图像集/2025-02-18-21-59-06.png)
    ![](markdown图像集/2025-02-18-21-59-16.png)
    ![](markdown图像集/2025-02-18-21-59-42.png)
-5. `DBImpl::Recover(VersionEdit* edit, bool* save_manifest)`中的`expected`存储的是什么?
+5. <mark>`Recover()`表示了两种恢复过程:`version`信息恢复和掉电后`MemTable`数据的恢复过程(`RecoverLogFile()`)</mark>
+   ![](markdown图像集/2025-02-20-21-39-44.png)
+6. `DBImpl::Recover(VersionEdit* edit, bool* save_manifest)`中的`expected`存储的是什么?
    `versions_->AddLiveFiles(&expected)`会从`VersionSet`(版本集合)中提取当前所有活跃的`SSTable`文件的编号,并将这些编号插入到`expected`集合中.`VersionSet`是`LevelDB`管理版本的核心组件,记录了所有有效的`SSTable`文件及其层级信息."存活的"(`Live`)文件是指尚未被删除或合并(`Compaction`)的`SSTable`文件,它们属于当前数据库的最新快照.在恢复过程中,`LevelDB`会遍历数据库目录下的所有文件,并检查`expected`集合中的每个文件编号是否都有对应的物理文件(磁盘上的文件)存在,如:
    ![](markdown图像集/2025-02-17-22-37-46.png)
-6. <mark>`Recover()`依赖`Manifest`恢复数据库的持久化数据,而`RecoverLogFile()`通过日志恢复内存中的临时数据</mark>
-7. <mark>`RecoverLogFile()`函数的作用是从日志文件(`WAL`,`Write-Ahead Log`)中恢复数据,并将这些数据恢复到内存表(`MemTable`)中,最终可能写入到`SST`文件中</mark>.如:
+   上图`expected`其实就是验证此时恢复后最新`version`信息中所表示的`SST`应该存储的文件(即在掉电前磁盘存活的文件(掉电前存活的文件被记录到了`version`中))是否真的存在磁盘中,存在的话是对的,不存在的话就会触发数据毁坏的错误
+7. <mark>`Recover()`依赖`Manifest`恢复数据库的持久化数据,而`RecoverLogFile()`通过日志恢复内存中的临时数据</mark>
+8. <mark>`RecoverLogFile()`函数的作用是从日志文件(`WAL`,`Write-Ahead Log`)中恢复数据,并将这些数据恢复到内存表(`MemTable`)中,最终可能写入到`SST`文件中</mark>.如:
    ![](markdown图像集/2025-02-18-13-57-58.png)
-8. `RecoverLogFile()`中的日志复用:日志文件复用是一种优化机制,目的是减少日志文件的数量,避免频繁创建和删除日志文件,从而提高性能并减少文件系统的碎片化.日志文件复用的核心思想是:如果某个日志文件在恢复过程中没有被完全消耗(即其中的数据没有完全写入到`SST`文件中),并且满足特定条件,那么可以继续在该日志文件上追加新的日志记录,而不是创建新的日志文件.如:
+9.  `RecoverLogFile()`中的日志复用:日志文件复用是一种优化机制,目的是减少日志文件的数量,避免频繁创建和删除日志文件,从而提高性能并减少文件系统的碎片化.日志文件复用的核心思想是:如果某个日志文件在恢复过程中没有被完全消耗(即其中的数据没有完全写入到`SST`文件中),并且满足特定条件,那么可以继续在该日志文件上追加新的日志记录,而不是创建新的日志文件.如:
    ![](markdown图像集/2025-02-18-14-00-47.png)
-9. <span style="color:red;">数据恢复的过程就是依次应用`VersionEdit`的过程(`VersionEdit`表示一个`Version`到另一个`Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件),其恢复的详细过程(`DBImpl::Recover()->VersionSet::Recover()`)如下:</span>
+10. <span style="color:red;">`version`数据恢复的过程就是依次应用`VersionEdit`的过程(`VersionEdit`表示一个`Version`到另一个`Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件),其恢复的详细过程(`DBImpl::Recover()->VersionSet::Recover()`)如下:</span>
     ![](markdown图像集/2025-02-19-22-45-51.png)
     ![](markdown图像集/2025-02-19-22-46-04.png)
     需要注意的是,宕机后开始恢复时的`version`是空的,即它是从空的`version`按照`Manifest`中的一条条`VersionEdit`恢复到最新的`version`的
-
+11. `WriteLevel0Table()`举例:
+    ![](markdown图像集/2025-02-20-13-28-57.png)
+    ![](markdown图像集/2025-02-20-13-29-35.png)
+    ![](markdown图像集/2025-02-20-13-29-45.png)
+12. `CompactMemTable()`举例:
+    ![](markdown图像集/2025-02-20-14-14-49.png)
+13. `CompactMemTable()`不是和`WriteLevel0Table()`作用一样吗,那么为什么要用`CompactMemTable()`?
+    尽管`WriteLevel0Table()`负责将数据写入`SST`文件,但`CompactMemTable()`提供了更高层次的管理和协调功能,确保数据库的整体一致性和效率:1.`CompactMemTable()`确保在写入`SST`文件后,版本信息得到正确更新(包括设置前一个日志文件编号和当前日志文件编号),这对于数据库的恢复和一致性至关重要;2.通过替换旧的`MemTable`并清理过时文件,`CompactMemTable()`帮助管理数据库的资源,避免内存泄漏和磁盘空间浪费;3.`CompactMemTable()`作为协调者,确保在写入`SST`文件、更新版本信息、替换 `MemTable`和清理过时文件等步骤之间正确地进行协调
 # version_set/version_edit
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)
+# Env.v
+1. `env_`为不同平台、不同操作系统提供了一个统一的上层抽象环境接口封装,下层具体的实现可能随着操作系统的不同而不同,但是上层都是一样的抽象环境接口`env_`

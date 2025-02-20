@@ -447,63 +447,151 @@ namespace leveldb {
      * @return Status 
      */
     Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base) {
-        mutex_.AssertHeld();
-        const uint64_t start_micros = env_->NowMicros();
-        FileMetaData meta;
-        meta.number = versions_->NewFileNumber();
-        pending_outputs-.insert(meta.number);
-        Iterator* iter = mem->NewIterator();
-        Log(options_.info_log, "Level 0 table #%llu: started", (unsigned long long)meta.number);
+        mutex_.AssertHeld();// 确保当前线程持有互斥锁
+        const uint64_t start_micros = env_->NowMicros();// 获取当前时间
+        FileMetaData meta;// 文件元数据
+        meta.number = versions_->NewFileNumber();// 为新文件分配一个唯一的编号
+        pending_outputs-.insert(meta.number);// 将该文件编号加入到待输出文件集合中
+        Iterator* iter = mem->NewIterator();// 创建内存表的迭代器
+        Log(options_.info_log, "Level 0 table #%llu: started", (unsigned long long)meta.number);// 记录日志，表示开始创建 Level-0 表
         Status s;
         {
-            mutex_.Unlock();
-            s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
-            mutex_.Lock();
+            mutex_.Unlock();// 释放互斥锁，以允许其他线程访问共享资源
+            s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);// 构建 SST 文件
+            mutex_.Lock();// 重新获取互斥锁
         }
         Log(options_.info_log, "Level 0 table #%llu: %lld bytes %s", (unsigned long long)meta.number, (unsigned long long)meta.file_size,
-            s.ToString().c_str());
+            s.ToString().c_str());// 记录日志，表示 Level-0 表的创建结果
         delete iter;
-        pending_outputs_.erase(meta.number);
+        pending_outputs_.erase(meta.number);// 从待输出文件集合中移除该文件编号,因为已经把该文件构建到SST了
         int level = 0;
-        if(s.ok() && meta.file_size>0) {
-            const Slice min_user_key = meta.smallest.user_key();
-            const Slice max_user_key = meta.largest.user_key();
+        if(s.ok() && meta.file_size>0) {// 如果创建成功且文件大小大于零
+            const Slice min_user_key = meta.smallest.user_key();// 获取文件中最小的用户键
+            const Slice max_user_key = meta.largest.user_key();// 获取文件中最大的用户键
             if(base != nullptr) 
                 level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
             edit->AddFile(level, meta.number, meta.file_size, meta.smallest, meta.largest);// 更新数据库版本
         }
         // 更新压缩统计信息
         CompactionStats stats;
-        stats.micros = env_->NowMicros()-start_micros;
-        stats.bytes_written = meta.file_size;
-        stats_[level].Add(stats);
+        stats.micros = env_->NowMicros()-start_micros;// 计算总耗时
+        stats.bytes_written = meta.file_size;// 记录写入的字节数
+        stats_[level].Add(stats);// 将统计信息添加到对应 Level 的统计中
         return s;
     }
-
+    /**
+     * @brief 将不可变内存表imm_压缩成一个新的SST文件,并更新版本信息
+     * 
+     */
     void DBImpl::CompactMemTable() {
-        mutex_.AssertHeld();
-        assert(imm_!=nullptr);
-        VersionEdit edit;
-        Version* base = versions_->current();
+        mutex_.AssertHeld();// 确保当前线程持有互斥锁，保证线程安全
+        assert(imm_!=nullptr);// 断言当前存在一个待处理的不可变内存表
+        VersionEdit edit;// 创建一个版本编辑器(VersionEdit),用于记录版本变更信息
+        Version* base = versions_->current();// 获取当前版本(version),并增加其引用计数
         base->Ref();
-        Status s = WriteLevel0Table(imm_, &edit, base);
+        Status s = WriteLevel0Table(imm_, &edit, base);// 将不可变内存表(imm_)写入到一个新的Level 0 SST文件中
         base->Unref();
-        if(s.ok() && shutting_down_.load(std::memory_order_acquire))
+        if(s.ok() && shutting_down_.load(std::memory_order_acquire))// 如果数据库正在关闭过程中，设置错误状态
             s = Status::IOError("Deleting DB during memtable compaction");
-        if(s.ok()) {
-            edit.SetPreLogNumber(0);
-            diet.SetLogNumber(logfile_number_);
-            s = versions_->LogAndApply(&edit, &mutex_);
+        if(s.ok()) {// 如果写入 SST 文件成功,更新版本编辑器(VersionEdit)信息
+        // 这里写的编辑器更新和WriteLevel0Table()中的编辑器更新是不一样的(WriteLevel0Table()中仅仅是添加文件信息,还需要更新其它版本状态信息,如前一个日志文件编号和当前日志文件编号)
+            edit.SetPreLogNumber(0);// 设置前一个日志文件编号为 0
+            edit.SetLogNumber(logfile_number_);// 设置当前日志文件编号
+            s = versions_->LogAndApply(&edit, &mutex_);// 将版本编辑器中的变更应用到版本集合（VersionSet）中
         }
         if(s.ok()) {
+            // 减少不可变内存表的引用计数，并将其置为 nullptr
             imm_->Unref();
             imm_ = nullptr;
-            has_immI.store(false, std::memory_order_release);
-            RemoveObsoleteFiles();
+            has_imm_.store(false, std::memory_order_release);// 标记当前没有不可变内存表
+            RemoveObsoleteFiles();// 移除不再需要的过时文件
         }
         else    
-            RecordBackgroundError(s);
+            RecordBackgroundError(s);// 如果发生错误，记录后台错误信息
     }
+    void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
+        int max_level_with_files = 1;
+        {
+            MutexLock l(&mutex);
+            Version* base = versions_->current();
+            for(int level = 1;level<config::kNumLevels;level++) {
+                if(base->OverlapInLevel(level, begin, end))
+                    max_level_with_files = level;
+            }
+        }
+        TEST_CompactMemTable();
+        for(int level=0;level<max_level_with_files;level++) 
+            TEST_CompactMemTable(level, begin, end);
+    }
+    // 下面是两个测试程序TEST_CompactRange()、TEST_CompactMemTable()
+    void DBImap::TEST_CompactRange(int level, const Slice* begin, const Slice* end) {
+        assert(level>=0);
+        assert(level+1<config::kNumLevels);
+        InternalKey begin_storage, end_storage;
+        ManualCompaction manual;
+        manual.level = level;
+        manual.done = false;
+        if(begin==nullptr)
+            manual.begin = nullptr;
+        else {
+            begin_storage = InternalKey(*begin, kMaxSequenceNumber, kValueTypeForSeek);
+            manual.begin = &begin_storage;
+        }
+        if (end == nullptr)
+            manual.end = nullptr;
+        else {
+            end_storage = InternalKey(*end, 0, static_cast<ValueType>(0));
+            manual.end = &end_storage;
+        }
+        MutexLock l(&mutex_);
+        while(!manual.done && !shutting_down_.load(std::memory_order_acquire) && bg_error_.ok()) {
+            if(manual_compaction_ == nullptr) {
+                manual_compaction_ = &manual;
+                MaybeScheduleCompaction();
+            }
+            else 
+                background_work_finished_signal_.Wait();
+        }
+         while (background_compaction_scheduled_) 
+            background_work_finished_signal_.Wait();
+        if (manual_compaction_ == &manual)
+            manual_compaction_ = nullptr;
+    }
+    Status DBImpl::TEST_CompactMemTable() {
+        Status s = Write(WriteOptions(), nullptr);
+        if (s.ok()) {
+            MutexLock l(&mutex_);
+            while (imm_ != nullptr && bg_error_.ok()) 
+                background_work_finished_signal_.Wait();
+            if (imm_ != nullptr) 
+                s = bg_error_;
+        }
+        return s;
+    }
+    void DBImpl::RecordBackgroundError(const Status& s) {
+        mutex_.AssertHeld();
+        if(bg_error_.ok()) {
+            bg_error_ = s;
+            background_work_finished_signal_.SignalAll();
+        }
+    }
+    void DBImpl::MaybeScheduleCompaction() {
+        mutex_.AssertHeld();
+        if(background_compaction_scheduled_)
 
+        else if(shutting_down_.load(std::memory_order_acquire))
+
+        else if(!bg_error_.ok())
+
+        else if(imm_==nullptr && manual_compaction_ == nullptr && !versions_->NeedsCompaction())
+
+        else {
+            background_compaction_scheduled_ = true;
+            env_->Schedule(&DBImpl::BGWork, this);
+        }
+    }
+    void DBImpl::BGWork(void* db) {
+        reinterpret_cast<DBImpl*>(db)->BackgroundCall();
+    }
 
 }

@@ -509,51 +509,66 @@ namespace leveldb {
         else    
             RecordBackgroundError(s);// 如果发生错误，记录后台错误信息
     }
+    /**
+     * @brief 将指定范围[begin, end)内的数据从多个层级(如level 0到max_level_with_files)进行合并
+     * 通过紧凑化操作,减少数据的冗余,优化存储结构,提高查询性能
+     * 
+     * @param begin 
+     * @param end 
+     */
     void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
-        int max_level_with_files = 1;
+        int max_level_with_files = 1;// 初始化最高层级为1
         {
             MutexLock l(&mutex);
-            Version* base = versions_->current();
+            Version* base = versions_->current();// 获取当前版本
             for(int level = 1;level<config::kNumLevels;level++) {
-                if(base->OverlapInLevel(level, begin, end))
+                if(base->OverlapInLevel(level, begin, end))// 如果 level 的文件与 [begin, end) 范围重叠，更新最高层级
                     max_level_with_files = level;
             }
         }
-        TEST_CompactMemTable();
-        for(int level=0;level<max_level_with_files;level++) 
-            TEST_CompactMemTable(level, begin, end);
+        TEST_CompactMemTable();// 触发内存表(MemTable)的持久化操作
+        for(int level=0;level<max_level_with_files;level++)// 对每个层级执行紧凑化操作
+            TEST_CompactRange(level, begin, end);
     }
-    // 下面是两个测试程序TEST_CompactRange()、TEST_CompactMemTable()
+    /**
+     * @brief 用于手动触发紧凑化操作的内部测试函数.它允许开发者或用户显式地指定某个层级level以及键值范围[begin, end),并对该范围内的数据进行紧凑化处理
+     * 
+     * @param level 
+     * @param begin 
+     * @param end 
+     */
     void DBImap::TEST_CompactRange(int level, const Slice* begin, const Slice* end) {
-        assert(level>=0);
-        assert(level+1<config::kNumLevels);
+        assert(level>=0);// 断言 level 非负
+        assert(level+1<config::kNumLevels);// 断言 level 不超过层级总数减一
         InternalKey begin_storage, end_storage;
-        ManualCompaction manual;
-        manual.level = level;
-        manual.done = false;
+        ManualCompaction manual;// 手动紧凑化对象
+        manual.level = level;// 设置待操作的层级
+        manual.done = false;// 标记操作未完成
         if(begin==nullptr)
-            manual.begin = nullptr;
+            manual.begin = nullptr;// 如果 begin 为空，设置 manual.begin 为空
         else {
-            begin_storage = InternalKey(*begin, kMaxSequenceNumber, kValueTypeForSeek);
-            manual.begin = &begin_storage;
+            begin_storage = InternalKey(*begin, kMaxSequenceNumber, kValueTypeForSeek);// 创建内部键
+            manual.begin = &begin_storage;// 设置手动紧凑化对象的起始键
         }
         if (end == nullptr)
-            manual.end = nullptr;
+            manual.end = nullptr;// 如果 end 为空，设置 manual.end 为空
         else {
-            end_storage = InternalKey(*end, 0, static_cast<ValueType>(0));
+            end_storage = InternalKey(*end, 0, static_cast<ValueType>(0));// 设置手动紧凑化对象的结束键
             manual.end = &end_storage;
         }
-        MutexLock l(&mutex_);
+        MutexLock l(&mutex_);// 加锁，确保线程安全
+        // 等待手动紧凑化完成
         while(!manual.done && !shutting_down_.load(std::memory_order_acquire) && bg_error_.ok()) {
             if(manual_compaction_ == nullptr) {
-                manual_compaction_ = &manual;
-                MaybeScheduleCompaction();
+                manual_compaction_ = &manual;// 设置当前手动紧凑化对象
+                MaybeScheduleCompaction();// 将紧凑化任务添加到后台任务
             }
             else 
-                background_work_finished_signal_.Wait();
+                background_work_finished_signal_.Wait();// 等待后台线程完成工作
         }
-         while (background_compaction_scheduled_) 
-            background_work_finished_signal_.Wait();
+        // 等待后台紧凑化调度完成
+         while(background_compaction_scheduled_) 
+            background_work_finished_signal_.Wait();// 等待后台用于紧凑化的线程完成工作
         if (manual_compaction_ == &manual)
             manual_compaction_ = nullptr;
     }

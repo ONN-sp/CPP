@@ -92,6 +92,22 @@
     ![](markdown图像集/2025-02-20-14-14-49.png)
 13. `CompactMemTable()`不是和`WriteLevel0Table()`作用一样吗,那么为什么要用`CompactMemTable()`?
     尽管`WriteLevel0Table()`负责将数据写入`SST`文件,但`CompactMemTable()`提供了更高层次的管理和协调功能,确保数据库的整体一致性和效率:1.`CompactMemTable()`确保在写入`SST`文件后,版本信息得到正确更新(包括设置前一个日志文件编号和当前日志文件编号),这对于数据库的恢复和一致性至关重要;2.通过替换旧的`MemTable`并清理过时文件,`CompactMemTable()`帮助管理数据库的资源,避免内存泄漏和磁盘空间浪费;3.`CompactMemTable()`作为协调者,确保在写入`SST`文件、更新版本信息、替换 `MemTable`和清理过时文件等步骤之间正确地进行协调
+14. `CompactRange()`是将指定范围`[begin, end)`内的数据从多个层级(如`level 0`到`max_level_with_files`)进行合并,如:
+      ![](markdown图像集/2025-02-21-12-22-50.png)
+      ![](markdown图像集/2025-02-21-12-22-58.png)
+      ![](markdown图像集/2025-02-21-12-23-10.png)
+      调用`TEST_CompactRange(0, "C", "G")`时,`Level-0`中的文件`File0`和`Level-2`中的文件`File2`不会直接合并`Level-0`的文件会先与`Level-1`的文件合并,生成的新文件可能会进一步触发到`Level-2`的紧凑化,但不会直接从`Level-0`跳到`Level-2`
+15. 需要注意的是:`TEST_CompactRange()`表示对指定`level`中范围`[begin, end)`的数据进行紧凑化,如果`Level-i`或其他层级中的文件与指定范围`[begin, end)`有重叠,这些文件中的整个数据范围都会被合并到一个新的文件中,而不仅仅是重叠的部分.如:
+    ![](markdown图像集/2025-02-21-12-26-45.png)
+    最终生成的新文件的范围是`[A, F)`,而不是`[C, F)`
+16. `TEST_CompactRange()`的行为取决于指定的层级`level`和范围`[begin, end)`,紧凑化操作会根据以下规则:
+    ![](markdown图像集/2025-02-21-13-09-41.png)
+    ![](markdown图像集/2025-02-21-13-10-31.png)
+    ![](markdown图像集/2025-02-21-17-52-59.png)
+17. `LevelDB`的压缩机制:`LevelDB`的数据存储采用多层结构,压缩分为两类:
+    * `Minor Compaction`:将内存中的`MemTable`持久化为`SSTable`文件到`Level 0`
+    * `Major Compaction`:合并不同层级的`SSTable`以减少冗余数据,并提升查询效率
+    默认情况下,`Major Compaction`是层级递进的
 # version_set/version_edit
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)

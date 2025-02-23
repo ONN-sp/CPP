@@ -569,44 +569,534 @@ namespace leveldb {
         // 等待后台紧凑化调度完成
          while(background_compaction_scheduled_) 
             background_work_finished_signal_.Wait();// 等待后台用于紧凑化的线程完成工作
-        if (manual_compaction_ == &manual)
+        if(manual_compaction_ == &manual)
             manual_compaction_ = nullptr;
     }
+    /**
+     * @brief 触发内存表的持久化操作,并等待后台线程完成处理
+     * 
+     * @return Status 
+     */
     Status DBImpl::TEST_CompactMemTable() {
-        Status s = Write(WriteOptions(), nullptr);
-        if (s.ok()) {
+        Status s = Write(WriteOptions(), nullptr);// 调用 Write 方法，可能触发内存表的持久化操作
+        if(s.ok()) {
             MutexLock l(&mutex_);
-            while (imm_ != nullptr && bg_error_.ok()) 
-                background_work_finished_signal_.Wait();
-            if (imm_ != nullptr) 
-                s = bg_error_;
+            while(imm_ != nullptr && bg_error_.ok())// 等待后台线程完成不可变内存表的处理
+                background_work_finished_signal_.Wait();// 等待后台工作完成
+            if(imm_ != nullptr) 
+                s = bg_error_;// 更新状态为后台错误
         }
         return s;
     }
+    /**
+     * @brief 记录后台线程的错误状态,并通知等待线程
+     * 
+     * @param s 
+     */
     void DBImpl::RecordBackgroundError(const Status& s) {
-        mutex_.AssertHeld();
+        mutex_.AssertHeld();// 确保锁已被持有
         if(bg_error_.ok()) {
             bg_error_ = s;
-            background_work_finished_signal_.SignalAll();
+            background_work_finished_signal_.SignalAll();// 通知所有等待线程
         }
     }
+    /**
+     * @brief 根据当前状态(如后台任务是否已调度、是否存在错误等)决定是否调度后台紧凑化任务
+     * 
+     */
     void DBImpl::MaybeScheduleCompaction() {
         mutex_.AssertHeld();
-        if(background_compaction_scheduled_)
+        if(background_compaction_scheduled_)// 如果后台紧凑化已调度
 
-        else if(shutting_down_.load(std::memory_order_acquire))
+        else if(shutting_down_.load(std::memory_order_acquire))// 如果数据库正在关闭
 
-        else if(!bg_error_.ok())
+        else if(!bg_error_.ok())// 如果后台存在错误
 
-        else if(imm_==nullptr && manual_compaction_ == nullptr && !versions_->NeedsCompaction())
+        else if(imm_==nullptr && manual_compaction_ == nullptr && !versions_->NeedsCompaction())// 如果没有不可变内存表、没有手动紧凑化任务且当前版本不需要紧凑化
 
         else {
-            background_compaction_scheduled_ = true;
-            env_->Schedule(&DBImpl::BGWork, this);
+            env_->Schedule(&DBImpl::BGWork, this);// 调度后台紧凑化任务,将BGWork加入后台任务
+            background_compaction_scheduled_ = true;// 标记后台紧凑化已调度
         }
     }
+    /**
+     * @brief 调度后台任务,执行紧凑化或其它后台操作
+     * 
+     * @param db 
+     */
     void DBImpl::BGWork(void* db) {
-        reinterpret_cast<DBImpl*>(db)->BackgroundCall();
+        reinterpret_cast<DBImpl*>(db)->BackgroundCall();// 调用后台处理函数
     }
+    /**
+     * @brief 在后台线程中执行紧凑化操作,确保数据库的存储结构保持高效和一致.实际执行函数是调用BackgroundCompaction()
+     * 
+     */
+    void DBImpl::BackgroundCall() {
+        MutexLock l(&mutex_);
+        assert(background_compaction_scheduled_);// 确保后台紧凑化任务已被调度
+        if(shutting_down_.load(std::memory_order_acquire))// 检查数据库是否正在关闭
+
+        else if(!bg_error_.ok())// 检查后台是否已经记录了错误
+
+        else// 如果数据库未关闭且后台没有错误，执行紧凑化操作
+            BackgroundCompaction();// 调用 BackgroundCompaction 函数执行实际的紧凑化逻辑
+        background_compaction_scheduled_ = false;// 标记后台紧凑化任务已完成
+        MaybeScheduleCompaction();// 检查是否需要调度新的紧凑化任务(根据当前状态决定是否启动新的紧凑化任务)
+        background_work_finished_signal_.SignalAll();// 通过条件变量通知所有等待线程，后台工作已完成
+    }
+    /**
+     * @brief 后台执行紧凑化（Compaction）的核心函数，处理Minor和Major Compaction
+     * 
+     */
+    void DBImpl::BackgroundCompaction() {
+        mutex_.AssertHeld();
+        // 1. 优先处理Minor Compaction(内存数据MemTable刷盘)
+        if(imm_!=nullptr) {
+            CompactionMemTable();// 将Immutable MemTable写入Level 0
+            return;
+        }
+        Compaction* c;
+        bool is_manual = (manual_compaction_ != nullptr);// 判断是否手动触发
+        InternalKey manual_end;
+        // 2. 处理手动触发的Major Compaction(manual Compaction)
+        if (is_manual){
+            ManualCompaction* m = manual_compaction_;
+            // 根据手动指定的层级和键范围生成Compaction任务
+            c = versions_->CompactRange(m->level, m->begin, m->end);
+            m->done = (c == nullptr);// 标记是否完成
+            if (c != nullptr) 
+                manual_end = c->input(0, c->num_input_files(0) - 1)->largest;// 记录手动Compaction的结束键（用于断点续处理）
+            // 输出日志：记录手动Compaction的范围和状态
+            Log(options_.info_log,
+                "Manual compaction at level-%d from %s .. %s; will stop at %s\n",
+                m->level, (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
+                (m->end ? m->end->DebugString().c_str() : "(end)"),
+                (m->done ? "(end)" : manual_end.DebugString().c_str()));
+        } 
+        else
+            c = versions_->PickCompaction();// 3. 自动触发：选择需要Compaction的层级和文件(Size/Seek触发)
+        Status status;
+        if (c == nullptr)
+        // 4. 处理Trivial Move：文件直接移动到下一层级（无需合并）
+        // 当前层文件与下一层无键范围重叠，可直接移动文件而无需合并
+        else if (!is_manual && c->IsTrivialMove()) {
+            assert(c->num_input_files(0) == 1);
+            FileMetaData* f = c->input(0, 0);// 获取待移动的文件元数据
+            c->edit()->RemoveFile(c->level(), f->number);// 从当前层级删除文件
+            c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+                            f->largest);// 添加到下一层级
+            status = versions_->LogAndApply(c->edit(), &mutex_);// 应用版本变更并记录日志
+            if (!status.ok())
+                RecordBackgroundError(status);// 记录错误
+            VersionSet::LevelSummaryStorage tmp;
+            // 输出日志：记录文件移动详情
+            Log(options_.info_log, "Moved #%lld to level-%d %lld bytes %s: %s\n",
+                static_cast<unsigned long long>(f->number), c->level() + 1,
+                static_cast<unsigned long long>(f->file_size),
+                status.ToString().c_str(), versions_->LevelSummary(&tmp));
+        } 
+        else {// 5. 执行常规Major Compaction
+            CompactionState* compact = new CompactionState(c);创建合并状态对象
+            status = DoCompactionWork(compact);// 执行实际合并操作（核心逻辑）
+            if (!status.ok()) 
+                RecordBackgroundError(status);// 记录错误
+            CleanupCompaction(compact);// 清理资源：释放输入文件、删除临时文件等
+            c->ReleaseInputs();
+            RemoveObsoleteFiles();// 清理过期文件
+        }
+        delete c;// 释放Compaction对象
+        // 6. 处理Compaction结果状态
+        if (status.ok())
+   
+        else if (shutting_down_.load(std::memory_order_acquire))
+
+        else 
+            Log(options_.info_log, "Compaction error: %s", status.ToString().c_str());
+        if (is_manual) {// 7. 手动Compaction的后续处理
+            ManualCompaction* m = manual_compaction_;
+            if (!status.ok())
+                m->done = true;// 标记为完成（即使出错）
+            if (!m->done) {// 更新断点续处理的起始键
+                m->tmp_storage = manual_end;
+                m->begin = &m->tmp_storage;
+            }
+            manual_compaction_ = nullptr;// 清空手动Compaction任务
+        }
+    }
+    /**
+     * @brief 负责在 Compaction 完成或失败时，安全释放临时资源、更新全局状态，并保证系统的一致性
+     * 
+     * @param compact 
+     */
+    void DBImpl::CleanupCompaction(CompactionState* compact) {
+        mutex_.AssertHeld();
+        if(compact->builder!=nullptr) {// 清理未完成的 SSTable 构建器builder
+            compact->builder->Abandon();// 中止当前构建器的工作（丢弃未完成的数据，不刷盘）
+            delete compact->builder;// 删除构建器对象
+        }
+        else
+            assert(compact->outfile==nullptr);// 如果构建器不存在，确保输出文件句柄也应为空
+        delete compact->outfile; // 关闭并释放文件句柄
+        for(size_t i=0;i<compact->outputs.size();++i) {
+            const CompactionState::Output& out = compact->outputs[i];
+            pending_outputs_.erase(out.number);// 从 pending_outputs_ 集合中移除文件编号，标记为不再被占用
+        }
+        delete compact;// 释放 CompactionState 占用的内存
+    }
+    /**
+     * @brief 在 Compaction 过程中创建一个新的 SSTable 输出文件，并初始化其构建器（TableBuilder）
+     * 该函数还未写入键值对数据,写入过程是后续通过Add()
+     * @param compact 
+     * @return Status 
+     */
+    Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
+        assert(compact != nullptr);
+        assert(compact->builder == nullptr);
+        uint64_t file_number;// 新生成的SSTable文件编号
+        {
+            mutex_.Lock();
+            file_number = versions_->NewFileNumber();// 从 VersionSet 分配新的文件编号
+            pending_outputs_.insert(file_number);// 将新文件编号标记为「正在生成」，防止被其他线程误删
+            CompactionState::Output out;// 初始化输出文件的元数据
+            out.number = file_number;// 文件编号
+            out.smallest.Clear();// 最小键（初始为空，后续在写入数据时更新）
+            out.largest.Clear();// 最大键（同上）
+            compact->outputs.push_back(out);// 添加到输出文件列表
+            mutex_.Unlock();
+        }
+        std::string fname = TableFileName(dbname_, file_number);// 生成新 SSTable 文件的完整路径
+        Status s = env_->NewWritableFile(fname, &compact->outfile);// 创建可写文件句柄(用于管理SST文件的写入过程)  compact->outfile持有该文件的句柄
+        if (s.ok())
+            compact->builder = new TableBuilder(options_, compact->outfile);// (builder是用于构建SST文件的)初始化 SSTable 构建器，关联到新创建的文件句柄
+        return s;
+    }
+    /**
+     * @brief 完成当前 Compaction 输出文件的写入，关闭文件句柄，并进行必要的数据验证和日志记录
+     * 写入元数据并刷盘
+     * @param compact 
+     * @param input 
+     * @return Status 
+     */
+    Status DBImpl::FinishCompactionOutputFile(CompactionState* compact, Iterator* input) {
+        // 确保传入的压缩状态对象、输出文件对象和 SSTable 构造器对象都不为空
+        assert(compact!=nullptr);
+        assert(compact->outfile!=nullptr);
+        assert(compact->builder!=nullptr);
+        const uint64_t output_number = compact->current_output()->number;// 获取当前输出文件的编号
+        assert(output_number!=0);// 确保文件编号不为 0
+        Status s = input->status();// 获取输入迭代器的状态  输入迭代器是用于检查输入的键值对是否有效的
+        const uint64_t current_entries = compact->builder->NumEntries();// 获取当前 SSTable 构造器中已写入的条目数量
+        if(s.ok())// 如果输入迭代器状态良好，完成构建（写入索引块、元数据等）
+            s = compact->builder->Finish();// 在构建的SST文件中写入(Add())键值对
+        else// 如果输入迭代器状态不良好，则放弃构建 SSTable
+            compact->builder->Abandon();
+        const uint64_t current_bytes = compact->builder->FileSize();// 获取构建完成的 SSTable 文件大小
+        compact->current_output()->file_size = current_bytes;// 更新当前输出文件的大小
+        compact->total_bytes += current_bytes;// 累加本次压缩的总字节数
+        delete compact->builder;// 删除 SSTable 构造器对象
+        compact->builder = nullptr;
+        if(s.ok())// 如果状态良好，同步输出文件到磁盘
+            s = compact->outfile->Sync();
+        if(s.ok())// 如果状态良好，关闭输出文件
+            s = compact->outfile->Close();
+        delete compact->outfile;
+        compact->outfile = nullptr;// 删除输出文件对象  通过compact->outfile句柄来控制删除输出
+        if(s.ok() && current_entries>0) {// 如果状态良好且有条目写入，则验证生成的 SSTable 文件
+            Iterator* iter = table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);// 创建一个迭代器来读取刚刚生成的 SSTable 文件
+        s = iter->status();// 获取迭代器的状态
+        delete iter;// 删除迭代器对象
+        if(s.ok()) 
+            Log(options_.info_log, "Generated table #%llu@%d: %lld keys, %lld bytes",
+                (unsigned long long)output_number, compact->compaction->level(),
+                (unsigned long long)current_entries,
+                (unsigned long long)current_bytes);
+        }
+        return s;
+    }
+    /**
+     * @brief 将 Compaction 的结果提交到数据库的版本系统VersionSet中，更新元数据并删除旧文件
+     * 
+     * @param compact 
+     * @return Status 
+     */
+    Status DBImpl::InstallCompactionResults(CompactionState* compact) {
+        mutex_.AssertHeld();// 确保当前线程持有互斥锁（保证原子性和线程安全）
+        // 记录 Compaction 摘要日志（输入文件数、层级、输出总大小等）
+        Log(options_.info_log, "Compacted %d@%d + %d@%d files => %lld bytes",
+            compact->compaction->num_input_files(0), compact->compaction->level(),// 当前层输入文件数+当前层级
+            compact->compaction->num_input_files(1), compact->compaction->level() + 1,// 下一层输入文件数+下一层级
+            static_cast<long long>(compact->total_bytes));// 输出文件总大小
+        compact->compaction->AddInputDeletions(compact->compaction->edit());// 通过 VersionEdit 记录需要删除的文件(当前层和下一层参与合并的文件) (通过 compaction 操作,将多层的数据合并到下一层,生成新的文件.旧的文件中的数据已经被新的文件所替代,因此旧文件不再需要,需要删除以避免数据冗余)  
+        const int level = compact->compaction->level(); // 当前层级
+        for (size_t i = 0; i < compact->outputs.size(); i++) {
+            const CompactionState::Output& out = compact->outputs[i];// 获取输出文件元数据
+            compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+                                                out.smallest, out.largest);// 将输出文件添加到下一层（level + 1）的 VersionEdit 中
+        }
+        return versions_->LogAndApply(compact->compaction->edit(), &mutex_);// 将 VersionEdit 应用到 VersionSet，生成新版本并持久化到 MANIFEST 文件
+    }
+    /**
+     * @brief 执行实际的 Compaction 工作:合并输入文件,生成新的有序 SSTable 文件,清理冗余数据
+     * 
+     * @param compact 
+     * @return Status 
+     */
+    Status DBImpl::DoCompactionWork(CompactionState* compact) {
+        const uint64_t start_micros = env_->NowMicros();// 记录 Compaction 开始时间
+        int64_t imm_micros = 0;// 处理 Immutable MemTable 的时间（用于统计）
+        // 记录 Compaction 操作日志（输入文件数及层级）
+        Log(options_.info_log, "Compacting %d@%d + %d@%d files",
+            compact->compaction->num_input_files(0), compact->compaction->level(),// 当前层输入文件数+当前层级
+            compact->compaction->num_input_files(1),// 下一层输入文件数
+            compact->compaction->level() + 1);// 下一层级
+        assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);// 当前层必须有文件
+        assert(compact->builder == nullptr);// 构建器必须未初始化
+        assert(compact->outfile == nullptr);// 输出文件句柄必须未打开
+        if(snapshots_.empty())// 无活跃快照时，使用当前最大序列号进行后续保留操作   如果没有活跃快照，当前可以认为没有用户依赖于旧版本的数据
+            compact->smallest_snapshot = versions_->LastSequence();
+        else// 有快照时，使用最旧快照的序列号   使用最旧快照的序列号作为 smallest_snapshot,是为了保留所有可能被快照引用的数据
+            compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
+        Iterator* input = versions_->MakeInputIterator(compact->compaction);// 生成一个归并排序的迭代器,每次选取最小的键写入文件
+        mutex_.Unlock();
+        input->SeekToFirst();// 定位到第一个键值对
+        Status status;
+        ParsedInternalKey ikey;
+        std::string current_user_key;// 当前处理的用户键（用于去重）
+        bool has_current_user_key = false; // 是否已记录当前用户键
+        SequenceNumber last_sequence_for_key = kMaxSequenceNumber;// 当前用户键的最大序列号
+        // 遍历所有输入键值对
+        while(input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
+            if(has_imm_.load(std::memory_order_relaxed)) {// 优先处理 Immutable MemTable（若存在）
+                const uint64_t imm_start = env_NowMicros();
+                mutex_.Lock();
+                if(imm_!=nullptr) {
+                    CompactMemTable();// 刷新 Immutable MemTable 到 Level 0
+                    background_work_finished_signal_.SignalAll();// 唤醒等待线程
+                }
+                mutex_.Unlock();
+                imm_micros += (env_->NowMicros()-imm_start);// 累计处理时间
+            }
+            Slice key = input->key();// 当前键
+            if(compact->compaction->ShouldStopBefore(key) && compact->builder!=nullptr) {// 检查是否需要停止当前输出文件并创建新文件(如:避免新文件与祖父层文件重叠过多)
+                status = FinishCompactionOutputFile(compact, input);// 完成当前文件
+                if(!status.ok())
+                    break;
+            }
+            // 解析键并判断是否需要丢弃当前键值对
+            bool drop = false;// 标记是否丢弃
+            if(!ParseInternalKey(kt, &ikey)) {// 解析失败（数据损坏）
+                current_user_key.clear();
+                has_current_user_key = false;
+                last_sequence_for_key = kMaxSequenceNumber;
+            }
+            else {
+                // 判断用户键是否变化（新键或重复键）
+                if(!has_current_user_key || user_comparator()->Compare(ikey.user_key, Slice(current_user_key))!=0) {
+                    current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());// 覆盖键(新键或重复,重复键会直接覆盖,新键的话就是创建)
+                    has_current_user_key = true;
+                    last_sequence_for_key = kMaxSequenceNumber;// 重置序列号
+                }
+                // 判断是否应丢弃当前键值对：
+                // 序列号 <= 最小快照序列号（旧数据）  要丢弃
+                // 有删除标记且无更高层数据需要保留    要丢弃
+                if(last_sequence_for_key<=compact->smallest_snapshot)// 序列号 <= 最小快照序列号（旧数据）
+                    drop = true;
+                // 有删除标记且无更高层数据需要保留    要丢弃
+                else if(ikey.type==kTypeDeletion && ikey.sequence<=compact->smallest_snapshot && compact->compaction->IsBaseLevelForKey(ikey.user_key))
+                    drop = true;
+                last_sequence_for_key = ikey.sequence;// 更新当前键的最大序列号
+            }
+            #if 0
+                Log(options_.info_log,
+                    ""  Compact: %s, seq %d, type: %d %d, drop: %d, is_base: %d, "
+                    "%d smallest_snapshot: %d",
+                    ikey.user_key.ToString().c_str(),
+                    (int)ikey.sequence, ikey.type, kTypeValue, drop,
+                    compact->compaction->IsBaseLevelForKey(ikey.user_key),
+                    (int)last_sequence_for_key, (int)compact->smallest_snapshot);
+                }
+            #endif
+            if(!drop) {// 处理有效键（非丢弃状态）
+                if(compact->builder==nullptr) {// 若当前无构建器
+                    status = OpenCompactionOutputFile(compact);// 创建新文件,即这个SST文件是不需要丢弃的
+                    if(!status.ok())
+                        break;
+                }
+                // 更新输出文件的键范围
+                if(compact->builder->NumEntries()==0)
+                    compact->current_output()->smallest.DecodeFrom(key);// 最小键
+                compact->current_output()->largest.DecodeFrom(key);// 最大键
+                compact->builder->Add(key, input->value());// 写入键值对到内存缓冲区,不是直接写入到SST中
+                if(compact->builder->FilerSize()>=compact->compaction->MaxOutFileSize()) {// 检查文件大小是否超限，若超限则完成当前文件
+                    status = FinishCompactionOutputFile(compact, input);
+                    if(!status.ok())
+                        break;
+                }
+            }
+            input->Next();// 移动到下一个键值对
+        }
+        if(status.ok() && shutting_down_.load(std::memory_order_acquire))// 检查数据库是否正在关闭
+            status = Status::IOError("Deleting DB during compaction");
+        if (status.ok() && compact->builder != nullptr)// 完成最后一个输出文件的工作  主循环可能是由于输入迭代器没有数据了(数据以及写入到输出文件中,但可能还没构建SST完成)或数据库关闭而退出,此时需要将输出文件构建成SST,即调用FinishCompactionOutputFile()
+            status = FinishCompactionOutputFile(compact, input);
+        if (status.ok())
+            status = input->status();// 检查输入迭代器的最终状态
+        delete input;// 释放输入迭代器
+        input = nullptr;
+        // 统计 Compaction 耗时和 I/O 数据量
+        CompactionStats stats;
+        stats.micros = env_->NowMicros()-start_micros-imm_micros;// 总耗时（扣除 Immutable 处理时间）
+        for(int which=0;which<2;++which) {// 统计读取量（当前层和下一层输入文件的总大小）
+            for(int i=0;i<compact->compaction->num_input_files(which);++i) 
+                stats.bytes_read += compact->compaction->input(which, i)->file_size;
+        }
+        for(size_t i=0;i<compact->outputs.size();++i) // 统计写入量（所有输出文件的总大小）
+            stats.bytes_written += compact->outputs[i].file_size;
+        // 记录统计信息并提交 Compaction 结果
+        mutex_.Lock();
+        stats_[compact->compaction->level()+1].Add(stats);// 更新层级统计
+        if(status.ok())
+            status = InstallCompactionResults(compact);// 提交版本变更
+        if(!status.ok())
+            RecordBackgroundError(status);// 记录后台错误
+        // 记录 Compaction 完成后的层级状态
+        VersionSet::LevelSummaryStorage tmp;
+        Log(options_.info_log, "compacted to: %s", versions_->LevelSummary(&tmp));
+        return status;
+    }
+    namespace {
+        /**
+         * @brief 保存使用迭代器过程中所需的共享信息,确保这些信息生命周期内的线程安全
+         * 
+         */
+        struct IterState {
+            port::Mutex* const mu;// 互斥锁，保护 version/mem/imm 的访问
+            Version* const version GUARDED_BY(mu);// 当前数据库版本（SSTable 文件元数据）
+            MemTable+* const mem GUARDED_BY(mu);// 可写的内存表（活跃 MemTable）
+            MemTable* const imm GUARDED_BY(mu);// 不可变的内存表（待刷盘的 Immutable MemTable）
+            IterState(port::Mutex* mutex, MemTable* mem, MemTable* imm, Version* version)
+                : mu(mutex), version(version), mem(mem), imm(imm)
+            {}
+        };
+        /**
+         * @brief 迭代器销毁时的回调，释放迭代器关联的共享状态(mu, version, mem, imm)
+         * 
+         * @param arg1 
+         * @param arg2 
+         */
+        static void CleanupIteratorState(void* arg1, void* arg2) {
+            IterState* state = reinterpret_cast<IterState*>(arg1);
+            state->mu._Lock();
+            state->mem->Unref();// 释放 mem 的引用
+            if(state->imm!=nullptr)
+                state->imm->Unref();// 释放 imm 的引用（若存在）
+            state->version->Unref();// 释放 version 的引用
+            state->mu->Unlock();
+            delete state;// 释放 IterState 自身内存
+        }
+    }
+    /**
+     * @brief 创建一个内部迭代器,用于合并内存表(MemTable)、不可变内存表(Immutable MemTable)和磁盘SSTable文件中的数据
+     * 
+     * @param options 
+     * @param latest_snapshot 
+     * @param seed 
+     * @return Iterator* 
+     */
+    Iterator* DBImpl::NewInternalIterator(const ReadOptions& options, SequenceNumber* latest_snapshot, uint32_t* seed) {
+        mutex_.Lock();
+        *latest_snapshot = versions_->LastSequence();// 获取当前数据库的最新序列号，用于快照
+        std::vector<Iterator*> list;// 创建一个迭代器列表，用于存储多个输入迭代器
+        list.emplace_back(mem_->NewIterator());// 添加当前内存表（MemTable）的迭代器
+        mem_->Ref();// 引用计数，防止内存表在使用过程中被销毁
+        if(imm_!=nullptr) {// 如果存在不可变内存表（Immutable MemTable），将其迭代器添加到列表
+            list.emplace_back(imm_->NewIterator());
+            imm_->Ref();
+        }
+        // 添加所有层级 SSTable 文件的迭代器
+        versions_->current()->AddIterators(options, &list);// 为每个 SSTable 文件创建迭代器
+        Iterator* internal_iter = NewMergingIterator(&internal_comparator_, &list[0], list.size());// 创建一个合并迭代器，按照内部比较器（InternalComparator）合并多个输入迭代器(MemTable迭代器、Immutable MemTable迭代器、SSTable迭代器)
+        versions_->current()->Ref();
+        IterState* cleanup = new IterState(&mutex_, mem_, imm_, versions_->current());//  绑定迭代器清理逻辑（确保迭代器销毁时释放资源）
+        internal_iter->RegisterCleanup(CleanupIteratorState, cleanup, nullptr);// 注册清理回调（当迭代器销毁时调用 CleanupIteratorState）
+        *seed = ++seed_;// 生成一个唯一的种子值，可能用于某些随机操作或标识符
+        mutex_.Unlock();
+        return internal_iter;// 返回合并的内部迭代器
+    }
+    /**
+     * @brief 返回下一个层级的文件与当前层级文件的重叠字节数
+     * 
+     * @return int64_t 
+     */
+    int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
+        MutexLock l(&mutex_);
+        return versions_->MaxNextLevelOverlappingBytes();// 调用版本管理系统（VersionSet）的方法，返回下一个层级的文件与当前层级文件的重叠字节数
+    }
+    /**
+     * @brief 从数据库中获取指定键和相应序列号对应的值
+     * 
+     * @param options 
+     * @param key 
+     * @param value 
+     * @return Status 
+     */
+    Status DBImpl::Get(const ReadOptions& options, const Slice& key, std::string* value) {
+        Status s;
+        MutexLock l(&mutex_);
+        SequenceNumber snapshot;// 获取快照的序列号
+        if(options.snapshot!=nullptr)// 如果用户提供了快照，使用该快照的序列号
+            snapshot = static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
+        else// 否则，使用当前版本管理器的最后一个序列号    
+            snapshot = versions_->LastSequence();
+        MemTable* mem = mem_;// 获取当前的内存表
+        MemTable* imm = imm_;// 获取当前不可变内存表
+        Version* current = versions_->current();
+        mem->Ref();// 增加引用计数，确保内存表使用期间不会被销毁
+        if(imm!=nullptr)
+            imm->Ref();
+        current->Ref();// // 增加引用计数，确保版本管理器在使用期间不会被销毁
+        bool have_stat_update = false;// 初始化统计信息标记
+        Version::GetStats stats;
+        {
+            mutex_.Unlock();
+            LookupKey lkey(key, snapshot);// 构造查找键，包含用户提供的键和快照的序列号
+            if(mem->Get(lkey, value, &s))// 尝试从当前内存表中查找键值对
+            
+            else if(imm!=nullptr&&imm->Get(lkey, value, &s))// 否则，尝试从不可变内存表中查找
+            
+            else {// 否则，从磁盘上的 SSTable 文件中查找
+                s = current->Get(options, lkey, value, &stats);
+                have_stat_update = true;
+            }
+            mutex_.Lock();
+        }
+        if(have_stat_update && current->UpdateStats(stats))// 根据收集到的统计信息来决定是否可能进行紧凑化处理
+            MaybeScheduleCompaction();
+        // 减少引用计数，释放内存表和版本管理器
+        mem->Unref();
+        if(imm!=nullptr)
+            imm->Unref();
+        current->Unref();
+        return s;
+    }
+    /**
+     * @brief 方便地创建一个迭代器，用于遍历数据库中的数据，同时支持快照和性能优化
+     * 
+     * @param options 
+     * @return Iterator* 
+     */
+    Iterator* DBImpl::NewIterator(const ReadOptions& options) {
+        SequenceNumber latest_snapshot;
+        uint32_t seed;
+        Iterator* iter = NewInternalIterator(options, &latest_snapshot, *seed);// 调用 NewInternalIterator 创建一个内部迭代器
+        // 使用 NewDBIterator 方法封装内部迭代器
+        // NewDBIterator 会创建一个更高层次的迭代器，提供用户友好的接口，并管理快照和上下文信息
+        return NewDBIterator(this, user_comparator(), iter,
+                                (options.snapshot!=nullptr
+                                    ? static_cast<const SnapshotImpl*>(options.snapshot)
+                                        ->sequence_number():latest_snapshot), seed);
+    }
+
+
 
 }

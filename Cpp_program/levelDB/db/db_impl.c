@@ -1096,7 +1096,110 @@ namespace leveldb {
                                     ? static_cast<const SnapshotImpl*>(options.snapshot)
                                         ->sequence_number():latest_snapshot), seed);
     }
-
-
+    /**
+     * @brief 记录键的读取样本，用于触发可能的 Compaction 优化
+     * 
+     * @param key 
+     */
+    void DBImpl::RecordReadSample(Slice key) {
+        MutexLock l(&mutex_);
+        if(versions_->current()->RecordReadSample(key))// 调用 Version 的统计方法，若返回 true 表示需要触发 Compaction
+            MaybeScheduleCompaction();// 调度后台 Compaction
+    }
+    /**
+     * @brief 创建一个数据库快照，用于读取一致性视图
+     * 
+     * @return const Snapshot* 
+     */
+    const Snapshot* DBImpl::GetSnapshot() {
+        MutexLock l(&mutex_);
+        return snapshots_.New(versions_->LastSequence());// 生成新快照，基于当前最新序列号（原子性获取）
+    }
+    /**
+     * @brief 释放不再使用的快照资源
+     * 
+     * @param snapshot 
+     */
+    void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
+        MutexLock l(&mutex_);
+        snapshots_.Delete(static_cast<const SnapshotImpl*>(snapshot));// 将基类快照指针转换为内部实现类，并标记删除
+    }   
+    /**
+     * @brief 写入键值对的便捷接口（继承自基类 DB）
+     * 
+     * @param options 
+     * @param key 
+     * @return Status 
+     */
+    Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
+        return DB::Put(o, key, val);
+    }
+    /**
+     * @brief 删除指定键的便捷接口（继承自基类 DB）
+     * 
+     * @param options 
+     * @param key 
+     * @return Status 
+     */
+    Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
+        return DB::Delete(options, key);
+    }
+    Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
+        Writer w(&mutex_);// 封装写入请求和同步工具
+        w.batch = updates;// 待写入的批量操作
+        w.sync = options.sync;// 是否同步刷盘
+        w.done = false;// 标记是否完成
+        MutexLock l(&mutex_);
+        writers_.emplace_back(&w);// 将当前写入请求加入等待队列
+        while(!w.done && &w!=writers_.front())// 等待条件：当前请求不是队首或尚未完成
+            w.cv.Wait();
+        if(w.done)// 若已被其他线程处理完成（合并写入），直接返回状态
+            return w.status;
+        Status status = MakeRoomForWrite(updates==nullptr);// 确保有足够空间进行写入（可能触发 MemTable 切换或 Compaction）
+        uint64_t last_sequence = versions_->LastSequence();// 当前最新序列号
+        Writer* last_writer = &w;// 记录最后一个待处理的写入请求
+        // 仅处理非空批量写入（空批量用于 Compaction 等内部操作）
+        if(status.ok() && updates!=nullptr) {
+            WriterBatch* write_batch = BuildBatchGroup(&last_writer);// 合并多个等待中的写入请求为一个批量（减
+            WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);// 为批量中的每个操作分配递增的序列号
+            last_sequence += WriteBatchInternal::Count(write_batch);// 更新序列号
+            // 写入 WAL 日志并应用至 MemTable
+            {
+            mutex_.Unlock();
+            status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));// 写日志
+            bool sync_error = false;
+            if (status.ok() && options.sync) {// 若需同步，确保日志刷盘
+                status = logfile_->Sync();
+                if (!status.ok()) 
+                    sync_error = true;
+            }
+            // 将批量操作插入 MemTable
+            if (status.ok()) 
+                status = WriteBatchInternal::InsertInto(write_batch, mem_);
+            mutex_.Lock();
+            if (sync_error)
+                RecordBackgroundError(status);
+            }
+            // 清空临时合并批量（复用内存）
+            if (write_batch == tmp_batch_) 
+                tmp_batch_->Clear();
+            versions_->SetLastSequence(last_sequence);// 更新全局序列号
+        }
+        // 由于合并写入操作一次可能会处理多个writers_队列中的元素,因此此处将所有已经处理的元素状态进行变更,并且发送signal信号
+        while (true) {
+            Writer* ready = writers_.front();
+            writers_.pop_front();
+            if (ready != &w) {
+                ready->status = status;
+                ready->done = true;
+                ready->cv.Signal();
+            }
+            if (ready == last_writer) 
+                break;
+        }
+        if (!writers_.empty()) 
+            writers_.front()->cv.Signal();
+        return status;
+    }
 
 }

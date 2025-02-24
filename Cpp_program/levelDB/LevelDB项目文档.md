@@ -153,8 +153,14 @@
     ![](markdown图像集/2025-02-23-21-28-09.png)
 33. `Get()`用于从`LevelDB`中获取对应的键-值对数据,注意读取的时候是用的`LookupKey`(由`key`和对应的`SequenceNumber`构成),该函数的流程如下:
     ![](markdown图像集/2025-02-23-21-38-26.png)
-24. 已经有`NewInternalIterator()`了,为什么还要`NewIterator()`?
+34. 已经有`NewInternalIterator()`了,为什么还要`NewIterator()`?
     `NewInternalIterator()`是一个内部函数,用于创建一个内部迭代器(`internal_iter`),该迭代器可以遍历数据库中的所有数据,包括内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘上的`SSTable`文件;`NewIterator()`是一个对外提供的函数,用于创建一个用户级别的迭代器(`DBIterator`),该迭代器封装了内部迭代器(`InternalIterator`),并提供了用户友好的接口
+35. `Write()`中的队列`writers_`,该队列对象中的元素节点为`Writer`对象指针.`writers_`与写操作的缓存空间有关,批量操作请求均存储在这个队列中,按顺序执行,已完成的出队,而未执行的则在这个队列中处于等待状态,其结构如下:
+    ![](markdown图像集/2025-02-24-22-40-33.png)
+36. `Write()`执行流程:
+    ![](markdown图像集/2025-02-24-22-42-03.png)
+    ![](markdown图像集/2025-02-24-22-42-17.png)
+    ![](markdown图像集/2025-02-24-22-42-28.png)
 # SequenceNumber
 1. `SequenceNumber`是一个64位整数,其中最高8位没有使用,实际只使用了56位,即7个字节,最后一个字节用于存储该数据的值类型:
    ![](markdown图像集/2025-02-23-21-35-22.png)

@@ -1151,7 +1151,7 @@ namespace leveldb {
         w.done = false;// 标记是否完成
         MutexLock l(&mutex_);
         writers_.emplace_back(&w);// 将当前写入请求加入等待队列
-        while(!w.done && &w!=writers_.front())// 等待条件：当前请求不是队首或尚未完成
+        while(!w.done && &w!=writers_.front())// 等待条件：当前请求不是队首且尚未完成
             w.cv.Wait();
         if(w.done)// 若已被其他线程处理完成（合并写入），直接返回状态
             return w.status;
@@ -1201,5 +1201,201 @@ namespace leveldb {
             writers_.front()->cv.Signal();
         return status;
     }
+    /**
+     * @brief 将多个等待中的写入请求(writers_)合并为一个批量操作，以提升写入效率
+     * 参数 last_writer 用于返回最后一个被合并的写入请求指针
+     * @param last_writer 
+     * @return WriteBatch* 
+     */
+    WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
+         mutex_.AssertHeld();
+         assert(!writers_.empty());
+         Writer* first = writers_.front();// 获取队首写入请求
+         WriteBatch* result = first->batch;// 初始化结果为队首的 batch
+         assert(result!=nullptr);
+         size_t size = WriteBatchInternal::ByteSize(first->batch);// 计算初始 batch 大小
+         // 动态计算最大合并大小（兼顾吞吐量与延迟）
+         size_t max_size = 1<<20;// 默认最大 1MB
+         if(size <= (128<<10))// 若初始 batch ≤ 128KB
+            max_size = size+(128<<10);// 允许额外合并 128KB，避免小写延迟过高
+        *last_writer = first; // 初始化最后一个合并的写入请求为队首
+        std::deque<Writer*>::iterator iter = writers_.begin();// 初始化迭代器
+        ++iter;// 跳过队首(队首已经处理了)
+        for(;iter!=writers_.end();++iter) {// 遍历后续写入请求，尝试合并
+            Writer* w = *iter;// 当前遍历的写入请求
+            if(w->sync && !first->sync)// 同步写（sync）不能与非同步写合并
+                break;// 停止合并
+            if(w->batch!=nullptr) {// 仅处理有实际数据的请求
+                size += WriteBatchInternal::ByteSize(w->batch);// 计算合并后的总大小
+                if(size > max_size)// 合并后大小超过阈值
+                    break;
+                if(result==first->batch) {// 首次合并多个 batch 时，切换至临时 batch
+                    result = tmp_batch_;// 切换到临时 batch
+                    assert(WriteBatchInternal::Count(result)==0);
+                    WriteBatchInternal::Append(result, first->batch);// 将队首 batch 内容追加到临时 batch
+                }
+                WriteBatchInternal::Append(result, w->batch);// 将当前请求的 batch 合并到结果中
+            }
+            *lats_writer = w;// 更新最后一个合并的请求
+        }
+        return result;
+    }
+    /**
+     * 确保有足够的空间进行写入操作（可能触发 MemTable 切换或 Compaction）
+     * @param force 
+     * @return Status 
+     */
+    Status DBImpl::MakeRoomForWrite(bool force) {
+        mutex_.AssertHeld();
+        assert(!writers_.empty());// 确保仅在写入队列非空时调用
+        bool allow_delay = !force;// 是否允许延迟写入（force=true 表示强制腾空间,即不延迟）
+        Status s;
+        while(true) {
+            if(!bg_error_.ok()) {// 1. 检查后台错误（如 Compaction 失败）
+                s = bg_error_;
+                break;
+            }
+            // Level 0 文件过多时的写入减速（防止写放大）
+            else if(allow_delay && versions_->NumLevelFiles(0)>=config::kL0_SlowdownWritesTrigger) {
+                mutex_.Unlock();// 短暂释放锁
+                env_->SleepForMicroseconds(1000);// 休眠 1ms 减缓写入压力
+                allow_delay = false;// 仅允许减速一次
+                mutex_.Lock();// 休眠结束就再次锁上
+            }
+            //  内存表仍有空间且无需强制腾空间
+            else if(!force && (mem_->ApproximateMemoryUsage()<=options_.write_buffer_size)) 
+                break;// 内存表未满，可以继续写入
+            else if(imm_!=nullptr) {// 存在未刷盘的 Immutable MemTable
+                Log(options_.info_log, "Current memtable full; waiting...\n");
+                background_work_finished_signal_.Wait();// 等待后台线程完成刷盘
+            }
+            else {// 需要创建新 MemTable 和日志文件  触发MemTable切换或Compaction
+                assert(versions_->PrevLogNumber()==0);
+                uint64_t new_log_number = versions_->NewFileNumber();
+                WritableFile* lfile = nullptr;
+                s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
+                if(!s.ok()) {
+                    versions_->ReuseFileNumber(new_log_number);// 创建失败时回收文件号
+                    break;
+                }
+                delete log_;// 删除旧日志 Writer
+                s = logfile_->Close();// 关闭旧日志文件
+                if(!s.ok())
+                    RecordBackgroundError(s);// 记录错误但不终止流程
+                delete logfile_;// 释放旧日志文件资源
+                logfile_ = lfile;// 切换到新日志文件
+                logfile_number_ = new_log_number;
+                log_ = new log::Writer(lfile);// 初始化新日志 Writer
+                // 切换 MemTable（mem_ → imm_，新建空 mem_）
+                imm_ = mem_;// 当前 MemTable 转为 Immutable
+                has_imm_.store(true, std::memory_order_release);// 原子标记存在Immutable MemTable(因为把MemTable转换为不可变的内存了)
+                mem_ = new MemTable(internal_comparator_);// 新建空 MemTable
+                mem_->Ref();// 增加新 MemTable 的引用计数
+                force = false;// 重置强制标志
+                MaybeScheduleCompaction(); // 调度后台 Compaction
+            }
+        }
+        return s;
+    }
+    /**
+     * @brief 获取数据库的特定属性信息
+     * 
+     * @param property 属性名称，必须以 "leveldb." 开头
+     * @param value 出参数，存储属性值的字符串
+     * @return true 
+     * @return false 
+     */
+    bool DBImpl::GetProperty(const Slice& property, std::string* value) {
+        value->clear();// 清空输出字符串，确保结果纯净
+        MutexLock l(&mutex_);
+        Slice in = property;// 输入的属性名
+        Slice prefix("leveldb.");// 属性名前缀，用于隔离 LevelDB 内部属性
+        if (!in.starts_with(prefix)) 
+            return false;
+        in.remove_prefix(prefix.size());// 移除前缀，获取具体属性标识（如 "stats"）
+        // 1. 处理层级文件数量查询：格式为 "num-files-at-levelN"（N为层级号）
+        if (in.starts_with("num-files-at-level")) {
+            in.remove_prefix(strlen("num-files-at-level"));// 剥离命令前缀，保留层级号部分
+            uint64_t level;
+            bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+            if (!ok || level >= config::kNumLevels)// 层级有效性检查（0 <= level < kNumLevels）
+                return false;
+            else {
+                // 查询指定层级的 SSTable 文件数量并格式化输出
+                char buf[100];
+                std::snprintf(buf, sizeof(buf), "%d",
+                                versions_->NumLevelFiles(static_cast<int>(level)));// 从当前版本获取文件数
+                *value = buf;// 存储结果
+                return true;
+            }
+        } 
+        else if (in == "stats") {// 2. 生成压缩统计报表：返回各层级的 Compaction 统计信息
+            char buf[200];
+            std::snprintf(buf, sizeof(buf),
+                        "                               Compactions\n"
+                        "Level  Files Size(MB) Time(sec) Read(MB) Write(MB)\n"
+                        "--------------------------------------------------\n");
+            value->append(buf);// 添加表头到输出
+            for (int level = 0; level < config::kNumLevels; level++) {// 遍历所有层级（0 ~ kNumLevels-1）
+                int files = versions_->NumLevelFiles(level);// 当前层文件数
+                if (stats_[level].micros > 0 || files > 0) {// 仅输出有文件或存在历史统计数据的层级
+                // 格式化单行数据：
+                // - 层级号、文件数、总大小（MB）、耗时（秒）、读取量（MB）、写入量（MB）
+                    std::snprintf(buf, sizeof(buf), "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
+                                level, files, versions_->NumLevelBytes(level) / 1048576.0,// 字节转 MB
+                                stats_[level].micros / 1e6,// 微秒转秒
+                                stats_[level].bytes_read / 1048576.0,// 读取量转 MB
+                                stats_[level].bytes_written / 1048576.0);// 写入量转 MB
+                    value->append(buf);// 追加行数据
+                }
+            }
+            return true;
+        } 
+        // 3. 返回 SSTable 元数据详情：包含文件名、键范围、大小等调试信息
+        else if (in == "sstables") {
+            *value = versions_->current()->DebugString();// 获取当前版本所有文件的描述字符串
+            return true;
+        } 
+        // 4. 估算内存使用总量：包括块缓存、MemTable 和 Immutable MemTable
+        else if (in == "approximate-memory-usage") {
+            size_t total_usage = options_.block_cache->TotalCharge();// 块缓存占用量
+            if (mem_)// 累加活跃 MemTable 的内存估算值（若存在）
+                total_usage += mem_->ApproximateMemoryUsage();
+            if (imm_)// 累加不可变 MemTable 的内存估算值（若存在）
+                total_usage += imm_->ApproximateMemoryUsage();
+            char buf[50];
+            std::snprintf(buf, sizeof(buf), "%llu",
+                        static_cast<unsigned long long>(total_usage));// 格式化输出为总字节数（如 "15728640" 表示约 15MB）
+            value->append(buf);
+            return true;
+        }
+        return false;
+    }
+    void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
+        MutexLock l(&mutex_);
+        Version* v = versions_->current();
+        v->Ref();
+        for(int i=0;i<n;++i) {
+            InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
+            InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
+            uint64_t start = versions_->ApproximateOffsetOf(v, k1);
+            uint64_t limit = versions_->ApproximateOffsetOf(v, k2);
+            sizes[i] = (limit>=start ? limit-start:0);
+        }
+        v->Unref();
+    }
+    Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
+        WriteBatch batch;
+        batch.Put(key, value);
+        return Write(opt, &batch);
+    }
+    Status DB::Delete(const WriteOptions& opt, const Slice& key) {
+        WriteBatch batch;
+        batch.Delete(key);
+        return Write(opt, &batch);
+    }
+    DB::~DB() = default;
+
+
 
 }

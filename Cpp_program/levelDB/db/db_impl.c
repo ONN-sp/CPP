@@ -1371,31 +1371,120 @@ namespace leveldb {
         }
         return false;
     }
+    /**
+     * @brief 估算多个键范围 [start, limit) 在数据库中占用的近似字节数
+     * 
+     * @param range 
+     * @param n 
+     * @param sizes 
+     */
     void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
         MutexLock l(&mutex_);
-        Version* v = versions_->current();
+        Version* v = versions_->current();// 获取当前数据版本（SSTable 元信息）
         v->Ref();
-        for(int i=0;i<n;++i) {
+        for(int i=0;i<n;++i) {// 遍历所有键范围
+            // 构造内部键（使用最大序列号，确保定位到键的最新位置） 通过start,limit分别对应这个键范围的内部键边界
             InternalKey k1(range[i].start, kMaxSequenceNumber, kValueTypeForSeek);
             InternalKey k2(range[i].limit, kMaxSequenceNumber, kValueTypeForSeek);
+            // 估算键在文件中的偏移量（基于 SSTable 文件元数据）
             uint64_t start = versions_->ApproximateOffsetOf(v, k1);
             uint64_t limit = versions_->ApproximateOffsetOf(v, k2);
-            sizes[i] = (limit>=start ? limit-start:0);
+            sizes[i] = (limit>=start ? limit-start:0);// [start, limit)这个键范围对应的近似占用字节数
         }
         v->Unref();
     }
     Status DB::Put(const WriteOptions& opt, const Slice& key, const Slice& value) {
-        WriteBatch batch;
-        batch.Put(key, value);
-        return Write(opt, &batch);
+        WriteBatch batch;// 创建临时批量操作对象
+        batch.Put(key, value);// 添加 Put 操作到批量
+        return Write(opt, &batch);// 执行批量写入
     }
     Status DB::Delete(const WriteOptions& opt, const Slice& key) {
-        WriteBatch batch;
-        batch.Delete(key);
-        return Write(opt, &batch);
+        WriteBatch batch;// 创建临时批量操作对象
+        batch.Delete(key);// 添加 Delete 操作到批量
+        return Write(opt, &batch);// 执行批量写入
     }
     DB::~DB() = default;
-
-
-
+    /**
+     * @brief 用于打开一个数据库,如果不存在就会新建
+     * 
+     * @param options 
+     * @param dbname 
+     * @param dbptr 指向数据库实例指针的指针，用于返回打开的数据库实例
+     * @return Status 
+     */
+    Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
+        *dbptr = nullptr;
+        DBImpl* impl = new DBImpl(options, dbname);// 创建一个新的数据库实现对象（DBImpl 是 DB 的具体实现类）
+        impl->mutex_.Lock();
+        VersionEdit edit;// VersionEdit 对象用于记录数据库版本变更
+        bool save_manifest = false;// 标志位，表示是否需要保存 MANIFEST 文件
+        // 尝试恢复数据库状态（如从崩溃中恢复日志和数据文件）
+        // Recover 函数会检查现有日志文件并尝试恢复内存表（MemTable）
+        // 如果数据库impl是新的，Recover()会成功但没有内存表，这时会创建新的日志文件和内存表
+        // 如果数据库impl已存在，Recover()会尝试恢复现有状态
+        Status s = impl->Recover(&edit, &save_manifest);
+        if(s.ok() && impl->mem_==nullptr) {// 如果恢复成功，并且当前没有内存表（MemTable），则新建一个
+            uint64_t new_log_number = impl->versions_->NewFileNumber();// 获取一个新的日志文件编号
+            WritableFile* lfile;// 定义一个指向可写文件的指针
+            s = options.env->NewWritableFile(LogFileName(dbname, new_log_number), &lfile);// 创建一个新的日志文件（文件名基于 dbname 和 new_log_number）
+            if(s.ok()) {
+                edit.SetLogNumber(new_log_number);// 设置版本编辑中的日志编号
+                impl->logfile_ = lfile;// 保存日志文件指针
+                impl->logfile_number_ = new_log_number;// 保存日志文件编号
+                impl->log_ = new log::Writer(lfile);// 创建日志写入器
+                impl->mem_ = new MemTable(impl->internal_comparator_);// 创建新的内存表
+                impl->mem_->Ref();// 增加内存表的引用计数
+            }
+        }
+        if(s.ok() && save_manifest) {// 如果状态正常且需要保存 MANIFEST 文件
+            edit.SetPrevLogNumber(0);// 设置之前的日志编号为 0（表示无前一个日志）
+            edit.SetLogNumber(impl->logfile_number_);// 设置当前日志编号
+            s = impl->versions_->LogAndApply(&edit, &impl->mutex_);// 将版本编辑应用到版本管理器，并更新 MANIFEST 文件
+        }
+        if(s.ok()) {
+            impl->RemoveObsoleteFiles();// 删除不再需要的旧文件
+            impl->MaybeScheduleCompaction();// 检查是否需要压缩 SST 文件
+        }
+        impl->mutex_.Unlock();// 解锁，允许其他线程访问
+        if(s.ok()) {
+            assert(impl->mem_!=nullptr);// 确保内存表已正确初始化
+            *dbptr = impl;// 返回数据库实例
+        }
+        else
+            delete impl;// 如果失败，清理分配的资源
+        return s;
+    }
+    Snapshot::~Snapshot() = default;
+    /**
+     * @brief 用于彻底销毁一个数据库,包括删除所有相关文件和目录
+     * 
+     * @param dbname 
+     * @param options 
+     * @return Status 
+     */
+    Status DestroyDB(const std::string& dbname, const Options& options) {
+        Env* env = options.env;
+        std::vector<std::string> filenames;// 获取数据库目录下的所有文件名
+        Status result = env->GetChildren(dbname, &filenames);
+        if(!result.ok())
+            return Status::OK();// 如果获取文件列表失败，直接返回成功状态（假设没有文件需要删除）
+        FileLock* lock;// 创建文件锁对象
+        const std::string lockname = LockFileName(dbname);// 获取锁文件名
+        result = env->LockFile(lockname, &lock);// 尝试锁定数据库(即对这个锁文件进行锁定,如果可以对这个锁文件锁定的话那么就代表可以锁定这个数据库)
+        if(result.ok()) {
+            uint64_t number;
+            FileType type;
+            for(size_t i=0;i<filenames.size();++i) {// 遍历数据库目录下的所有文件
+                if(ParseFileName(filenames[i], &number, &type) && type!=kDBLockFile) {// 如果文件不是锁文件，则尝试删除该文件
+                    Status del = env->RemoveFile(dbname+"/"+filenames[i]);
+                    if(result.ok() && !del.ok())// 如果删除失败，更新结果状态
+                        result = del;
+                }
+            }
+            env->UnlockFile(lock);// 解除文件锁
+            env->RemoveFile(lockname);// 删除锁文件
+            env->RemoveDir(dbname);// 删除数据库目录
+        }
+        return result;
+    }
 }

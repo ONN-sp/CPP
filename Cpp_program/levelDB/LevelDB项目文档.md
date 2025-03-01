@@ -151,7 +151,7 @@
 32. `NewInternalIterator()`会创建一个内部迭代器,用于合并内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘`SSTable`文件中的数据.如:
     ![](markdown图像集/2025-02-23-21-27-59.png)
     ![](markdown图像集/2025-02-23-21-28-09.png)
-33. `Get()`用于从`LevelDB`中获取对应的键-值对数据,注意读取的时候是用的`LookupKey`(由`key`和对应的`SequenceNumber`构成),该函数的流程如下:
+33. `Get()`用于从`LevelDB`中获取对应的键-值对数据,注意读取的时候是用的`LookupKey`(由`键长度(Varint32)`+`InternalKey`构成),该函数的流程如下:
     ![](markdown图像集/2025-02-23-21-38-26.png)
 34. 已经有`NewInternalIterator()`了,为什么还要`NewIterator()`?
     `NewInternalIterator()`是一个内部函数,用于创建一个内部迭代器(`internal_iter`),该迭代器可以遍历数据库中的所有数据,包括内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘上的`SSTable`文件;`NewIterator()`是一个对外提供的函数,用于创建一个用户级别的迭代器(`DBIterator`),该迭代器封装了内部迭代器(`InternalIterator`),并提供了用户友好的接口
@@ -175,10 +175,47 @@
     ![](markdown图像集/2025-02-27-13-41-54.png)
 42. `LevelDB`是怎么实现对数据库进行上锁的?
     这是通过在数据库目录中的一个`LOCK`特殊的空文件.当一个线程尝试对数据库进行写操作时,会尝试锁定`LOCK`文件(通过`fcntl`可以锁定文件).如果成功,则表示没有其它线程正在写数据库;如果失败,说明其它线程已经锁定了数据库,当前线程需要等待
+# MemTable.h/MemTable.cc
+1. `MemTable`是底层数据结构`SkipList`的封装
+2. `MemTable Key`<=>`LookUpKey`:`| Size (int32变长)| User key (string) | sequence number (7 bytes) | value type (1 byte) |`
+3. 每个跳表节点存储一个完整键值对条目,结构为:`| 键长度（Varint32） | InternalKey（用户键 + 序列号 + 类型） | 值长度（Varint32） | 值数据 |`
+   ![](markdown图像集/2025-03-01-18-27-12.png)
+4. `InternalKey`:`| User key (string) | sequence number (7 bytes) | value type (1 byte) |`
+5. `User_key`:`| User key (string) |`
+6. `Get(const LookupKey& key, std::string* value, Status* s)`:主要就是一个`Seek`函数,根据传入的`LookupKey`得到在`memtable`中存储的`key`,然后调用`Skiplist::Iterator`的`Seek`函数查找.`Seek`直接调用`Skiplist`的`FindGreaterOrEqual(key)`接口,返回大于等于`key`的`Iterator`.然后取出`user key`判断时候和传入的`user key`相同,如果相同则取出`value`,如果记录的`Value Type`为`kTypeDeletion`,返回`Status::NotFound(Slice())`
+# skiplist.h
+1. `SkipList`是一个多层有序链表结构,通过在每个节点中保存多个指向其它节点的指针,将有序链表平均的复杂度`O(N)`降低到`O(logN)`
+2. 平衡树是一种非常复杂的数据结构,为了维持树结构的平衡,获取稳定的查询效率,平衡树每次插入可能会涉及到较为复杂的节点旋转等操作.作者设计跳表的目的就是借助概率平衡,来构建一个快速且简单的数据结构,取代平衡树
+3. 跳表结构:
+   * `head_`指向一个头节点,头节点中不保存数据,但其有12层指针(跳表的最高层级)
+   * `max_height_`为当前所有节点的最高层级(不包括头节点),下图展示了3层
+   * 每个节点的`next_`数组长度和节点高度一致,`next_[0]`为最底层链表指针
+   * `Node0、Node1、Node2`为3个`SkipList`的节点,保存的键分别为`key0、key4、key8`
+    ![](markdown图像集/2025-03-01-21-54-03.png)
+4. `SkipList`查找`Seek()`,下图中查找值为17的链表节点,查找的过程为:
+   * 首先根据跳表的高度选取最高层的头节点;
+   * 若跳表中的节点内容小于查找节点的内容,则取该层的下一个节点继续比较;
+   * 若跳表中的节点内容等于查找节点的内容,则直接返回;
+   * 若跳表中的节点内容大于查找节点的内容,且层高不为0,则降低层高,且从前一个节点开始,重新查找低一层中的节点信息;若层高为0,则返回当前节点,该节点的`key`大于所查找节点的`key`
+   综上,就是利用稀疏的高层节点,快速定位到所需要查找节点的大致位置,再利用密集的底层节点
+    ![](markdown图像集2025-03-01-21-54-21.png)
+5.  `SkipList`插入`Insert()`,下图为插入一个键`key3`,层高为4的节点(这个新插入的节点会随机产生层高),插入过程为:
+    * `max_height_`变为4,因为新插入的节点层高为4;
+    * 下图虚线箭头处为需要更新的指针,实线箭头为不需要更新的指针;
+    * 插入过程:首先查找`key3`需要放置的位置,从高层级到低层级依次查找,此时需要一个额外的数组变量记录每一层级查找到的位置,最后将需要更新的节点指针依次更新即可.注意,如果新插入节点的高度大于当前的最大高度,则需要将头节点中高出当前最大高度的指针指向新插入节点.如图,将头节点中在`next_[3]`指向新插入的节点
+    ![](markdown图像集2025-03-01-21-54-38.png)
+6. 随机产生层高的概率分布公式:
+   ![](markdown图像集/2025-03-01-21-37-06.png) 
+7. `LevelDB`中的`SkipList`是单向多层有序链表,每个节点中只有后向指针,没有前向指针,因此正向遍历`Next()`明显优于反向遍历`Prev()`
+# coding.h/coding.cc
+1. `LevelDB`中采用的是小端字节序(内存低地址存放数据低位,内存高地址存放数据高位)
+2. 定长编码就是将原有的`uint64`或`uint32`的数据直接存储在对应的8字节或4字节
+3. 变长编码`varint`:这是将整数用1个或多个字节表示的一种序列化方法,其编码后的字节序还是小端模式.`varint`将实际的一个字节分成了两个部分,最高位定义为`MSB`,后续低7位表示实际数据.`MSB`是一个标志位,用于表示某一数值的字节是否还有后续的字节,如果为1表示该数值后续还有字节;如果为0表示该数值所编码的字节至此完毕.如:
+   ![](markdown图像集/2025-03-01-22-31-00.png)
 # SequenceNumber
 1. `SequenceNumber`是一个64位整数,其中最高8位没有使用,实际只使用了56位,即7个字节,最后一个字节用于存储该数据的值类型:
    ![](markdown图像集/2025-02-23-21-35-22.png)
-2. `SequenceNumber`的主要作用是对数据库的整个存储空间进行时间刻度上的序列备份,即要从数据库中获取某一个数据,不仅需要其对应的键`key`,还需要其对应的`SequenceNumber`(`Lookupkey=key+SequenceNumber`)
+2. `SequenceNumber`的主要作用是对数据库的整个存储空间进行时间刻度上的序列备份,即要从数据库中获取某一个数据,不仅需要其对应的键`key`,还需要其对应的`SequenceNumber`(`Lookupkey=变长32位+key+SequenceNumber+value type`)
 # version_set/version_edit
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)

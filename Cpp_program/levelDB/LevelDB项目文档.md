@@ -1,8 +1,9 @@
 1. 本项目是对`Google`公司的`LevelDB`项目的学习
 2. `LevelDB`是基于`LSM`树进行存储
-3. `LevelDB`项目是对`Google`的`Bigtable`技术原理的体现,`LevelDB`是`Bigtable`的单机版
-4. `LevelDB`是一个`C++`编写的高效键值嵌入式数据库,目前对亿级的数据有着非常好的读写性能
-5. `LevelDB`的优点:
+3. `LevelDB`可以看作是存储在磁盘的`NoSQL`数据库
+4. `LevelDB`项目是对`Google`的`Bigtable`技术原理的体现,`LevelDB`是`Bigtable`的单机版
+5. `LevelDB`是一个`C++`编写的高效键值嵌入式数据库,目前对亿级的数据有着非常好的读写性能
+6. `LevelDB`的优点:
    * `key`和`value`采用字符串形式,且长度没有限制
    * 数据能持久化存储,同时也能将数据缓存到内存,实现快速读取
    * 基于`key`按序存放数据,并且`key`的排序比较函数可以根据用户需求进行定制
@@ -11,13 +12,13 @@
    * 支持前向、后向的迭代器
    * 采用`Google`的`Snappy`压缩算法对数据进行压缩,以减少存储空间
    * 基本不依赖其它第三方模块,可非常容易地移植到`Windows、Linux、UNIX、Android、iOS`
-6. `LevelDB`的缺点:
+7. `LevelDB`的缺点:
    * 不是传统的关系数据库,不支持`SQL`(用于管理和操作关系型数据库的标准编程语言)查询与索引
    * 只支持单进程,不支持多进程
    * 不支持多种数据类型
    * 不支持客户端-服务器的访问模式.用户在应用时,需要自己进行网络服务的封装
    * 不支持分布式存储,无法直接扩展到多台机器,即为单机存储
-7. `LevelDB`的两个衍生产品——`RocksDB`(`Facebook`)、`SSDB`     
+8. `LevelDB`的两个衍生产品——`RocksDB`(`Facebook`)、`SSDB`     
 8. `LevelDB`的核心操作:
    * 写操作
       - 写操作首先写入`Log`文件
@@ -113,12 +114,13 @@
       - `seek Compaction`:当某个`SSTable`文件因频繁查询未命中(可能包含大量已删除或过期数据)时触发.每个`SSTable`有一个`allowed_seeks`计数器,初始值为文件大小`/16KB`,每次未命中查询会减少该值,归零时触发合并(`allowed_seeks`是每个文件允许的最大无效读取次数),将被标记的`SST`文件与下  一层重叠的文件合并,清理上一层的无效数据
       - `Manual Compaction`:手动紧凑化,`LevelDB`确实支持通过`CompactRange()`方法手动触发紧凑化,合并不同层级的`SSTable`以减少冗余数据,并提升查询效率
 18. 执行`Compaction`操作的真正入口方法是`BackgroundCompaction`:首先判断是否需要将一个`MemTable`文件生成为`SST`(`Minor Compaction`),如果不需要则判断是否`is_manual`,即是否为手动紧凑化操作,如果是就调用`CompactRange()`;否则依次通过`PickCompaction()`方法选取本次`Compaction()`操作需要参与的文件,接着调用`DoCompactionWork()`执行`Compaction`流程,最后调用`RemoveObsoleteFiles()`删除无用的文件
-19. <mark>`BackgroundCompaction()`中的`Trivial Move`优化:它不是独立的紧凑化类型.触发`Trivial Move`的条件:当前层仅有一个文件&&下一层无需合并文件(即当前层文件与下一层无键范围重叠,可直接移动文件而无需合并)&&祖父层重叠文件总大小不超过阈值(防止移动文件到`Level L+1`后,未来触发`Level L+1`到`L+2`的`Compaction`时,因与`L+2`层文件大量重叠而导致合并开销剧增(即避免未来高成本的写放大)).`IsTrivialMove()`是`LevelDB`优化`Compaction`性能的关键机制,通过直接移动文件减少合并开销</mark>
-20. `LevelDB`中的`level`代表层级,有0-6共7个层级,每个层级都由一定数量的`SSTable`文件组成.其中,高层级文件是由低层级的一个文件与高层级中与该文件有键重叠的所有文件使用归并排序算法生成,该过程称为`Compaction`.`LevelDB`通过`Compaction`将冷数据逐层下移,并且在`Compaction`过程中重复写入的键只会保留一个最终值,已经删除的键不再写入,因此可以减少磁盘空间占用.由于`Compaction`涉及大量的磁盘`I/O`操作,比较耗时,因此需要通过后台的一个独立线程执行该过程
-21. `Level`SST`文件是由`Compaction`生成的
-22. `Level 0`的单个文件中的键是有序的,但在`Level 0`中的所有文件可能会出现键 0`的`SSTable`文件是直接由内存数据刷盘生成的,其它高层级`Level L(L>=1)`的重叠的情况和所有文件的键是无序的情况.而从`Level 1`到`Level 6`,不只单个文件中的键是有序的,每个层级中的所有文件也不会有键重叠,`Level 1`到`Level 6`的所有文件键范围没有重叠
-23. 每次执行`Compaction`操作之后会生成一个新的版本信息,`VersionEdit`是一个版本的中间状态,会保存一次`Compaction`操作后增加的删除文件信息以及其它一些元数据
-24. `LevelDB`中每个`SST`文件都是用一个`FileMetaData`结构来表示的
+19. 真正的删除操作在`Compaction`过程
+20. <mark>`BackgroundCompaction()`中的`Trivial Move`优化:它不是独立的紧凑化类型.触发`Trivial Move`的条件:当前层仅有一个文件&&下一层无需合并文件(即当前层文件与下一层无键范围重叠,可直接移动文件而无需合并)&&祖父层重叠文件总大小不超过阈值(防止移动文件到`Level L+1`后,未来触发`Level L+1`到`L+2`的`Compaction`时,因与`L+2`层文件大量重叠而导致合并开销剧增(即避免未来高成本的写放大)).`IsTrivialMove()`是`LevelDB`优化`Compaction`性能的关键机制,通过直接移动文件减少合并开销</mark>
+21. `LevelDB`中的`level`代表层级,有0-6共7个层级,每个层级都由一定数量的`SSTable`文件组成.其中,高层级文件是由低层级的一个文件与高层级中与该文件有键重叠的所有文件使用归并排序算法生成,该过程称为`Compaction`.`LevelDB`通过`Compaction`将冷数据逐层下移,并且在`Compaction`过程中重复写入的键只会保留一个最终值,已经删除的键不再写入,因此可以减少磁盘空间占用.由于`Compaction`涉及大量的磁盘`I/O`操作,比较耗时,因此需要通过后台的一个独立线程执行该过程
+22. `Level`SST`文件是由`Compaction`生成的
+23. `Level 0`的单个文件中的键是有序的,但在`Level 0`中的所有文件可能会出现键 0`的`SSTable`文件是直接由内存数据刷盘生成的,其它高层级`Level L(L>=1)`的重叠的情况和所有文件的键是无序的情况.而从`Level 1`到`Level 6`,不只单个文件中的键是有序的,每个层级中的所有文件也不会有键重叠,`Level 1`到`Level 6`的所有文件键范围没有重叠
+24. 每次执行`Compaction`操作之后会生成一个新的版本信息,`VersionEdit`是一个版本的中间状态,会保存一次`Compaction`操作后增加的删除文件信息以及其它一些元数据
+25. `LevelDB`中每个`SST`文件都是用一个`FileMetaData`结构来表示的
    ```C++
    struct FileMetaData {
       FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
@@ -131,49 +133,49 @@
       InternalKey largest;   // Largest internal key served by table
    };
    ```
-25. `LevelDB`中的`Compaction`操作实际是一个递归调用的过程,因为每次对`Level n`层的`Compaction`操作都会相应改编`Level n+1`层的文件大小,从而再次触发下一次`Compaction`操作
-26. `Status s = env_->NewWritableFile(fname, &compact->outfile);`:创建可写文件句柄(用于管理`SST`文件的写入过程) ,`compact->outfile`持有该文件的写句柄(文件句柄是程序与文件系统交互时用来操作文件的抽象标识符,可以理解为操作系统提供给程序的一个"遥控器",通过这个"遥控器"可以控制文件(读取、写入、关闭等),而无需直接操作底层的磁盘或文件系统细节)
-27. `DoCompactionWork()`大致的执行步骤:
+26. `LevelDB`中的`Compaction`操作实际是一个递归调用的过程,因为每次对`Level n`层的`Compaction`操作都会相应改编`Level n+1`层的文件大小,从而再次触发下一次`Compaction`操作
+27. `Status s = env_->NewWritableFile(fname, &compact->outfile);`:创建可写文件句柄(用于管理`SST`文件的写入过程) ,`compact->outfile`持有该文件的写句柄(文件句柄是程序与文件系统交互时用来操作文件的抽象标识符,可以理解为操作系统提供给程序的一个"遥控器",通过这个"遥控器"可以控制文件(读取、写入、关闭等),而无需直接操作底层的磁盘或文件系统细节)
+28. `DoCompactionWork()`大致的执行步骤:
     ![](markdown图像集/2025-02-23-13-21-58.png)
-28. `DoCompactionWork()`例子:
+29. `DoCompactionWork()`例子:
     ![](markdown图像集/2025-02-23-13-22-37.png)
     ![](markdown图像集/2025-02-23-13-22-44.png)
     ![](markdown图像集/2025-02-23-13-22-54.png)
     ![](markdown图像集/2025-02-23-13-23-26.png)
-29. `DoCompactionWork()`中的`if(compact->compaction->ShouldStopBefore(key) && compact->builder!=nullptr)`是检查若将当前`key`加入输出文件后,该输出文件与祖父层(`Level+2`)的重叠文件大小是否超过阈值,即是否有写放大,若超过了就要停止当前文件.如:
+30. `DoCompactionWork()`中的`if(compact->compaction->ShouldStopBefore(key) && compact->builder!=nullptr)`是检查若将当前`key`加入输出文件后,该输出文件与祖父层(`Level+2`)的重叠文件大小是否超过阈值,即是否有写放大,若超过了就要停止当前文件.如:
     ![](markdown图像集/2025-02-23-13-27-13.png)
-30. `DoCompactionWork()`中的`drop`变量表示当前键是否丢弃,两种情况会丢弃:
+31. `DoCompactionWork()`中的`drop`变量表示当前键是否丢弃,两种情况会丢弃:
     * 重复键:此时通过判断序列号即可,因为新键的序列号更大
     * 有删除标记且无更高层数据需要保留:删除标记&&更高层级没有该键
-31. `DoCompactionWork()`处理键值对数据的主循环`while()`后为什么还要用`if (status.ok() && compact->builder != nullptr) status = FinishCompactionOutputFile(compact, input);`?
+32. `DoCompactionWork()`处理键值对数据的主循环`while()`后为什么还要用`if (status.ok() && compact->builder != nullptr) status = FinishCompactionOutputFile(compact, input);`?
     因为主循环可能是由于输入迭代器没有数据了(数据都写入到输出文件中了,但可能还没构建`SST`完成)或数据库关闭而退出,此时需要将输出文件构建成`SST`,即还要在最后调用一次`FinishCompactionOutputFile()`(`LevelDB`的`TableBuilder`会先将键值对写入内存缓冲区,待缓冲区填满或显式调用`Finish()`时才将数据刷盘).如:
     ![](markdown图像集/2025-02-23-13-43-57.png)
-32. `NewInternalIterator()`会创建一个内部迭代器,用于合并内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘`SSTable`文件中的数据.如:
+33. `NewInternalIterator()`会创建一个内部迭代器,用于合并内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘`SSTable`文件中的数据.如:
     ![](markdown图像集/2025-02-23-21-27-59.png)
     ![](markdown图像集/2025-02-23-21-28-09.png)
-33. `Get()`用于从`LevelDB`中获取对应的键-值对数据,注意读取的时候是用的`LookupKey`(由`键长度(Varint32)`+`InternalKey`构成),该函数的流程如下:
+34. `Get()`用于从`LevelDB`中获取对应的键-值对数据,注意读取的时候是用的`LookupKey`(由`键长度(Varint32)`+`InternalKey`构成),该函数的流程如下:
     ![](markdown图像集/2025-02-23-21-38-26.png)
-34. 已经有`NewInternalIterator()`了,为什么还要`NewIterator()`?
+35. 已经有`NewInternalIterator()`了,为什么还要`NewIterator()`?
     `NewInternalIterator()`是一个内部函数,用于创建一个内部迭代器(`internal_iter`),该迭代器可以遍历数据库中的所有数据,包括内存表(`MemTable`)、不可变内存表(`Immutable MemTable`)和磁盘上的`SSTable`文件;`NewIterator()`是一个对外提供的函数,用于创建一个用户级别的迭代器(`DBIterator`),该迭代器封装了内部迭代器(`InternalIterator`),并提供了用户友好的接口
-35. `Write()`中的队列`writers_`,该队列对象中的元素节点为`Writer`对象指针.`writers_`与写操作的缓存空间有关,批量操作请求均存储在这个队列中,按顺序执行,已完成的出队,而未执行的则在这个队列中处于等待状态,其结构如下:
+36. `Write()`中的队列`writers_`,该队列对象中的元素节点为`Writer`对象指针.`writers_`与写操作的缓存空间有关,批量操作请求均存储在这个队列中,按顺序执行,已完成的出队,而未执行的则在这个队列中处于等待状态,其结构如下:
     ![](markdown图像集/2025-02-24-22-40-33.png)
-36. `batch`里面保存的不是数据,而是一系列操作,如`put、delete`等.数据本身最后是存储在`SSTable`文件中的
-37. `WriteBatch`的设计目的是为了提高写入性能和确保多个操作的原子性
-38. `Write()`执行流程:
+37. `batch`里面保存的不是数据,而是一系列操作,如`put、delete`等.数据本身最后是存储在`SSTable`文件中的
+38. `WriteBatch`的设计目的是为了提高写入性能和确保多个操作的原子性
+39. `Write()`执行流程:
     ![](markdown图像集/2025-02-24-22-42-03.png)
     ![](markdown图像集/2025-02-24-22-42-17.png)
     ![](markdown图像集/2025-02-24-22-42-28.png)
-39. `GetProperty()`通过输出参数`value`返回所获取数据库的特定属性,如:
+40. `GetProperty()`通过输出参数`value`返回所获取数据库的特定属性,如:
     ![](markdown图像集/2025-02-26-23-01-12.png)
     ![](markdown图像集/2025-02-26-23-01-20.png)
     ![](markdown图像集/2025-02-26-23-01-27.png)
     ![](markdown图像集/2025-02-26-23-01-40.png)
-40. `GetApproximateSizes()`举例:
+41. `GetApproximateSizes()`举例:
     ![](markdown图像集/2025-02-27-13-00-38.png)
     ![](markdown图像集/2025-02-27-13-01-04.png)
-41. `Open()`的全流程:
+42. `Open()`的全流程:
     ![](markdown图像集/2025-02-27-13-41-54.png)
-42. `LevelDB`是怎么实现对数据库进行上锁的?
+43. `LevelDB`是怎么实现对数据库进行上锁的?
     这是通过在数据库目录中的一个`LOCK`特殊的空文件.当一个线程尝试对数据库进行写操作时,会尝试锁定`LOCK`文件(通过`fcntl`可以锁定文件).如果成功,则表示没有其它线程正在写数据库;如果失败,说明其它线程已经锁定了数据库,当前线程需要等待
 # MemTable.h/MemTable.cc
 1. `MemTable`是底层数据结构`SkipList`的封装
@@ -212,6 +214,82 @@
 2. 定长编码就是将原有的`uint64`或`uint32`的数据直接存储在对应的8字节或4字节
 3. 变长编码`varint`:这是将整数用1个或多个字节表示的一种序列化方法,其编码后的字节序还是小端模式.`varint`将实际的一个字节分成了两个部分,最高位定义为`MSB`,后续低7位表示实际数据.`MSB`是一个标志位,用于表示某一数值的字节是否还有后续的字节,如果为1表示该数值后续还有字节;如果为0表示该数值所编码的字节至此完毕.如:
    ![](markdown图像集/2025-03-01-22-31-00.png)
+# arena.h/arena.c
+1. `Arena`主要表示一段较大且连续的内存空间,即内存池.其优势为:
+   * 性能提升:内存申请本身就需要占用一定的资源,消耗空间与时间.而`Arena`内存池的基本思路就是预先申请一大块内存,然后多次分配给不同的对象,从而减少`malloc`或`new`的调用次数
+   * 内存空间更高效的利用:利用`new/delete`频繁进行内存的申请与释放易造成内存碎片.即内存余量虽然够用,但由于缺乏足够大的连续空闲空间,从而造成申请一段较大的内存不成功的情况.而`Arena`内存池具有整块内存的控制权,用户可以任意操作这段内存,从而避免内存碎片的产生.如,可以针对每一个子任务,从`Arena`内存池中分配一个固定的内存片段,然后当所有任务结束后,一次性回收整个`Arena`内存空间(`Arena`析构函数会一次性释放所有的`Block`)
+2. 内存碎片:指内存空间中存在大量零散、不连续的小块空闲内存,导致无法有效利用这些内存来满足较大的连续内存分配请求.碎片化会降低内存利用率,甚至引发程序性能下降或内存分配失败
+3. `LevelDB`中,并不是所有地方都需要内存池来进行内存的分配与管理,`Arena`内存池主要是提供给`MemTable`使用
+4. `Arena`内存池中的3个成员变量:`blocks_`是一个`char*`类型的`vector`动态数组,数组中的每一个元素均保存一个`char`类型的指针地址.这些指针地址指向堆空间预分配的一个大的内存块,称之为`Block`,大小默认为4KB;`alloc_ptr_`:指向当前最新`Block`中空闲内存空间的起始地址;`alloc_bytes_remaining_`:用于表示当前`Block`所剩余的空闲内存空间大小.如下图:
+   ![](markdown图像集/2025-03-02-18-55-31.png)
+5. `Allocate()`的实现主要有两种情况:
+   * 需要分配的字节数<=`alloc_bytes_remaining_`:此时`Allocate()`之间返回`alloc_ptr_`指向的地址空间,然后对`alloc_ptr_`和`alloc_bytes_remaining_`进行更新
+   * 需要分配的字节数>`alloc_bytes_remaining_`:此时`Allocate()`需要调用`AllocateFallback()`.`AllocateFallback()`用于申请一个新`Block`内存空间,然后分配需要的内存并返回,因此当前`Block`剩余空闲内存就不可避免地浪费了.`AllocateFallback()`的使用也包括两种情况:
+      - 需要分配的空间>`kBlockSize`的1/4(1KB):即是要分配一段较大的内存,此时会直接申请需要分配空间大小的`Block`,而不一定是4KB,从而避免剩余内存空间的浪费
+      - 需要分配的空间<=`kBlockSize`的1/4:由于所需内存空间小于`kBlockSize`的1/4,则直接申请一个大小为`kBlockSize`的新`Block`空间,然后在新的`Block`上分配需要的内存并返回其首地址
+6. 对上述`Allocate()`举例:初始化一个新的`Arena`实例`arena`;采用`Allocate`方法分配一个1000字节的内存空间;采用`Allocate`方法分配一个2500字节的内存空间;采用`Allocate`方法分配一个2000字节的内存空间;采用`Allocate`方法分配一个100字节的内存空间;销毁`arena`对象
+   ![](markdown图像集/2025-03-02-18-55-59.png)
+   ![](markdown图像集/2025-03-02-18-56-18.png)
+7. `AllocateAligned()`表示考虑了(64位)8字节对齐的内存分配,其流程如下:
+   ![](markdown图像集/2025-03-02-18-56-39.png)
+   由于分配的内存块的起始地址需为8的倍数,因而可能存在`padding`的情况,因此在当前`Block`内的内存分配实际需要的字节数,可能大于参数中的`bytes`
+9. 计算机进行乘除或求模运算的速度远慢于位操作运算,因此上述的对齐操作,我们利用位运算实现:
+   * `assert((align & (align - 1)) == 0);`:对齐的字节数一定是2的正整数幂,那么这段代码就是检查这个,对于一个2的正整数幂值,它与它的前一个数进行与操作,那么一定是0
+   * `size_t current_mod = reinterpret_cast<uintptr_t>(alloc_ptr_) & (align - 1);`:假设`align=8`,那么这个运算得到的就是`alloc_ptr_`对`align`取余后的结果,如果`align`字节对齐了,那么取模结果就是0
+# cache.h/cache.cc
+1. `LevelDB`中的`LRU`策略淘汰的是`lru_`双向链表中的节点(这个节点是一个键值对)
+2. `LRUCache`是包括哈希表(`HandleTable`)的,其关系图如下:
+   ![](markdown图像集/2025-03-02-22-57-15.png)
+   通过一个哈希表快速定位到缓存,当发生哈希冲突时使用单向链表解决冲突.除此,哈希表中的所有值都会通过双向链表(`lru_`、`in_use_`)串联.每次访问一个值后,会将值在双向链表中移动位置来表明该值最近被访问,淘汰时直接淘汰一个最近未被访问到的值
+3. `LRUCache`由两部分结构组成:
+   * `Hash Table`:哈希表
+   * `LRU`:双向链表(`lru_`、`in_use_`)(存储缓存节点)
+4. `LRU`基于这样一种假设:如果一个资源最近没有或者很少被使用到,那么将来也会很少甚至不被使用.因此如果内存不足,需要淘汰数据时,可以根据`LRU`策略来执行
+5. `LRUCache`实现有两处细节
+   * `LRUCache`的并发操作不安全,因此操作时需要加锁.为了减小锁的粒度,`LevelDB`中通过哈希函数将键分为16个段(即将大的缓存分成16个小的缓存),即分成16个小的`LRUCache`结构,每次进行`CaCHE`操作时需要先去查找该键属于的段
+   * 每个`LRUCache`结构中有两个双向链表`lru_`和`in_use_`.`lru_`双向链表中的节点是可以淘汰的,而`in_use_`双向链表中的节点变送正在使用,因此不可以进行淘汰
+      - 缓存节点放到`in_use_`还是`lru_`由节点中的成员变量`in_cache`(是否在缓存中)以及`refs`决定:如果一个缓存节点的`in_cache=true`,而且`refs=1`,则放到`lru_`中;如果`in_cache=true`,且`refs>=2`,则放到`in_use_`中 
+6. `Ref()`:如果节点在`lru_`链表中,则调用`Ref()`函数后会将节点从`lru_`链表中删除,并且放到`in_use_`
+7. `UnRef()`:首先将节点的`refs`变量减1,然后判断如果`refs`已经等于0,则删除并释放该节点;否则,如果`refs`变量等于1并且`in_cache`为`true`,则该节点从`in_use_`链表中删除并且移动到`lru_`链表中
+8. 如果内存超出限制需要淘汰一个节点时,`LevelDB`会将`lru_`链表中的节点逐个淘汰
+9. `LevelDB`中`Cache`缓存的主要是`SSTable`,即缓存节点的键为8字节的文件序号,值为一个包含了`SSTable`实例的结构
+10. `LRUCache`中,缓存节点是同时存在于双向链表和哈希表中,即`LRUHandle`.对于一个`LRUHandle`节点,它同时属于哈希表和双向链表,即插入一个缓存节点时它会同时插入哈希表和双向链表中:
+   ```C++
+   if (capacity_ > 0) {// 缓存容量有效
+      e->refs++;
+      e->in_cache = true;
+      LRU_Append(&in_use_, e);// 加入in_use_链表
+      usage_ += charge;// 更新总内存占用
+      FinishErase(table_.Insert(e));// 插入哈希表，替换旧节点并清理
+   } 
+   ```
+11. `LRUCache`中的分片优化:这是一种通过将缓存拆分为多个独立管理的子缓存(称为分片)来提升并发性能的核心优化策略,默认使用16个分片.分片会将整个缓存划分为多个独立的分片,每个分片管理自己的哈希表和`LRU`链表,每个分片拥有独立的锁,不同分片操作可以并行执行,显著降低锁竞争,如:
+   ```C++
+      +---------------------+
+   |  ShardedLRUCache    |
+   |  [Shard0][Shard1]   | --> 分片0-15，各分片独立锁保护
+   |  [Shard2][Shard3]   |     扩缩容仅影响单个分片
+   +---------------------+
+   ```
+   ![](markdown图像集/2025-03-03-13-10-35.png)
+12. `LevelDB`的`LRUCache`实现中,哈希表的`resize()`过程不阻塞其他并发请求的关键在于其基于`Dynamic-Sized Nonblocking Hash Table`论文的设计(`resize()`扩张时是翻倍哈希表容量)
+   ![](markdown图像集/2025-03-03-13-31-37.png)
+# log_reader.h(.c)/log_writer.h(.c)
+1. 当向`LevelDB`写入数据时,只需要将数据写入内存中的`MemTable`,而内存是易失性存储,因此需要一个额外的持久化文件:预写日志`WAL`.这是一个追加修改、顺序写入磁盘的文件.当宕机或程序崩溃时`WAL`能够保证写入成功的数据不会丢失,将`MemTable`成功写入`SSTable`后,相应的预写日志就可以删除了,预写日志就是`Log`文件
+2. `Log`文件以块为单位,每一个块大小为32768字节,一条记录(新增键值对、删除键值对等)可能全部写到一个块上,也可能跨几个块.每一个块由头部与内容两部分组成,头部由四字节校验(`CRC32`),2字节的长度与1字节的类型(`log_format.h`中的`RecordType`)构成,即每一个块的开始7字节属于头部.对于头部类型字段:`kFullType`表示一条记录完整地写到了一个块上;当一条记录跨几个块时,`kFirstType`表示该条记录的第一部分,`kMiddleType`表示该条记录的中间部分,`kLastType`表示该条记录的最后一部分.每一块的结构和整体的日志结构如下:
+   ![](markdown图像集/2025-03-03-21-54-01.png)
+   ![](markdown图像集/2025-03-03-21-53-19.png)
+3. `Log`文件的写入:调用`AddRecord()`就会写入`Log`文件,它根据写入记录的大小确定是否需要跨块,并据此得出相应的头部类型,然后将记录写入并刷新到磁盘.跨块的话会先在前一个块的后面部分写入`\x00`,然后再将剩余记录写到下一个块中
+4. `Log`块中的内容部分是写入的`batch`编码后的信息,其格式为:
+   ![](markdown图像集/2025-03-03-21-40-00.png)
+   ![](markdown图像集/2025-03-03-21-54-36.png)
+5. 每次开始写入时首先判断当前块剩余空间是否小于等于6字节且大于0字节(不足以放满头部信息),如果是,需要使用`\x00`填充,然后开始写入新的块.`Log`写的流程如下:
+   ![](markdown图像集/2025-03-03-21-43-00.png)
+6. `Log`文件的读取:调用`ReadRecord(Slice* record, std::string* scratch)`函数,它会读取一条记录到`fragment`变量中,并且返回该条记录的类型,如果是一条完整的记录则直接赋值给`record`并返回`true`;否则会先将数据临时存储到`scratch`变量,并且将中间记录追加到`scratch`变量,直到读取出类型为`kLastType`的记录并且追加到`scratch`,此时再将`scratch`值赋给`record`,并返回`true`.流程如下:
+   ![](markdown图像集/2025-03-03-21-46-28.png)
+7. <mark>键值对每次写入时都需要先记录到`Log`文件,每个`Log`文件对应着一个`MemTable`,因此只有当一个`MemTable`大小因超出阈值而触发落盘并且成功生成一个`SSTable`之后,才可以将对应的`Log`文件删除.当`LevelDB`启动时会检测是否存在没有删除掉的`Log`文件,如果有则说明该`Log`文件对应的`MemTable`数据并未成功持久化到`SSTable`,此时则需要从该`Log`文件恢复`MemTable`</mark>
+   ![](markdown图像集/2025-03-03-21-52-05.png)
+8. 当打开一个`LevelDB`的数据文件时,需先检验是否进行崩溃恢复,如果需要,则会从`Log`文件生成一个`MemTable`
 # SequenceNumber
 1. `SequenceNumber`是一个64位整数,其中最高8位没有使用,实际只使用了56位,即7个字节,最后一个字节用于存储该数据的值类型:
    ![](markdown图像集/2025-02-23-21-35-22.png)

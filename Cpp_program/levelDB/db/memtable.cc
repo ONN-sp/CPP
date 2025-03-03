@@ -117,6 +117,15 @@ namespace leveldb {
         assert(p + val_size == buf + encoded_len);// 验证内存计算正确性
         table_.Insert(buf);  // 将编码后的完整条目插入跳表
     }
+    /**
+     * @brief 查找指定key对应的value
+     * 
+     * @param key 
+     * @param value 
+     * @param s 
+     * @return true 
+     * @return false 
+     */
     bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
         Slice memkey = key.memtable_key();// 获取LookupKey的MemTable格式编码（含用户键+序列号+类型）
         // 创建跳表迭代器

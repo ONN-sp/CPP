@@ -294,9 +294,9 @@
 7. <mark>键值对每次写入时都需要先记录到`Log`文件,每个`Log`文件对应着一个`MemTable`,因此只有当一个`MemTable`大小因超出阈值而触发落盘并且成功生成一个`SSTable`之后,才可以将对应的`Log`文件删除.当`LevelDB`启动时会检测是否存在没有删除掉的`Log`文件,如果有则说明该`Log`文件对应的`MemTable`数据并未成功持久化到`SSTable`,此时则需要从该`Log`文件恢复`MemTable`</mark>
    ![](markdown图像集/2025-03-03-21-52-05.png)
 8. 当打开一个`LevelDB`的数据文件时,需先检验是否进行崩溃恢复,如果需要,则会从`Log`文件生成一个`MemTable`
-# SSTable
+# SSTable(block_builder..h(cc)/block.h(.cc)/table_builder.h(.cc)/table.h(.cc))
 1. `SST`文件由一个个块组成,块中可用保存数据、数据索引、元数据或者元数据索引,其整体结构为:
-   
+   ![](markdown图像集/2025-03-05-12-19-11.png)
    `footer`尾部信息共有48字节,前40字节是两个`BlockHandle`,用来存储`meta index block`和`index block`的索引信息,最后8字节是魔数,固定为`0xdb4775248b80fb57`,用来判断一个文件是否为`SST`文件
 2. `BlockHandle`只关注两个成员变量`offset_`和`size_`,分别表示数据在`SST`中的偏移位置及大小,因此通过读取`SST`文件的`footer`尾部可用定位到数据索引区域以及元数据索引区域(读取索引区域后可用继续定位到具体的数据)
 3. `SST`中的一个块默认为4KB,它由四部分组成:键值对数据、重启点数据(最后4个字节表示重启点个数)、压缩类型(不压缩或者`Snappy`压缩)、校验数据(4字节的`CRC`校验字段)
@@ -307,17 +307,35 @@
 6. 重启点数据是表示的`data block`的不同范围的`key`,因此可以通过重启点对应的`key`值与待查`key`比较,以便于快速定位目标数据所在的区域,而重启点是有序的,所以可以利用二分查找完成区域确定
 7. 数据索引块:`key`:前一个数据块的最后一个键(这样设计的目的是可以先通过比较`index block`的`key`值来快速定位目标数据在哪个`data block`中);`value`:当前`data block`的位置和大小,是一个`BlockHandle`存储的
    ![](markdown图像集/2025-03-04-22-20-53.png)
-8. 元数据块:元数据块保存`LevelDB`中的布隆过滤器数据.在从`index block`大致确定的`data block`后,为了加快`SST`中数据查询的效率,会先根据`filter block`中的过滤数据判断指定的`data block`中是否有需要查询的数据,若判断不存在,则无需对这个`data block`进行数据查找.`filter block`的格式如下:
+8. `last_key_.append(key.data() + shared, non_shared);`:`index block`的`key`保存的`last_key`是完整的,不是经过共同前缀阉割的
+9. 元数据块:元数据块保存`LevelDB`中的布隆过滤器数据.在从`index block`大致确定的`data block`后,为了加快`SST`中数据查询的效率,会先根据`filter block`中的过滤数据判断指定的`data block`中是否有需要查询的数据,若判断不存在,则无需对这个`data block`进行数据查找.`filter block`的格式如下:
    ![](markdown图像集/2025-03-04-22-28-57.png)
    * `SST`中,每2KB键值对数据会生成一个过滤器,过滤器内容保存在`filter data`中
    * 过滤器偏移量与过滤器内容部分一一对应
    * `Base Lg`默认值为11,表示2^11=2KB
-9. 通过`index block`大致确定的`data block`到的`data block`可以通过这个`data block`的偏移量来算对应第`n`个过滤器数据,然后再依据第`n`个过滤器偏移量就能找到对应的过滤器数据
-10. 元数据索引块:`key`=`filter.leveldb.BuiltinBloomFilter2`;`value`:`BlockHandle`,其中表示元数据块的位置和大小
-11. `data block`、`index block`、`meta data block`、`meta index block`都是利用`BlockBuilder`构建的,都是用`BlockBuilder::Add()/BlockBuilder::Finish()`添加键值对的(`meta data block`是位数组),即都是用`block.cc/block.h`统一管理块的
-12. `BlockBuilder::Add()`是将数据保存到各个成员变量(`BlockBuilder`中的成员变量),而`BlockBuilder::Finish()`才会依据成员变量的值生成对应的块
-13. 在块中查找键的逻辑(注意不是从`SST`开始查找):首先通过重启点数组二分查找,直到找打一个重启点,该重启点定位到的数据内容中有可能包含待查找的键(即找一个大于等于);接着在该数据内容中利用16个查找,直到找到一个大于等于待查找键的位置.`Block::Seek()`为什么通过重启点优化查找后,还是判断大于等于呢,而不只是等于?
+10. 通过`index block`大致确定的`data block`,通过这个`data block`在`SST`文件中的偏移量来来算对应第`n`个过滤器数据,然后再依据第`n`个过滤器偏移量就能找到对应的过滤器数据,如:读取一个`data block`时,如果该`data block`通过`index block`查找到其对于`SST`文件的偏移量位2500,因为每2KB数据生成一个过滤器数据`filter data`,因此2500/2048=1,则通过第一个过滤器偏移量获取该`data block`对应的过滤器数据
+11. 元数据索引块:`key`=`filter.leveldb.BuiltinBloomFilter2`;`value`:`BlockHandle`,其中表示元数据块的位置和大小
+12. `data block`、`index block`、`meta data block`、`meta index block`都是利用`BlockBuilder`构建的,都是用`BlockBuilder::Add()/BlockBuilder::Finish()`添加键值对的(`meta data block`是位数组),即都是用`block.cc/block.h`统一管理块的
+13. 从元数据块读取对应过滤数据的过程:根据给定的`key`找到对应可能存在的`data block`,然后根据这个`data block`的偏移量对2KB取余来知道它在第`n`个过滤数据中;利用`filter block`的`filter offset's offset`来找到`filter offset`的位置,然后通过第`n`个`offset`来找到对应的`filter data`
+14. `meta data block`读取逻辑(从`SST`文件开始):
+    * 读取`SST`文件的最后48字节的利用,即`Footer`数据；
+    * 读取`Footer`数据中维护的(1)`Meta Index Block`(2)`Index Block`两个部分的索引信息并记录,以提高整体的查询效率；
+    * 利用`meta index block`的索引信息读取该部分的内容;
+    * 遍历`meta index block`,查看是否存在“有用”的`filter block`的索引信息;若有,则记录该索引信息;若没有,则表示当前`SST`文件中不存在任何过滤信息来提高查询效率(实际是从所得到的`data block`相对于`SST`文件的偏移量来得到`meta index`的,即得到具体对应哪一个`filter data`)；
+15. 一个`SST`文件只有一个`filter block`,可能有多个`data block`
+16. `BlockBuilder::Add()`是将数据保存到各个成员变量(`BlockBuilder`中的成员变量),而`BlockBuilder::Finish()`才会依据成员变量的值生成对应的块
+17. 在块中查找键的逻辑(注意不是从`SST`开始查找):首先通过重启点数组二分查找,直到找打一个重启点,该重启点定位到的数据内容中有可能包含待查找的键(即找一个大于等于);接着在该数据内容中利用16个查找,直到找到一个大于等于待查找键的位置.`Block::Seek()`为什么通过重启点优化查找后,还是判断大于等于呢,而不只是等于?
     在`LevelDB`的`Seek`方法中,使用`>=`的比较操作,主要目的是在定位到目标键所在的位置后,方便后续的查找和插入操作(如果是插入的话那么就是这个位置,所以找到的这个键位置也是有用的)
+18. `data block`的查找逻辑:二分查找重启点数组+线性查找键值对区间
+19. `SSTable`文件的四种块:数据块、数据索引块、元数据索引块、元数据块都是利用重启点开始大范围查找,然后再细找吗?
+    不是的,`data block`、`data index block`、`metadata index block`均采用键值对+前缀压缩+重启点结构,即先通过二分查找重启点来确定大范围,再线性扫描细化结果;而`metadata block`无键值对结构(采用位数组结构),元数据块中查找具体的`filter data`是利用直接相除计算来加载,无需利用重启点分段查找
+20. `SSTable`的写操作通常发生在：
+    * `memory db`将内容持久化到磁盘文件中时,会创建一个`sstable`进行写入；
+    * `leveldb`后台进行文件`compaction`时,会将若干个`sstable`文件的内容重新组织,输出到若干个新的`sstable`文件中
+    写入`SST`文件主要有以下几步:构建`data block`;构建`data index block`;构建`meta block`;,构建`meta index block`;写入`footer`
+21. `table_builder.cc`里的`Finish()`会按照`SSTable`的格式,分别写入数据块、数据索引块、元数据块和元数据索引块,最后写入尾部
+22. 对于`SST`文件的读取,我们会利用一个双层迭代器`TwoLevelIterator`.低一层为数据索引块的迭代器,即`rep_->index_bolck->NewIterator9rep_->options.comparator`,通过第一层的数据索引块迭代器查找待查键应该属于哪个数据块;然后通过第二层迭代器去读取这个块并查找该键(二分查找重启点数组+线性查找).`SST`文件读取的流程图:
+    ![](markdown图像集/2025-03-05-22-26-38.png)
 # SequenceNumber
 1. `SequenceNumber`是一个64位整数,其中最高8位没有使用,实际只使用了56位,即7个字节,最后一个字节用于存储该数据的值类型:
    ![](markdown图像集/2025-02-23-21-35-22.png)

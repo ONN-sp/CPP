@@ -1,20 +1,14 @@
-// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file. See the AUTHORS file for names of contributors.
-
-#ifndef STORAGE_LEVELDB_DB_VERSION_EDIT_H_
-#define STORAGE_LEVELDB_DB_VERSION_EDIT_H_
+#ifndef LEVELDB_DB_VERSION_EDIT_H_
+#define LEVELDB_DB_VERSION_EDIT_H_
 
 #include <set>
 #include <utility>
 #include <vector>
-
-#include "db/dbformat.h"
+#include "dbformat.h"
 
 namespace leveldb {
 
 class VersionSet;
-
 struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
@@ -56,10 +50,6 @@ class VersionEdit {
   void SetCompactPointer(int level, const InternalKey& key) {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
-
-  // Add the specified file at the specified number.
-  // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
-  // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
   void AddFile(int level, uint64_t file, uint64_t file_size,
                const InternalKey& smallest, const InternalKey& largest) {
     FileMetaData f;
@@ -100,7 +90,5 @@ class VersionEdit {
   DeletedFileSet deleted_files_;
   std::vector<std::pair<int, FileMetaData>> new_files_;
 };
-
-}  // namespace leveldb
-
-#endif  // STORAGE_LEVELDB_DB_VERSION_EDIT_H_
+} 
+#endif

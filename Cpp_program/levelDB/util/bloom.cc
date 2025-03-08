@@ -37,6 +37,7 @@ namespace leveldb {
                         }
                     }
                 }
+                // 判断给定键key是否在布隆过滤器中
                 bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const override {
                     const size_t len = bloom_filter.size();  
                     if (len < 2) 
@@ -46,13 +47,14 @@ namespace leveldb {
                     const size_t k = array[len - 1];
                     if (k > 30) 
                         return true;
-                    uint32_t h = BloomHash(key);
-                    const uint32_t delta = (h >> 17) | (h << 15);
+                    uint32_t h = BloomHash(key);// 计算键的哈希值
+                    const uint32_t delta = (h >> 17) | (h << 15);// 计算delta
+                    // 判断布隆过滤器中的相应位置是否置为1,有任意一位为0则返回false
                     for (size_t j = 0; j < k; j++) {
                         const uint32_t bitpos = h % bits;
                         if ((array[bitpos / 8] & (1 << (bitpos % 8))) == 0) 
                             return false;
-                        h += delta;
+                        h += delta;// 下一个的哈希值用delta来算
                     }
                     return true;
                 }

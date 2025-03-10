@@ -2038,14 +2038,14 @@ void Swap(AnyType &a, AnyType &b);
     class Derived : public Base {
     public:
         // 错误:尝试重写被标记为final的虚函数
-        // void foo() override;
+        void foo() override;
     };
     2. 防止派生类再次派生:
     class Base final {
         // ...
     };
     // 错误：尝试从标记为 final 的类派生出新的类
-    // class Derived : public Base {
+    class Derived : public Base {
     //     // ...
     // };
     ```

@@ -805,7 +805,7 @@
     ![](markdown图像集/2024-12-28-14-38-23.png)
 61. `Document`的解析完全依靠`Reader`.实际上`Document`是一个`Handler`,在解析`JSON`时接收事件去建立一个`DOM`.使用者可以直接使用`Reader`去建立其它数据结构,而`Document`时利用`Reader`建立的一个`DOM`数据结构
 ## 测试结果
-    ![](markdown图像集/2024-12-07-17-18-48.png)
+1. ![](markdown图像集/2024-12-07-17-18-48.png)
 # pointer
 1. `Pointer`是一个用于表示和解析`JSON`文档中路径的机制,类似`XPath`(用于`XML`文档的路径查询语言).它提供了一种通过路径精确定位`JSON`文档(`DOM`树)中某个值的方法.如:
    ```C++

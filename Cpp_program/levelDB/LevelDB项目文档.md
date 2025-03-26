@@ -22,8 +22,8 @@
 8. `LevelDB`的核心操作:
    * 写操作
       - 写操作首先写入`Log`文件
-      - 然后将数据插入到`MeeTable`中
-      - 当`MemTable`达到一定大小时(默认为4MD),会转换为一个不可修改的`Immutable MemTable`,与此同时创建一个新的`memtable`,供用户继续进行读写操作.当一个`immutable memtable`被创建时,会触发后台线程将其写入磁盘,生成`SSTable`文件
+      - 然后将数据插入到`MemTable`中
+      - 当`MemTable`达到一定大小时(默认为4MB),会转换为一个不可修改的`Immutable MemTable`,与此同时创建一个新的`memtable`,供用户继续进行读写操作.当一个`immutable memtable`被创建时,会触发后台线程将其写入磁盘,生成`SSTable`文件
    * 读操作
       - 首先在`MemTable`中查找数据
       - 如果未找到,则在`Immutable MemTable`中查找
@@ -47,7 +47,7 @@
    ![](markdown图像集/2025-02-15-10-53-03.png)
 # 快照Snopshot
 1. 快照是数据存储某一时刻的状态记录
-2. `DB->GetSnapshot()`回创建一个快照,实际上就是生成一个当前最新的`SequeceNumber`对应的快照节点,然后插入快照双向链表中
+2. `DB->GetSnapshot()`会创建一个快照,实际上就是生成一个当前最新的`SequeceNumber`对应的快照节点,然后插入快照双向链表中
 # MANIFEST
 1. `MANIFEST`文件记录了数据库的元数据(文件元信息保存在`SST`),包括:数据库的层级结构(`Level 0`到`Level N`);每个层级包含的 `SSTable`文件;每个`SSTable`文件的键范围(最小键和最大键);数据库的版本信息;日志文件的状态.`MANIFEST`文件是一个日志格式的文件
 2. `MANIFEST`文件存储的其实是`versionEdit`信息,即版本信息变化的内容.一个`versionEdit`数据会被编码成一条记录,写入`MANIFEST`中.如下图就是一个`MANIFEST`文件的示意图,其中包含3条`versionEdit`记录,每条记录包括:(1)新增哪些`sst`文件;(2)删除哪些`sst`文件;(3)当前`compaction`的下标;(4)日志文件编号;(5)操作`seqNumber`等信息
@@ -113,7 +113,7 @@
       - `size Compaction`:当某一层(如`Level L`)的数据总量超过预设阈值时,触发跨层合并,如:
          * `Level 0`的文件数量超过配置阈值(默认4个),此时的`compaction_score_`会大于等于1,则触发一次`Compaction`,并与`Level 1`中键范围重叠的`SST`文件合并,生成新的`SST`文件并写入`Level 1`,同时删除旧文件
          * `Level L(L≥1)`的数据大小超过其目标容量(如`Level 1`为10MB,`Level 2`为100MB等) 
-      - `seek Compaction`:当某个`SSTable`文件因频繁查询未命中(可能包含大量已删除或过期数据)时触发.每个`SSTable`有一个`allowed_seeks`计数器,初始值为文件大小`/16KB`,每次未命中查询会减少该值,归零时触发合并(`allowed_seeks`是每个文件允许的最大无效读取次数),将被标记的`SST`文件与下  一层重叠的文件合并,清理上一层的无效数据
+      - `seek Compaction`:当某个`SSTable`文件因频繁查询未命中(可能包含大量已删除或过期数据)时触发.每个`SSTable`有一个`allowed_seeks`计数器,初始值为文件大小`/16KB`,每次未命中查询会减少该值,归零时触发合并(`allowed_seeks`是每个文件允许的最大无效读取次数),将被标记的`SST`文件与下一层重叠的文件合并,清理上一层的无效数据
       ![](markdown图像集/2025-03-11-12-45-59.png) 
       - `Manual Compaction`:手动紧凑化,`LevelDB`确实支持通过`CompactRange()`方法手动触发紧凑化,合并不同层级的`SSTable`以减少冗余数据,并提升查询效率
 18. 执行`Compaction`操作的真正入口方法是`BackgroundCompaction`:首先判断是否需要将一个`MemTable`文件生成为`SST`(`Minor Compaction`),如果不需要则判断是否`is_manual`,即是否为手动紧凑化操作,如果是就调用`CompactRange()`;否则依次通过`PickCompaction()`方法选取本次`Compaction()`操作需要参与的文件,接着调用`DoCompactionWork()`执行`Compaction`流程,最后调用`RemoveObsoleteFiles()`删除无用的文件
@@ -249,7 +249,7 @@
    * `LRU`:双向链表(`lru_`、`in_use_`)(存储缓存节点)
 4. `LRU`基于这样一种假设:如果一个资源最近没有或者很少被使用到,那么将来也会很少甚至不被使用.因此如果内存不足,需要淘汰数据时,可以根据`LRU`策略来执行
 5. `LRUCache`实现有两处细节
-   * `LRUCache`的并发操作不安全,因此操作时需要加锁.为了减小锁的粒度,`LevelDB`中通过哈希函数将键分为16个段(即将大的缓存分成16个小的缓存),即分成16个小的`LRUCache`结构,每次进行`CaCHE`操作时需要先去查找该键属于的段
+   * `LRUCache`的并发操作不安全,因此操作时需要加锁.为了减小锁的粒度,`LevelDB`中通过哈希函数将键分为16个段(即将大的缓存分成16个小的缓存),即分成16个小的`LRUCache`结构,每次进行`Cache`操作时需要先去查找该键属于的段
    * 每个`LRUCache`结构中有两个双向链表`lru_`和`in_use_`.`lru_`双向链表中的节点是可以淘汰的,而`in_use_`双向链表中的节点变送正在使用,因此不可以进行淘汰
       - 缓存节点放到`in_use_`还是`lru_`由节点中的成员变量`in_cache`(是否在缓存中)以及`refs`决定:如果一个缓存节点的`in_cache=true`,而且`refs=1`,则放到`lru_`中;如果`in_cache=true`,且`refs>=2`,则放到`in_use_`中 
 6. `Ref()`:如果节点在`lru_`链表中,则调用`Ref()`函数后会将节点从`lru_`链表中删除,并且放到`in_use_`

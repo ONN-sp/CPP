@@ -24,7 +24,7 @@ namespace ljj{
                             std::function<void()> task;//因为后续用的是std::bind(),所以这个函数包装器中的参数可以为空
                             {
                             std::unique_lock<std::mutex> lock(task_mtx);
-                            this->cond.wait(lock, [this](){return !tasks.empty() || this->stop;});
+                            this->cond.wait(lock, [this](){return !tasks.empty() || this->stop;});// 任务非空或stop触发就不用wait
                             if(this->stop || tasks.empty())
                                 return;
                             task = std::move(this->tasks.front());

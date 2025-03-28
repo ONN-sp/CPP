@@ -1,0 +1,1 @@
+1. `HTTP`通常是基于`TCP`的,即`HTTP1/1.1/2`都是基于`TCP`的,但是`HTTP3`是基于`QUIC(UDP)`的

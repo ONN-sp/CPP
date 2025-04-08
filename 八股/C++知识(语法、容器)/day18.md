@@ -46,7 +46,7 @@
 7. `forward_list`:单向链表,需要包含头文件`<forward_list>`,它没有`.size()`.可以利用`std::distance`来获取单向链表的大小,而不用自增去算`std::forward_list<int> list1;std::distance(std::begin(list1), std::end(list1);`
 8. `STL`迭代器失效的情况有哪些?
    ![](../markdown图像集/2025-04-04-09-55-24.png)
-9.  `list`相比于`vector`的连续线性空间,它会复杂很多,但是它的好处在于插入或删除都只作用于一个元素空间,其对任何位置元素的插入和删除都是常数时间,其数据结构如下:
+9. `list`相比于`vector`的连续线性空间,它会复杂很多,但是它的好处在于插入或删除都只作用于一个元素空间,其对任何位置元素的插入和删除都是常数时间,其数据结构如下:
    ```C++
    template<typename T>
    struct list {

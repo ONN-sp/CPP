@@ -937,7 +937,7 @@
 1. Rapidjson是一个由腾讯开源的高性能C++ JSON解析器及生成器
 2. 技术特点:
    * 高性能：Rapidjson的性能表现非常出色，其解析速度可与strlen()相比。它通过使用模版及内联函数来降低函数调用开销，并且支持SSE2/SSE4.2加速
-   * 丰富的API风格：Rapidjson同时支持SAX和DOM风格的AP
+   * 丰富的API风格：Rapidjson同时支持SAX和DOM风格的API
    * Unicode支持：Rapidjson对Unicode有良好的支持，包括UTF-8、UTF-16、UTF-32编码
    * 内存优化：Rapidjson在内存使用上进行了优化，自定义内存分配器
 3. `RapidJSON`相对`JSONCpp`的优势

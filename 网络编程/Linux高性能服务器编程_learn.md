@@ -207,7 +207,7 @@
     }
     ```
 26. `socket`选项(详细见<<Linux高性能服务器编程>>pp87):
-    ```C++
+   ```C++
    int getsockopt(int sockfd, int level, int option_name, void* option_value, socklen_t* restrict option_len);
    int setsockopt(int sockfd, int level, int option_name, consnt void* option_value, socklen_t option_len);
    如:

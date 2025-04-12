@@ -1033,7 +1033,7 @@
    // 修正版本
    connections_[connfd] = ptr;// 直接用文件描述符作为key
    ```
-   `connName`是通过字符串拼接方式,如果其中一项包好了无效或未初始化的数据,就会导致段错误
+   `connName`是通过字符串拼接方式,如果其中一项包含了无效或未初始化的数据,就会导致段错误
 3. `Bug 3`:运行一段时间后`segmentation fault`.
    ![](markdown图像集/segmentation_fault.png)
    原因:

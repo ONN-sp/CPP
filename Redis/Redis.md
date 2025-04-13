@@ -26,7 +26,7 @@
    ![](markdown图像集/2025-03-02-13-44-07.png)
    ![](markdown图像集/2025-03-22-10-07-18.png)
    ![](markdown图像集/2025-03-22-10-07-00.png)
-5. `SDS、InSet、Dict、ZipList、QuickList、SkipList`是底层的数据结构,它们会封装城`RedisObject`对象,也就是`Redis`对象,其实就是`String、Hash、List、Set、ZSet`类型对象
+5. `SDS、InSet、Dict、ZipList、QuickList、SkipList`是底层的数据结构,它们会封装成`RedisObject`对象,也就是`Redis`对象,其实就是`String、Hash、List、Set、ZSet`类型对象
 6. `Redis`的命令行使用
    ![](markdown图像集/2025-03-02-10-42-06.png)
 7. `Redis`的`key`允许有多个单词形成层级结构,多个单词之间用`':'`隔开

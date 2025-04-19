@@ -86,7 +86,31 @@
 10. `tcmalloc`
     * `tcmalloc`:`LevelDB`的非内存池的内存分配就是用的`tcmalloc`,而不是普通的`malloc`,它比`ptmalloc2`性能更好
       - 多级缓存:
-         * 线程本地缓存:小对象(<=32KB)无锁分配,减少竞争
-         * 中心缓存:大对象(>32KB)通过自旋锁分配,按页对齐管理
-
-11. `jemalloc` 
+         * 线程本地缓存(`ThreadCache`):小对象(<=256KB)无锁分配,减少竞争.`ThreadCache`是每个线程各自独立拥有的`cache`,一个`cache`包含多个空闲内存链表`FreeList`,每个链表都有自己的`object`,每个`object`都是大小相同的.在申请小内存时,`tcmalloc`会根据申请内存大小映射到某个`size-class`链表(每个`size class`对应一个`FreeList`)中,比如:申请0到8个字节的大小时,会被映射到`size-class1`中,分配8个字节大小;申请9到16字节大小时,会被映射到`size-class2`中,分配16个字节大小….以此类推.每个线程独占一个`ThreadCache`,当线程申请小内存时,先在`ThreadCache`对应的`FreeList`中查找合适大小的空闲块.若存在,直接从中取出并返回给调用者,无需加锁;若不存在,再从`CentralCache`获取若干个空闲块放入`ThreadCache`的`FreeList`中,然后取用
+         ![](../markdown图像集/2025-04-19-08-49-51.png) 
+         * 中心缓存:当`ThreadCache`中没有空闲内存块时,就从`CentralCache`中获取.`CentralCache`为每个大小类维护一个`CentralFreeList`,线程从`CentralFreeList`获取若干个空闲块放入`TreadCache`的`FreeList`(空闲列表)中.若`CentralFreeList`为空,则从`PageHeap`获取一个`Span`(`Span`是`PageHeap`中管理内存页的单位,它是由一组连续的`Page`组成,比如2个`Page`组成的`span`,多个这样的`span`就用链表来管理.当然,还可以有4个`Page`组成的`span`等等),将其切割为多个空闲块后放入`CentralFreeList`
+         ![](../markdown图像集/2025-04-19-09-02-06.png)
+         * `PageHeap`:当`CentralCache`也无法满足内存分配需求时,`PageHeap`会从操作系统申请新的内存页,并将其分配给需要的线程 
+      - 对象分配
+         * 小对象分配(<256KB):`ThreadCache —> CentralCache —> PageHeap —> 操作系统`
+         * 中对象和大对象分配:直接从`PageHeap`获取内存,以整数个`page`(默认为8KB)为单位进行分配.首先将内存申请的字节数向上取整到最接近的`page`边界,然后从`PageHeap`获取相应的内存   
+      - 优点:
+         * 多线程环境中,小对象内存的分配和释放是无锁的,效率很高;中对象和大对象使用自旋锁
+         * 通过合理划分大小类和管理内存块,`tcmalloc`能有效减少内存碎片的产生,提高内存的利用率(这一点和`ptmalloc`类似)
+      - 缺点:
+         * 对齐操作比`ptmalloc`多浪费一些内存(因为内存块的划分粒度没有`ptmalloc`那么细),有点空间换时间
+         * 如果多个线程频繁分配中大对象,对自旋锁的竞争会很激烈
+      - 适用场景:适用于多线程环境,尤其是那么对内存分配效率要求较高的应用     
+11. `jemalloc`:同样都包含线程缓存的特性.但是`jemalloc`在设计上比`ptmalloc`和`tcmalloc`都要复杂,`jemalloc`将内存分配粒度划分为`Small`、`Large`、`Huge`三个分类,并记录了很多`meta`数据,所以在空间占用上要略多于`tcmalloc`,不过在大内存分配的场景,`jemalloc`的内存碎片要少于`tcmalloc`(一方面因为`jemalloc`的划分粒度不是2^k这样划分,就不会浪费那么多内存了;另一方面,使用了低地址优先的策略),并且`jemalloc`由于每一个线程绑定一个`arena`上,它的锁粒度更小
+    * `jemalloc`基于申请内存的大小把内存分配分为:`small`、`large`、`huge`
+      - `small`:如果请求内存`size`不大于`arena`的最小的`bin`(不同大小的内存单元),那么通过线程对应的`tcache`(线程缓存,类似`tcmalloc`)来进行分配
+      - `large`:如果请求内存`size`大于`arena`的最小的`bin`,同时不大于`tcache`能缓存的最大块,也会通过线程对应的`tcache`来进行分配(如果`tcache`对应的`tbin`里有缓存块,直接分配;如果没有,从`chunk`(负责管理用户内存块的数据结构,以`page`为单位)里直接找一块相应的`page`整数倍大小的空间进行分配)
+      - `huge`:如果请求分配内存大于`chunk`(4MB)大小,直接通过`mmap`进行分配
+   * 多`arena`:内存由一定数量的`arenas`负责管理.每个用户线程都会被绑定到一个`arena`上,线程采用`round-robin`轮询的方式选择可用的`arena`进行内存分配,为了减少线程之间的锁竞争,默认每个`CPU`会分配4个`arena`.`jemalloc`的锁分布在多个 `Arena`和其内部的`bin/run`,每个锁仅覆盖少量线程;但是,`tcmalloc`的锁虽然按`Size Class`划分,但每个锁覆盖所有线程的同一`Size Class`请求 
+   * 优点:
+      - 采用多个`arena`来使竞争更小,锁粒度更小
+      - 对于线程缓存也是无锁的
+      - 使用了低地址优先的策略,保持内存紧凑性,来降低内存碎片化
+   * 缺点:`arena`之间的内存不可见,导致两个`arena`的内存出现大量交叉而无法合并
+   * 性能:`jemalloc`>`tcmalloc`>`ptmalloc`,但是`jemalloc`设计更复杂
+   * 适合场景:适合多线程环境,多线程并发度更好  

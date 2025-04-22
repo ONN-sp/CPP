@@ -34,7 +34,7 @@
             ![](../markdown图像集/2025-04-17-22-20-33.png) 
          * `unsorted bins`:
            - 使用`bins`数组的第一个位置,是`bins`的一个缓冲区,加快分配的速度.当用户释放的内存大于128字节或者`fast bins`合并后的`chunk`都会首先进入`unsorted bin`上
-           - 在进行`malloc`操作的时候,如果在`fast bins`中没有找到合适的`chunk`,则`ptmalloc`会先在`unsorted bin`中查找合适的空闲`chunk`,如果没有合适的`bin`,`ptmalloc`会将`unsorted bins`上的`chunk`放入`bins`中,然后才查找`bins`
+           - 在进行`malloc`操作的时候,如果在`fast bins`中没有找到合适的`chunk`,则`ptmalloc`会先在`unsorted bin`中查找合适的空闲`chunk`,如果没有合适的`bin`,`ptmalloc`会将`unsorted bins`上的`chunk`放入`bins`(`small bins`、`large bins`)中,然后才查找`bins`(`unsorted bins`对放入的`chunk`大小没有限制)
            - `unsorted bins`可以看做是`bins`的一个缓冲区,增加它只是为了加快分配的速度(可以直接分配最近`free`掉的`chunk`,从而为后续寻找合适`bin`大小的`chunk`的时间开销就抹掉了)
          * `small bins`:
            - 大小<512字节的`chunk`被称为`small chunk`.数组从2开始编号,前64个`bin`为`small bins`,`small bins`中每个`bin`之间相差8个字节,同一个`small bins`中的`chunk`具有相同大小

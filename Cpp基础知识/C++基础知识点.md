@@ -1433,14 +1433,14 @@ void Swap(AnyType &a, AnyType &b);
       return (a > b) ? a : b;
    }
    int main() {
-      int result = mmax(3, 5); // 编译器推断为 max<int>(3, 5)
-      double result2 = mmax(3.0, 5.0); // 编译器推断为 max<double>(3.0, 5.0)
+      int result = mmax(3, 5); // 编译器推断为 mmax<int>(3, 5)
+      double result2 = mmax(3.0, 5.0); // 编译器推断为 mmax<double>(3.0, 5.0)
       return 0;
    }
    int main() {
-   int result = mmax<int, int>(3, 5); // 编译器推断为 max<int>(3, 5)
-   double result2 = mmax<double, double>(3.0, 5.0); // 编译器推断为 max<double>(3.0, 5.0)
-   return 0;
+    int result = mmax<int, int>(3, 5);
+    double result2 = mmax<double, double>(3.0, 5.0);
+    return 0;
    }
    2.
    类模板,调用时需要尖括号
@@ -1828,7 +1828,7 @@ MyClass t2 = new MyClass(...);//显示new创建并调用有参构造函数
         std::cout << v << std::endl;
     }
     ```
-6. <mark>在`C++`中,对于模板成员函数,你必须在调用时指定模板参数,并且需要使用尖括号 `<>`来明确指定模板参数类型.即使在类外定义模板成员函数时,也需要使用尖括号.对于普通的非成员模板函数,调用时通常可以省略尖括号.编译器会自动推断出模板参数类型,除非你想显式指定模板参数:</mark>
+6. <mark>在`C++`中,对于模板成员函数,你必须在调用时指定模板参数,并且需要使用尖括号`<>`来明确指定模板参数类型.即使在类外定义模板成员函数时,也需要使用尖括号.对于普通的非成员模板函数,调用时通常可以省略尖括号.编译器会自动推断出模板参数类型,除非你想显式指定模板参数:</mark>
     ```C++
     1. 模板成员函数
     template <typename T>

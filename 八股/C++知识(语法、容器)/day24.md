@@ -26,7 +26,7 @@
     ```C++
     const char cpc = "abc";
     char* pc = new char[strlen(cpc)+1];
-    strcpy(pc,cpc.c_str());
+    strcpy(pc,cpc);
     ```  
    * `char*`->`const char*`:直接赋值即可,`const char* cpc = pc`
 5. 静态绑定:绑定的是对象的静态类型,某特性(如函数依赖于对象的静态类型,发生在编译器);动态绑定:绑定的是对象的动态类型,某特性(如函数依赖于对象的动态类型,发生在运行期)
@@ -70,7 +70,7 @@
       // int& getValue()返回成员变量value的引用,而不是副本(此时可以通过引用直接修改原始成员变量的值);int getValueCopy()返回的是成员变量value的副本
    ```
    * 不能返回局部变量的引用,因为函数返回以后局部变量就会被销毁,此时可能导致悬空引用
-   * 通过只返回类成员变量或静态变量的引用
+   * 通常只返回类成员变量或静态变量的引用
 11. `strcpy`、`sprintf`、`memcpy`的不同
     * 操作对象不同
       - `strcpy`的两个操作对象均为字符串

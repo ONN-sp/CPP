@@ -67,4 +67,123 @@
     * 成员函数是类的组成部分，能够直接访问类中的其他成员（包括私有成员），这体现了封装的特点;普通函数与类没有直接的从属关系，不能直接访问类的成员，除非通过对象或者友元等方式
     * 成员函数的调用会隐式地传递一个指向调用该函数的对象的指针(`this`指针),通过这个指针可以访问对象的数据成员和成员函数
 12. `C++`的类的成员函数的调用会隐式地传递一个指向调用该函数的对象的指针(`this`指针)
-13. `C++`的多继承
+13. `C++`的类中,如果没有显式地定义任何构造函数,编译器会自动生成一个默认构造函数(无参构造函数);一旦类中定义了至少一个构造函数,编译器将不再提供默认构造函数
+14. `C++`中,子类必须调用父类的构造函数:
+    * 如果父类有默认构造函数,就不用在子类中显式初始化父类的构造函数,因为编译器会自动调用它们来初始化父类对象
+    * 若父类显式定义了构造函数,那么子类构造函数就必须显式调用父类的构造函数 
+15. `C++`的多继承:运行一个类继承多个基类的属性和方法.构造函数的执行顺序是按照继承列表中基类出现的顺序进行的,而析构函数的执行顺序则与构造函数相反
+16. 在多继承情况下,派生类继承了多个基类,这些基类中可能包含同名的成员(成员函数或成员变量).当在派生类中使用这些同名成员时,编译器无法确定应该使用哪一个基类中的成员,从而产生歧义,即二义性
+    ```C++
+       // 基类1
+   class Base1 {
+   public:
+      void show() {
+         cout << "Base1 show" << endl;
+      }
+   };
+   // 基类2
+   class Base2 {
+   public:
+      void show() {
+         cout << "Base2 show" << endl;
+      }
+   };
+   // 派生类继承自Base1和Base2
+   class Derived : public Base1, public Base2 {
+   public:
+      void display() {
+         show();// 产生二义性 
+      }
+   };
+   int main() {
+      Derived d;
+      d.display(); 
+      return 0;
+   }
+   ```
+17. 菱形继承(菱形继承即是一个类通过多继承继承了多个基类,而这些基类又有一个共同的基类,即祖父类)会出现二义性问题:如果祖父类中有一些成员(成员函数或成员变量),那么当两个父类都继承自祖父类时,派生类会分别从两个父类继承祖父类的成员,导致祖父类的成员在派生子类中出现了两次(因为祖父类的成员在两个父类中有两个副本),当在派生子类中访问祖父类的成员时,编译器无法确定应该访问从哪一个中间父类继承来的祖父类的成员,从而产生二义性
+    ![](../markdown图像集/2025-05-02-21-46-06.png)
+18. 解决二义性的办法:
+   * 使用域解析符明确指定要调用的基类的成员函数
+   ```C++
+   // 基类1
+   class Base1 {
+   public:
+      void show() {
+         cout << "Base1 show" << endl;
+      }
+   };
+   // 基类2
+   class Base2 {
+   public:
+      void show() {
+         cout << "Base2 show" << endl;
+      }
+   };
+   // 派生类继承自Base1和Base2
+   class Derived : public Base1, public Base2 {
+   public:
+      void display() {
+         Base1::show(); // 明确调用Base1的show函数
+         Base2::show(); // 明确调用Base2的show函数
+      }
+   };
+   int main() {
+      Derived d;
+      d.display(); // 输出 Base1 show 和 Base2 show
+      return 0;
+   } 
+   ```
+   * 在派生子类中重写该成员,明确指定要调用的基类的成员函数
+   ```C++
+   // 基类1
+   class Base1 {
+   public:
+      void show() {
+         cout << "Base1 show" << endl;
+      }
+   };
+   // 基类2
+   class Base2 {
+   public:
+      void show() {
+         cout << "Base2 show" << endl;
+      }
+   };
+   // 派生类继承自Base1和Base2
+   class Derived : public Base1, public Base2 {
+   public:
+      void show() {
+         Base1::show(); // 重写show函数，调用Base1的show函数
+      }
+   };
+   int main() {
+      Derived d;
+      d.show(); // 调用Derived类中的show函数，进而调用Base1的show函数
+      return 0;
+   } 
+   ```
+   * 菱形继承中的二义性可以通过虚继承解决:虚继承确保了两个父类只有一个祖父类的成员副本,而不是多个.当使用虚继承时,编译器会为每个虚继承的基类创建一个单独的继承路径,并在派生类中引入一个指向共同基类的指针,即无论通过哪个中间父类访问共同的祖父类的成员,都会指向同一个成员副本
+   ```C++
+   // 祖父类
+   class TopBase {
+   public:
+      void show() {
+         cout << "TopBase show" << endl;
+      }
+   };
+   // 基类1虚继承自TopBase
+   class Base1 : virtual public TopBase {
+   };
+   // 基类2虚继承自TopBase
+   class Base2 : virtual public TopBase {
+   };
+   // 派生类继承自Base1和Base2
+   class Derived : public Base1, public Base2 {
+   };
+   int main() {
+      Derived d;
+      d.show(); // 正确：调用TopBase的show函数，没有二义性
+      return 0;
+   } 
+   ```

@@ -39,7 +39,7 @@
          * `small bins`:
            - 大小<512字节的`chunk`被称为`small chunk`.数组从2开始编号,前64个`bin`为`small bins`,`small bins`中每个`bin`之间相差8个字节,同一个`small bins`中的`chunk`具有相同大小
            - 每个`small bins`都包括一个空闲区块的双向循环链表.`free`掉的`chunk`添加在链表的前端,而所需`chunk`则从链表后端摘除
-           - 与`fast bins`不同,`small bins`会立即合并相邻的空闲`chunk`(消除外部碎片),也即把它们从所属`small bins`的链表中摘除并合并成一个新的`chunk`,新`chunk`会添加在`unsorted bins`链表的前端(释放的内存大于128字节)
+           - 与`fast bins`不同,`small bins`会立即合并相邻的空闲`chunk`(消除外部碎片)(如果没有相邻的`chunk`,也会直接把这个`chunk`给回收到`unsorted bins`中),也即把它们从所属`small bins`的链表中摘除并合并成一个新的`chunk`,新`chunk`会添加在`unsorted bins`链表的前端(释放的内存大于128字节)
            ![](../markdown图像集/2025-04-17-22-42-37.png)
          * `large bins`:
            -  大小大于等于512字节的`chunk`被称为`large chunk`,位于`small bins`后面.`large bins`中的每一个`bin`分别包含了一个给定范围内的`chunk`,其中的`chunk`按大小递减排序,大小相同则按照最近使用时间排列 

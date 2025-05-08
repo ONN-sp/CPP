@@ -102,7 +102,7 @@
 3. 由于`SAX`解析器不需要将整个文档加载到内存中,因此它的内存占用非常小,特别适合处理大型文档或内存有限的场景
 4. `SAX`是顺序处理的,它无法回溯或随机访问文档的某个部分
 # Allocator
-1. <mark>`Allocator`中的`CrtAllocator``MemoryPoolAllocator`其实就是对标准库的`std::allocator`默认内存分配器的重新实现,使用了高效的内存池策略等</mark>
+1. <mark>`Allocator`中的`CrtAllocator、MemoryPoolAllocator`其实就是对标准库的`std::allocator`默认内存分配器的重新实现,使用了高效的内存池策略等</mark>
 2. `CrtAllocator`为什么要用`C`来定义内存块分配函数:
    * 兼容性:C语言的标准库函数`malloc`、`realloc`和`free`是跨平台、广泛使用的内存管理工具.通过使用这些函数,CrtAllocator可以在几乎所有支持`C`的环境中运行,不依赖于`C++`特定的内存管理机制.这确保了`RapidJSON`在不同平台上的兼容性
    * 性能与开销:`C`语言的内存管理函数执行开销较小,并且可以直接分配或释放任意大小的内存块.与`C++`的`new`和`delete`相比,`malloc/free`的内存分配机制通常更加直接且底层,适合处理大量、快速的内存分配需求,如`RapidJSON`中频繁的内存操作

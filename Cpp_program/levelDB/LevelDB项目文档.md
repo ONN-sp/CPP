@@ -362,16 +362,21 @@
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)
 2. `VersionEdit`结构编解码在`manifest`文件的生成和读取中使用
-3. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
-4. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
-5. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
-6. `VersionEdit::LogAndApply()`:
+3. `LevelDB`的`version`更新是在每次`compaction`之后发生的
+4. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
+5. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
+6. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
+7. `VersionEdit::LogAndApply()`:
    * 将当前的版本根据`VersionEdit`进行处理,然后生成一个新的版本
    * 将`VersionEdit`写入`Manifest`文件
    * 执行`VersionSet`中的`Finalize`方法,对新版本中的`compaction_socre_`和`compaction_level_`赋值
    * 将新生成的版本挂载到`VersionSet`的双向链表中,并且将当前版本`current_`设置为新生成的版本
-7. 一次版本升级过程:
+8. 一次版本升级过程:
    ![](markdown图像集/2025-03-08-10-07-06.png)
+9. `Version`中的信息
+    * 当前每一层的SSTable文件元信息,每一个`SST`文件的`FileMetaData`
+    * 记录被Seek太多次需要Compact的文件元信息,以及文件所在的level
+    * 记录所有level层中compaction score最大的那一层及其level,用于比较判断是否需要对此level层进行compact
 # Env.v
 1. `env_`为不同平台、不同操作系统提供了一个统一的上层抽象环境接口封装,下层具体的实现可能随着操作系统的不同而不同,但是上层都是一样的抽象环境接口`env_`
 # Cache

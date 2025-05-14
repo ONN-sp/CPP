@@ -237,7 +237,7 @@
 12. `redo log`:重做日志,记录的是事务提交时(`commit`)数据页的物理修改,是用来实现事务的持久性.该日志文件由两部分组成:重做日志缓冲和重做日志文件,前者是在内存中,后者在磁盘中.当事务提交后会把所有修改信息都存到该日志文件中,用于在刷新脏页到磁盘,发生错误时,进行数据恢复使用.`redo log`在磁盘中的`ib_logfile0/ib_logfile1`两份文件是循环写的,即脏页数据顺利刷新到磁盘中,而没有出错导致的缓冲区和磁盘不一致的情况,所以`redo log`日志每隔一段时间就会清理,因此这两份文件是循环写的.注意:`redo log`也是预写机制`WAL`(和`LevelDB`一样),即事务`commit`后先把数据页的修改写到`redo log`中
    ![](markdown图像集/2025-04-06-10-49-48.png)
 13. `undo log`:回滚日志,用于记录数据被修改前的信息,作用包含两个:提供回滚和`MVCC`.`undo log`和`redo log`记录物理日志不一样,它是逻辑日志.可以认为当`delete`一条记录时,`undo log`中会记录一条对应的`insert`记录,反之亦然,当`update`一条记录时,它记录一条对应相反的`update`记录.当执行`rollback`时,就可以从`undo log`中的逻辑记录读取到对应的内容并进行回滚.`undo log`的生成:在事务开始后,对数据的修改(`insert、update、delete`)会生成一个`undo log`日志;`undo log`的销毁:`undo log`在事务执行时产生,事务提交时,并不会立即删除,因为这些日志可能还用于`MVCC`;`undo logo`存储:采用段的方式进行管理和记录,存放在`InnoDB`逻辑存储结构中段中,段的回滚段部分,内部包含1024个`undo log segment`
-14. 在`insert、update、delete`时都会产生一个`undo log`日志.当`insert`时,产生的`undo log`日志只在回滚时需要,在事务提交后,可被立即删除;而`update、delete`时,产生的`undo log`日志不仅在回滚时需要,在快照读时也需要,不会被立即删除.`InnoDB`的后台线程(`purge thread`)负责清理不再需要的`undo log`日志
+14. 在`insert、update、delete`时都会产生一个`undo log`记录.当`insert`时,产生的`undo log`记录只在回滚时需要,在事务提交后,可被立即删除;而`update、delete`时,产生的`undo log`记录不仅在回滚时需要,在快照读时也需要,不会被立即删除.`InnoDB`的后台线程(`purge thread`)负责清理不再需要的`undo log`记录
 # 日志
 1. 回滚日志undo log： 是 Innodb 存储引擎层⽣成的⽇志，实现了事务中的原⼦性，主要⽤于事务回滚和MVCC
 2. 重做日志redo log：是物理⽇志，记录了某个数据⻚做了什么修改，每当执⾏⼀个事务就会产⽣⼀条或者多条物理⽇志

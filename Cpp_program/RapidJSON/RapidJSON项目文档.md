@@ -469,6 +469,11 @@
     int age;
    };
    Person p = {"Alice", 30};
+   =>
+   p = {
+      name : "Alice",
+      age  : 30
+   }
    2. 序列化后的JSON字符串
    {"name": "Alice", "age": 30}
    ```

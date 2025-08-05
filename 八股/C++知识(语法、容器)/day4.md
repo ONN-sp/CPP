@@ -38,7 +38,7 @@
 
     int main() {
         MyClass obj1("Hello, World!"); // 创建对象1
-        MyClass obj2 = obj1; // 调用拷贝构造函数，深拷贝
+        MyClass obj2 = obj1; // 调用拷贝构造函数，浅拷贝
         return 0;
     }
     // obj2.data和obj1.data指向相同的内存位置,所以是浅拷贝

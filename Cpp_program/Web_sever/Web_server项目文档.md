@@ -683,7 +683,7 @@
 21. `readv`:用于从文件或文件描述符中将数据读入多个非连续的缓冲区.它避免了多次调用`read()`或额外的内存拷贝
    ```C++
    ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
-   // fd:文件描述符:如果套接字
+   // fd:文件描述符
    // iov:指向iovec结构体数组的指针,iovec结构体定义了缓冲区的地址和长度
    struct iovec {
       void  *iov_base;  // 缓冲区的起始地址
@@ -714,7 +714,7 @@
 6. 本项目的`ConnectionMap connections_`中是一个`TcpConnection`名称和一个`TcpConnectionPtr`映射,而`TcpConnection`名称=`ip_port`(服务器的`IP`和端口)+文件描述符值+该`TcpConnection`的`ID`(`next_conn_id`)
 7. `Tcpserver`中的`connection_callback_  message_callback_`是人为外部自定义传入的,然后又会在`TcpServer::HandleNewConnection`中把这两个回调函数传入`TcpConnection`中
 8. 当新连接一建立(`Acceptor::handlRead()`了),`Acceptor`就会回调`Tcpserver::HandleNewConnection`,即是上层`Tcpserver`传给`Acceptor`对象的
-9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
+9.  `HandleClose()`是`Channel`中的关闭回调,而`HandleCloseInLoop`不是`Channel`中的关闭回调,它是`HandleClose()`这`Channel`关闭回调里的回调函数
 10. </mark>本项目采用的是`muduo`设计回调的思想,即`Channel`控制最底层的四种回调:错误、关闭、读、写,这几种回调是通过文件描述符触发的,然后在这几种底层回调函数的内部一般是会进一步调用上层回调(`MessageCallback ConnectionCallback CloseCallback`,需要特别注意的是这个`TcpConnection::close_callback_`不是它拥有的`channel_`的回调,`channel_`的回调函数是`HandleClose`,这个`close_callback_`是在`HandleClose`中进一步调用的上层回调)</mark>
 11. 测试程序结果((`./TcpServer_test`)):
     ![](markdown图像集/TcpServer_test测试程序.png)
@@ -733,7 +733,7 @@
 8. `if(errno != EWOULDBLOCK)`:由于`connfd_`在`Aceeptor`中被设置成的非阻塞,所以可能出现一种情况是:当前操作无法立即完成而被阻塞导致`send_size<0`,此时其实不是真正的错误,所以写日志的时候需要区分开
 9. 给`TcpConnection`传入的`connfd`是由`Acceptor::handleRead()`中的`Accept4`得到的一个已连接的文件描述符
 10. `TcpConnection::Handlewrite()`中如果`output_buffer_`写完了,不关闭对应`channel_`的话,它就会`busy loop`,即一直触发可写事件(`channel_->DisableWriting();`)
-11. 对于`TcpConnection`的`output_buffer_`如果一次没写完,即此时`ouput_buffer_`还有可读的区域,那么会继续触发可写事件,继续执行`TcpConnection::HandleWrite()`
+11. 对于`TcpConnection`的`output_buffer_`如果一次没写完,即此时`ouput_buffer_`还有可写的区域,那么会继续触发可写事件,继续执行`TcpConnection::HandleWrite()`
 12. `TcpConnection::Send()`:首先,直接将待发送的`message`发送到内核缓冲区(此时不利用`Buffer`类),如果发送完了`Send()`就结束了;否则,将剩下的数据先添加到当前`TcpConnection`对象的`output_buffer_`中,以待后续通过触发可写事件回调`TcpConnection::HandleWrite()`进行写(写剩下的数据其实就和可写事件触发回调`TcpConnection::HandleWrite()`一样了)(这正是`Buffer`类设计的初衷,也是`TcpConnection`需要`output_buffer`的原因).需要注意的是:此时一定要注册写事件`channel_->EnableWriting();`,否则后续无法触发可写事件了
 13. 为什么`TcpConnection`的对象指针要用`shared_ptr`管理,而不是像其它对象那样用`unique_ptr`?(本项目对象只有`TcpConnection`的指针对象用`shared_ptr`管理)
     `TcpConnetion`对象是短命对象,如:如果客户端断开了某个`Tcp`连接,此时它对应的服务端`TcpConnection`对象的生命即将走到尽头,但是这时我们并不能立即`delete`这个对象,因为其它地方可能还持有它的引用,因此要用到`shared_ptr`(源于`TcpConnection`模糊的生命期)
@@ -751,8 +751,8 @@
 17. <mark>本项目和`muduo`的被动关闭过程是完全直接关闭连接,清理相关的资源,不是`shutdown()`的半关闭(此时服务器不会调用`shutdown()`方法)</mark>
 18. 被动关闭过程->`TCP`的四次挥手过程(因此是优雅的)
 19. 对于主动关闭连接:
-    * `shutdown()`就提供了一种优雅的关闭方法,此时服务器不再发送数据,但仍然可能接收数据(半关闭)
-    * `forceClose()`:强制直接关闭,用得不多
+   * `shutdown()`就提供了一种优雅的关闭方法,此时服务器不再发送数据,但仍然可能接收数据(半关闭)
+   * `forceClose()`:强制直接关闭,用得不多
 20. <mark>即使本项目和`muduo`中在被动关闭中没有调用`shutdown()`,但是它还是被认为是一种优雅的关闭连接的方法(优雅关闭:确保所有数据在连接关闭前都能正确处理,避免直接`Close`而丢失双方仍未发出或接受的数据),因为在处理被动关闭时,遵循了`TCP`协议中规范的连接终止流程(四次挥手),并确保了资源的安全释放和数据的完整性</mark>
    ```C++
    // 被动关闭
@@ -786,7 +786,7 @@
 3. <mark>服务端接收客户请求再通过`HttpConet`解析,解析后数据封装到`HttpRequest`中</mark>
 4. `HttpContent`与`HttpRequest`的区别:
    * `HttpRequest`是对完整`HTTP`请求的表示,包含了请求的所有信息(方法、路径、头部字段、请求体等)
-   * `HttpContend`是解析`HTTP`请求过程中的上下文,维护解析状态,并在解析完成后生成`HttpRequest`对象
+   * `HttpContent`是解析`HTTP`请求过程中的上下文,维护解析状态,并在解析完成后生成`HttpRequest`对象
 5. `HttpContent`解析的是来自`TCP`的请求数据,因为`TCP`数据在`Buffer`中,所有`HttpContent`解析的是一个`Buffer`
 ## HttpRequest
 1. `HttpRequest`类的几个成员变量`Method method_; Version version_; std::string path_; std::string query_; std::map<std::string, std::string> headers_;`就构成了一个完整的`Http`请求报文(不考虑`Body`)

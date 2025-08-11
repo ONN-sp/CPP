@@ -62,7 +62,7 @@
 1. `CURRENT`文件是一个指向当前正在使用的`MANIFEST`文件的指针.`LevelDB`通过`CURRENT`文件快速找到最新的`MNIFEST`文件,从而加载数据库的元数据
 # db.h
 1. 接口函数的函数参数为什么要使用引用常量?
-   一般而言,`C++`函数输入/输出参数均采用传值的方式.然而在传值过程中需要调用参数对象的复制构造函数来创建相应的副本,这样传值必然有一定开销,进而影响代码的执行效率.传入的是引用对象,因而不会创建新的对象,所以不会存在构造函数与析构函数的钓调用,因而执行效率大大提升.另外,通过`const`进行常量声明,保证了引用参数在函数执行过程中不会被调用者修改
+   一般而言,`C++`函数输入/输出参数均采用传值的方式.然而在传值过程中需要调用参数对象的复制构造函数来创建相应的副本,这样传值必然有一定开销,进而影响代码的执行效率.传入的是引用对象,因而不会创建新的对象,所以不会存在构造函数与析构函数的调用,因而执行效率大大提升.另外,通过`const`进行常量声明,保证了引用参数在函数执行过程中不会被调用者修改
 2. `db.h`是`LevelDB`对外暴露的主要`API`,用户可以通过该头文件中定义的类和接口来操作`LevelDB`数据库.`db.h`是`LevelDB`的核心抽象层,它定义了数据库的行为和接口,而不涉及具体的实现细节(具体的实现细节在`dp_impl.c`中实现)
 # db_impl.h/db_impl.c  
 1. `db_impl`主要是封装一些供客户端应用进行调用的接口,即头文件中的相关`API`函数接口,主要有15个函数接口,其中4个接口用于测试用途    
@@ -112,7 +112,7 @@
     ![](markdown图像集/2025-02-21-17-52-59.png)
 17. <mark>`LevelDB`的紧凑化机制:`LevelDB`的数据存储采用多层结构,紧凑化分为两类:</mark>
     * `Minor Compaction`:将内存中的`MemTable`持久化为`SSTable`文件到`Level 0`(参数`write_buffer_size`控制`MemTable`大小,`max_write_buffer_number`控制内存中最多保留的`Immutable MemTable`数量),`Level 0`的`SSTable`文件允许键范围重叠(但是单个文件的键是有序的),因此查询`Level 0`需检查所有文件,这是`LevelDB`写入快但读取相对慢的原因之一
-    * `Major Compaction'`:(跨层合并)这是对磁盘上的`SSTable`文件进行合并的过程,主要目的是减少文件数量、清理冗余数据,并提升查询效率.可以分为`size Compaction`、`seek Compaction`和`manual Compaction`:
+    * `Major Compaction`:(跨层合并)这是对磁盘上的`SSTable`文件进行合并的过程,主要目的是减少文件数量、清理冗余数据,并提升查询效率.可以分为`size Compaction`、`seek Compaction`和`manual Compaction`:
       - `size Compaction`:当某一层(如`Level L`)的数据总量超过预设阈值时,触发跨层合并,如:
          * `Level 0`的文件数量超过配置阈值(默认4个),此时的`compaction_score_`会大于等于1,则触发一次`Compaction`,并与`Level 1`中键范围重叠的`SST`文件合并,生成新的`SST`文件并写入`Level 1`,同时删除旧文件
          * `Level L(L≥1)`的数据大小超过其目标容量(如`Level 1`为10MB,`Level 2`为100MB等) 
@@ -123,9 +123,9 @@
 19. 真正的删除操作在`DoCompactionWork()`过程
 20. <mark>`BackgroundCompaction()`中的`Trivial Move`优化:它不是独立的紧凑化类型.触发`Trivial Move`的条件:当前层仅有一个文件&&下一层无需合并文件(即当前层文件与下一层无键范围重叠,可直接移动文件而无需合并)&&祖父层重叠文件总大小不超过阈值(防止移动文件到`Level L+1`后,未来触发`Level L+1`到`L+2`的`Compaction`时,因与`L+2`层文件大量重叠而导致合并开销剧增(即避免未来高成本的写放大)).`IsTrivialMove()`是`LevelDB`优化`Compaction`性能的关键机制,通过直接移动文件减少合并开销</mark>(`Trival Move`:当前层仅有一个文件&&当前层和下一层无重叠键&&将当前层的键和下一层合并后再与祖父层相比,其重叠键的总大小不超过阈值,那么可以直接将当前层的文件移动到下一层文件,并删除当前层文件,即发生`Trival Move`)
 21. `LevelDB`中的`level`代表层级,有0-6共7个层级,每个层级都由一定数量的`SSTable`文件组成.其中,高层级文件是由低层级的一个文件与高层级中与该文件有键重叠的所有文件使用归并排序算法生成,该过程称为`Compaction`.`LevelDB`通过`Compaction`将冷数据逐层下移,并且在`Compaction`过程中重复写入的键只会保留一个最终值,已经删除的键不再写入,因此可以减少磁盘空间占用.由于`Compaction`涉及大量的磁盘`I/O`操作,比较耗时,因此需要通过后台的一个独立线程执行该过程
-22. `Level`SST`文件是由`Compaction`生成的
-23. `Level 0`的单个文件中的键是有序的,但在`Level 0`中的所有文件可能会出现键`0`的`SSTable`文件是直接由内存数据刷盘生成的,其它高层级`Level L(L>=1)`的重叠的情况和所有文件的键是无序的情况.而从`Level 1`到`Level 6`,不只单个文件中的键是有序的,每个层级中的所有文件也不会有键重叠,`Level 1`到`Level 6`的所有文件键范围没有重叠
-24. 每次执行`Compaction`操作之后会生成一个新的版本信息,`VersionEdit`是一个版本的中间状态,会保存一次`Compaction`操作后增加的删除文件信息以及其它一些元数据
+22. `LevelDB`的`SST`文件是由`Compaction`生成的
+23. `Level 0`的单个文件中的键是有序的,但在`Level 0`中的所有文件可能会出现键重叠,`Level 0`的`SSTable`文件是直接由内存数据刷盘生成的.而从`Level 1`到`Level 6`,不只单个文件中的键是有序的,每个层级中的所有文件也不会有键重叠,`Level 1`到`Level 6`的所有文件键范围没有重叠
+24. 每次执行`Compaction`操作之后会生成一个新的版本信息,`VersionEdit`是一个版本的中间状态,会保存一次`Compaction`操作后增加和删除文件信息以及其它一些元数据
 25. `LevelDB`中每个`SST`文件都是用一个`FileMetaData`结构来表示的
    ```C++
    struct FileMetaData {
@@ -150,7 +150,7 @@
     ![](markdown图像集/2025-02-23-13-23-26.png)
 30. `DoCompactionWork()`中的`if(compact->compaction->ShouldStopBefore(key) && compact->builder!=nullptr)`是检查若将当前`key`加入输出文件后,该输出文件与祖父层(`Level+2`)的重叠文件大小是否超过阈值,即是否有写放大,若超过了就要停止当前文件.如:
     ![](markdown图像集/2025-02-23-13-27-13.png)
-31. `DoCompactionWork()`中的`drop`变量表示当前键是否丢弃,两种情况会丢弃:
+31. `DoCompactionWork()`中的`drop`变量表示当前键是否丢弃,两种情况会丢弃:(需要注意:如果有快照,则取最老的快照号,即最小的序列号,然后比它大的序列号的键都不能删,因为旧版本可能在被其它线程读)
     * 重复键:此时通过判断序列号即可,因为新键的序列号更大
     * 有删除标记且无更高层数据需要保留:删除标记&&更高层级没有该键
 32. `DoCompactionWork()`处理键值对数据的主循环`while()`后为什么还要用`if (status.ok() && compact->builder != nullptr) status = FinishCompactionOutputFile(compact, input);`?
@@ -365,18 +365,20 @@
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)
 2. `VersionEdit`结构编解码在`manifest`文件的生成和读取中使用
-3. `LevelDB`的`version`更新是在每次`compaction`之后发生的
-4. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
-5. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
-6. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
-7. `VersionEdit::LogAndApply()`:
+3. `LevelDB`为什么要用`version`?
+   `version`可以在文件不断被后台`compaction`增删改的同时,为前台读写提供无锁、一致、可恢复的文件视图.没有`Version`,就需要在每次读操作时加互斥锁去动态检查“现在到底有哪些文件”,这会极大降低并发度
+4. `LevelDB`的`version`更新是在每次`compaction`之后发生的
+5. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
+6. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
+7. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
+8. `VersionEdit::LogAndApply()`:
    * 将当前的版本根据`VersionEdit`进行处理,然后生成一个新的版本
    * 将`VersionEdit`写入`Manifest`文件
    * 执行`VersionSet`中的`Finalize`方法,对新版本中的`compaction_socre_`和`compaction_level_`赋值
    * 将新生成的版本挂载到`VersionSet`的双向链表中,并且将当前版本`current_`设置为新生成的版本
-8. 一次版本升级过程:
+9.  一次版本升级过程:
    ![](markdown图像集/2025-03-08-10-07-06.png)
-9. `Version`中的信息
+10. `Version`中的信息
     * 当前每一层的SSTable文件元信息,每一个`SST`文件的`FileMetaData`
     * 记录被Seek太多次需要Compact的文件元信息,以及文件所在的level
     * 记录所有level层中compaction score最大的那一层及其level,用于比较判断是否需要对此level层进行compact

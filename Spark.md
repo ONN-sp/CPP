@@ -1,11 +1,11 @@
 1. Hadoop是一个开源的分布式计算框架，专为海量数据存储与批处理设计，主要由HDFS、MapReduce、Yarn组成
    * HDFS：它是一个分布式文件系统，实际上就是对部署在多台独立物理机器上的文件进行管理，实际数据存在Datanode上。它存储的就是原先大数据被切分之后的小数据，一般都有很多hdfs节点
-   * MapReduce：和存储类似，将数据切分为很多份，每份就是一个分片，然后分给多个服务器计算，再将结果聚合起来就行。Map和Reduce就是我们定义的两个阶段，来告诉每台服务器该怎么计算分片数据，怎么聚合。每个任务被拆分为Map和Reduce两阶段。在Map阶段，并行处理本地数据，生成键值对；在Reduce阶段，汇总相同键的值
+   * MapReduce：和存储类似，将数据切分为很多份，每份就是一个分片，然后分给多个服务器计算，再将结果聚合起来就行。Map和Reduce就是我们定义的两个阶段，来告诉每台服务器该怎么计算分片数据，怎么聚合。MapReduce就是map和reduce两个阶段，分而治之，然后聚合
    ![](2025-08-16-10-04-04.png)
    * Yarn：负责资源管理，给每个分片任务分服务器资源，然后将map和reduce的结果返回
 2. Hadoop的MapReduce中间计算结果存在HDFS磁盘上，延迟大；Spark中间计算结果存在内存中
-3. Spark 是一个开源的、分布式、内存级、统一分析引擎，用于处理大规模数据集
-4. RDD是Spark最核心的底层抽象，它代表一个不可变的、分区的、可并行计算的元素集合，它表示的是弹性分布式数据集，RDD中的数据被分布式存储在集群的多个节点上
+3. Spark 是一个开源的、分布式、内存级、统一分析引擎，用于处理大规模数据集。Spark Core、Spark SQL、Spark Streaming、Spark MLlib、Spark GraphX
+4. RDD是Spark最核心的底层抽象，它代表一个不可变的、分区的、可并行计算的元素集合，它表示的是弹性分布式数据集。RDD操作分为Transformation和Action两种，前者是将一个RDD转换为一个新的RDD，后者是触发一个计算，触发结果的输出。RDD转换之间一对一为窄依赖，多对一为宽依赖，宽依赖中间有shuffle，数据恢复起来比较麻烦
 5. DAG指的是Spark应用程序执行时，由RDD的Transformations所构成的逻辑图。顶点就是RDD，边代表了RDD之间的依赖关系（窄依赖或宽依赖）。Spark的DAGScheduler核心任务就是基于 DAG 中的宽依赖来划分 Stage
 6. Stage是Spark执行过程中物理调度的基本单位。它是DAG被DAGScheduler划分后产生的一组并行任务的集合（划分依据：遇到窄依赖，就将当前的 RDD 加入到同一个 Stage 中，遇到宽依赖，就在此处断开，创建一个新的 Stage）。一个Stage包含多个Task，task数量等于该Stage中最后一个RDD的分区数，每个Task之间可以并行执行
 7. DataFrame、Dataset API是上层API接口，它的底层是通过RDD实现的，但它不只是简单的RDD封装，而添加了优化、内存管理等策略，它使用了Catalyst优化器，性能得到提升，并且它是直接使用类SQL语言，开发起来更容易、更简单

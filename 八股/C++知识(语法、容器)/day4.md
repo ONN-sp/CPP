@@ -1,7 +1,7 @@
 1. `C++`中的`struct`和`class`的区别
    * 相同点:
     - 两者都拥有成员函数、公有和私有部分
-    - 任何可用使用`class`完成的工作,同样可用使用`struct`完成
+    - 任何可以使用`class`完成的工作,同样可以使用`struct`完成
    * 不同点:
     - `class`默认是`private`成员;而`struct`默认是`public`
     - 对于继承,`class`默认是`private`,`struct`默认是`public`

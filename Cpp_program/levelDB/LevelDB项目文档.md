@@ -52,7 +52,7 @@
 1. 快照是数据存储某一时刻的状态记录
 2. `DB->GetSnapshot()`会创建一个快照,实际上就是生成一个当前最新的`SequenceNumber`对应的快照节点,然后插入快照双向链表中
 # MANIFEST
-1. `MANIFEST`文件记录了数据库的元数据(文件元信息保存在`SST`),包括:数据库的层级结构(`Level 0`到`Level N`);每个层级包含的 `SSTable`文件;每个`SSTable`文件的键范围(最小键和最大键);数据库的版本信息;日志文件的状态.`MANIFEST`文件是一个日志格式的文件
+1. `MANIFEST`文件记录了数据库的元数据(文件元信息保存在`SST`),包括:数据库的层级结构(`Level 0`到`Level N`);每个层级包含的`SSTable`文件;每个`SSTable`文件的键范围(最小键和最大键);数据库的版本信息;日志文件的状态.`MANIFEST`文件是一个日志格式的文件
 2. `MANIFEST`文件存储的其实是`versionEdit`信息,即版本信息变化的内容.一个`versionEdit`数据会被编码成一条记录,写入`MANIFEST`中.如下图就是一个`MANIFEST`文件的示意图,其中包含3条`versionEdit`记录,每条记录包括:(1)新增哪些`sst`文件;(2)删除哪些`sst`文件;(3)当前`compaction`的下标;(4)日志文件编号;(5)操作`seqNumber`等信息
    ![](markdown图像集/2025-02-17-21-53-40.png)
 3. <mark>`Manifest`文件不存储在`MemTable`或`SSTable`中,而是与日志文件、`SSTable`文件共同构成数据库的持久化存储体系(即存储在磁盘上)</mark>
@@ -380,7 +380,7 @@
 8. `VersionEdit::LogAndApply()`:
    * 将当前的版本根据`VersionEdit`进行处理,然后生成一个新的版本
    * 将`VersionEdit`写入`Manifest`文件
-   * 执行`VersionSet`中的`Finalize`方法,对新版本中的`compaction_socre_`和`compaction_level_`赋值
+   * 执行`VersionSet`中的`Finalize`方法,对新版本中的`compaction_score_`和`compaction_level_`赋值
    * 将新生成的版本挂载到`VersionSet`的双向链表中,并且将当前版本`current_`设置为新生成的版本
 9.  一次版本升级过程:
    ![](markdown图像集/2025-03-08-10-07-06.png)
@@ -448,7 +448,7 @@
 17. 磁盘文件`SSTable`的`Level 1-6`层的有序是在`Compaction`过程中利用归并排序实现的
 18. 我自己对leveldb项目的修改：为了防止在一个长时间运行过程中，磁盘容量暴涨，我对每个键值对增加了一个TTL字段，添加到了key中sequence number后面，即后面读取的时候不仅会根据sequence number来读取最新的可见版本，而且还要满足这个版本未过期。过期扫描是开一个线程定时30分钟去扫描。此修改有一个问题：如果一个键值对的最新版本都过期了，那么就是读不到这个版本了，此时会返回已过期
 19. leveldb的锁主要是：队列锁、分片锁，队列锁是用于保证按照队列顺序执行写入操作，从而看着就像是单线程写入，其实是串行化操作；分片锁：用 此时 key 的哈希值取模 16，映射到 16 个独立的互斥锁之一，leveldb只有16把分片锁，所有 key 按照哈希值映射到这 16 个锁上
-20. leveldb真正的删除是在sst的compaction中，在内存中是写的一个删除标记的操作，Compaction的删除：
+20. leveldb真正的删除是在SSTable的compaction中，在内存中是写的一个删除标记的操作，Compaction的删除：
     * 找当前存活的最老快照，得到其序列号
     * 对SST进行归并排序，并返回迭代器
     * 选取键之后，如果是重复写入一个键，那么可以删除这个键比最老快照的序列号还小的键；如果是一个写入的删除标记，那么当高层无此键的时候，也可以彻底删除，但也要这个键的序列号比最老快照的小

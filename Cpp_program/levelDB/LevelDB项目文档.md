@@ -371,20 +371,21 @@
 1. `LevelDB`用`Version`表示一个版本的元信息,主要是每个`Level`的`.ldb`文件.除此之外,`Version`还记录了触发`Compaction` 相关的状态信息,这些状态信息会在响应读写请求或者`Compaction`的过程中被更新.`VersionEdit`表示一个`Version`到另一个 `Version`的变更,为了避免进程崩溃或者机器宕机导致数据丢失,`LevelDB`把各个`VersionEdit`都持久化到磁盘,形成`MANIFEST`文件.数据恢复的过程就是依次应用`VersionEdit`的过程.`VersionSet`表示`LevelDB`历史`Version`信息,所有的`Version`都按照双向链表的形式链接起来.`VersionSet`和`Version`的大体布局如下：
    ![](markdown图像集/2025-02-19-22-50-29.png)
 2. `VersionEdit`结构编解码在`manifest`文件的生成和读取中使用
-3. `LevelDB`为什么要用`version`?
+3. version就是存储的某一快照的SSTable的元数据信息，此时的SSTable文件编号、层数、大小、key范围等等，有了这些元数据，在读取和写入的时候的快速粗定位，效率更高
+4. `LevelDB`为什么要用`version`?
    `version`可以在文件不断被后台`compaction`增删改的同时,为前台读写提供无锁、一致、可恢复的文件视图.没有`Version`,就需要在每次读操作时加互斥锁去动态检查“现在到底有哪些文件”,这会极大降低并发度
-4. `LevelDB`的`version`更新是在每次`compaction`之后发生的
-5. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
-6. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
-7. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
-8. `VersionEdit::LogAndApply()`:
+5. `LevelDB`的`version`更新是在每次`compaction`之后发生的
+6. `LevelDB`使用`Version`来管理每个层级拥有的文件信息,每次执行`Compaction`操作之后会生成一个新的版本.生成新版本的过程中,`LevelDB`会使用一个中间状态`VersionEdit`来临时保存信息,最后将当前版本与中间状态的`VersionEdit`合并处理之后生成一个新的版本,并将版本赋值为当前版本
+7. 在`VersionEdit`中,`EncodeTo()`方法会将`VersionEdit`各个成员变量的信息编码为一个字符串.一般来说有两种编码方法可以用来序列化一个结构体:一种方法为将结构体的所有成员变量依次进行编码,那么解码时依次解出即可.该方法的确定是每次都必须编码所有成员变量;另一种方法为给每个成员变量设置一个标记,通过标记可以知道解码数据的类型.`LevelDB`使用第二种方法,编码时会先给每个成员变量定义一个`Tag`
+8. `EncodeTo()`会依次以`Tag`开头,将比较器名称、日志序列号、上一个日志序列号、下一个文件序列号、最后一个序列号、`CompactPointers`、每个层级删除的文件以及增加的文件信息保存到一个字符串中.删除文件只保存了层级以及文件的序列号,增加的文件除了保存层级和文件序列号,还保存了每个文件的大小以及该文件中最大键值和最小键值
+9. `VersionEdit::LogAndApply()`:
    * 将当前的版本根据`VersionEdit`进行处理,然后生成一个新的版本
    * 将`VersionEdit`写入`Manifest`文件
    * 执行`VersionSet`中的`Finalize`方法,对新版本中的`compaction_score_`和`compaction_level_`赋值
    * 将新生成的版本挂载到`VersionSet`的双向链表中,并且将当前版本`current_`设置为新生成的版本
-9.  一次版本升级过程:
+10. 一次版本升级过程:
    ![](markdown图像集/2025-03-08-10-07-06.png)
-10. `Version`中的信息
+11. `Version`中的信息
     * 当前每一层的SSTable文件元信息,每一个`SST`文件的`FileMetaData`
     * 记录被Seek太多次需要Compact的文件元信息,以及文件所在的level
     * 记录所有level层中compaction score最大的那一层及其level,用于比较判断是否需要对此level层进行compact
@@ -466,5 +467,4 @@
       - `Arena`不需要维护复杂的数据结构,它只是用一个指针来维持线性连续的内存分配;而像`ptmalloc`那些是需要维护一个空闲bins链表的
       - 方便统计内存使用情况:`Arena`会通过参数跟踪内存使用情况
       - Arena中只会有内部碎片，即每个block可能会有内存浪费，但是没有外部碎片（因为每个block是整块分配和整块释放，不会有中间零散的小空闲块）
-      - 内存空间更高效的利用,避免内存碎片产生:`Arena`内存池具有整块内存的控制权,用户可以任意操作这段内存,从而避免内存碎片的产生
-         * 在内存池中通过移动指针`alloc_ptr_`来控制内存的连续线性分配,而不会造成很多内存小碎片,最多在最后一次出现内存浪费(因为若此时内存块剩余空间不足了就会浪费)
+      - leveldb的arena内存池的释放是所有任务结束后统一释放的（这和MemTable到只读状态后整体刷盘的逻辑吻合），不支持单独释放单个block块（这与ptmalloc不同，arena更简单，省去了精细管理每个内存块的设计，直接管理每个小block会增加系统调用次数，ptmalloc这样是因为它是通用内存分配器）。memtable不会无限增大，因为到16kb变成只读状态，然后就会创建新的memtable接收写入；memtable也不会无限多个，leveldb最多维护2个memtable，一个用于接收写入数据，一个是只读状态用于刷盘。若尚未落盘完成，而 mem_ 已满，​写入请求会被阻塞​，直到后台线程将 只读内存 转为 SSTable后才会新创建下一个memtable  

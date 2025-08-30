@@ -6,7 +6,7 @@
 2. Hadoop的MapReduce中间计算结果存在HDFS磁盘上，延迟大；Spark中间计算结果存在内存中
 3. Spark 是一个开源的、分布式、内存级、统一分析引擎，用于处理大规模数据集。Spark Core、Spark SQL、Spark Streaming、Spark MLlib、Spark GraphX
 4. RDD是Spark最核心的底层抽象，它代表一个不可变的、分区的、可并行计算的元素集合，它表示的是弹性分布式数据集。RDD操作分为Transformation和Action两种，前者是将一个RDD转换为一个新的RDD，后者是触发一个计算，触发结果的输出。RDD转换之间一对一为窄依赖，多对一为宽依赖，宽依赖中间有shuffle，数据恢复起来比较麻烦
-5. DAG指的是Spark应用程序执行时，由RDD的Transformations所构成的逻辑图。顶点就是RDD，边代表了RDD之间的依赖关系（窄依赖或宽依赖）。Spark的DAGScheduler核心任务就是基于 DAG 中的宽依赖来划分 Stage
+5. DAG指的是Spark应用程序执行时，由RDD的Transformation所构成的逻辑图。顶点就是RDD，边代表了RDD之间的依赖关系（窄依赖或宽依赖）。Spark的DAGScheduler核心任务就是基于 DAG 中的宽依赖来划分 Stage
 6. Stage是Spark执行过程中物理调度的基本单位。它是DAG被DAGScheduler划分后产生的一组并行任务的集合（划分依据：遇到窄依赖，就将当前的 RDD 加入到同一个 Stage 中，遇到宽依赖，就在此处断开，创建一个新的 Stage）。一个Stage包含多个Task，task数量等于该Stage中最后一个RDD的分区数，每个Task之间可以并行执行
 7. DataFrame、Dataset API是上层API接口，它的底层是通过RDD实现的，但它不只是简单的RDD封装，而添加了优化、内存管理等策略，它使用了Catalyst优化器，性能得到提升，并且它是直接使用类SQL语言，开发起来更容易、更简单
 8. 对比Spark和MapReduce模型
@@ -23,7 +23,7 @@
    ![](2025-08-16-12-11-32.png)
    * RDD操作分为Transformation和Action两种，前者是将一个RDD转换为一个新的RDD（如：map、filter、union等），后者是触发一个计算，触发结果的输出（例如：first、count、saveAsTextFile等）
    * RDD转换之间一对一为窄依赖，多对一为宽依赖，宽依赖中间有shuffle，数据恢复起来比较麻烦，尽量避免宽依赖算子，如reducebykey、sortbykey等
-11. Spark是大数据处理中的通用计算引擎，它支持批处理和流处理
+11. Spark是大数据处理中的通用计算引擎，它支持批处理和流处理（用的是微批处理来做流处理）
 12. Spark的显著特点是它能够在内存中进行迭代计算，从而加快数据处理速度
 13. Spark提供了6大组件：Spark Core、Spark SQL、Spark Streaming、Spark MLlib、Spark GraphX
 14. Spark Core是Spark基础，它提供了内存计算的能力。它将分布式数据抽象为弹性分布式数据集（RDD），并为运行在其上的上层组件提供API。所有Spark的上层组件都建立在Spark Core的基础之上
@@ -40,4 +40,7 @@
     * 通用性：提供了多种组件，可以支持不同类型的计算任务
     * 兼容性：支持多种数据源
 22. Hive表是一个底层数据实际存放在HDFS中的逻辑表，使用它后可以使用类sql语句进行访问数据（元数据在 Hive Metastore、数据在 HDFS、用类 SQL 语言定义的‘分布式文件视图’）
+23. Spark和Flink的区别
+    * Spark的理念是数据本质是有界的，流是批的特例。它用微批处理来模拟流处理;Flink的理念是数据本质是无界的，批是流的特例。它是真正的流处理，将批处理视为一种有界流
+    * Flink是来一条处理一条，而不是合成一个批才处理，这样延迟更低，实时性更好，因此Flink更适用于实时处理，Spark更适合离线处理
     

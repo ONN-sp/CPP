@@ -29,7 +29,7 @@
 14. Spark Core是Spark基础，它提供了内存计算的能力。它将分布式数据抽象为弹性分布式数据集（RDD），并为运行在其上的上层组件提供API。所有Spark的上层组件都建立在Spark Core的基础之上
 15. Hadoop中的Hive可以将SQL查询转换为MapReduce任务；Spark通过Hive on Spark的适配层将SQL转换为Spark任务，但为了搭配起来性能更好，Spark中使用Spark SQL代替了Hive
    ![](2025-08-16-10-57-58.png)
-16. Hadoop和Spark都是为离线数据设计的
+16. Hadoop和Spark都是为离线数据设计的（因为它们两个都是批处理）
 17. Spark SQL是一个用于处理结构化数据的Spark组件。它允许使用SQL语句查询数据，Spark支持多种数据源，包括Hive表等
 18. Spark Streaming是一个用于处理动态数据流的组件。在处理动态数据流时，流数据会被分割成微小的批处理，这些微小批处理将会在Spark Core上按时间顺序快速执行
 19. Spark MLlib 是 Spark 的机器学习库。它提供了常用的机器学习算法和实用程序，包括分类、回归、聚类、协同过滤、降维等

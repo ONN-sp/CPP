@@ -3,7 +3,7 @@
    * 避免内存泄漏的方式:
     - 计数法:`new/malloc`就+1,`delete/free`就-1,最后不为0就是发生了泄漏
     - 一定要将基类的析构函数声明为虚函数
-    - 对象数组的释放一定要有`delete []`
+    - 对象数组的释放一定要用`delete []`
     - `new/delete`和`malloc/free`一定要成对出现
    * 检测工具:`Linux`下使用`Valgrind Memcheck`  
 2. 为什么防止内存泄漏一定要将基类的析构函数声明为虚函数?

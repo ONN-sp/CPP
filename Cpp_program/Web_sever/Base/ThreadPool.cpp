@@ -66,7 +66,7 @@ int ThreadPool::queueSize() const{
   return queue_.size(); // 返回当前任务队列的大小
 }
 
-// 向线程池提交任务
+// 向任务队列添加任务
 void ThreadPool::run(Task task)
 {
   if (threads_.empty())

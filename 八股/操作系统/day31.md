@@ -25,7 +25,6 @@
       data.store(42, std::memory_order_relaxed);  // 问题：使用relaxed
       ready.store(true, std::memory_order_relaxed); // 问题：使用relaxed
    }
-
    // 线程2：消费者
    void consumer() {
       while (!ready.load(std::memory_order_relaxed)) { // 问题：使用relaxed

@@ -2701,7 +2701,7 @@ void Swap(AnyType &a, AnyType &b);
         std::priority_queue<int, std::vector<int>, decltype(compare)> pq(compare);
     1.2
         class Solution {
-            static bool cmp(vector<int>& a, vector<int>& b){// 函数指针的调用方式写在类里面,此时若比较函数不需要访问类的成员变量,那么就可加static来实现自定义比较函数的目的
+            static bool cmp(vector<int>& a, vector<int>& b){// 函数指针的调用方式写在类里面,此时若比较函数不需要访问类的成员变量,那么就可加static来实现自定义比较函数的目的   必须static，因为非static成员函数不能用来做普通函数的参数(sort的第三个参数不接收bool (Solution::*)(vector<int>&, vector<int>&)，需要是bool (*)(vector<int>&, vector<int>&)这种普通函数指针)
                 if(a[0]==b[0])
                     return a[1]<b[1];
                 return a[0]>b[0];
@@ -2719,7 +2719,7 @@ void Swap(AnyType &a, AnyType &b);
         };
    2. 使用函数对象
    struct Compare {//写成class Compare类也行
-      bool operator()(int a, int b) {
+      bool operator()(int a, int b) {// operator重载函数调用运算符
          return a > b; // 最大堆
       }
    };

@@ -39,7 +39,7 @@
          * `small bins`:
            - 大小<512字节的`chunk`被称为`small chunk`.数组从2开始编号,前64个`bin`为`small bins`,`small bins`中每个`bin`之间相差8个字节,同一个`small bins`中的`chunk`具有相同大小
            - 每个`small bins`都包括一个空闲区块的双向循环链表.`free`掉的`chunk`添加在链表的前端,而所需`chunk`则从链表后端摘除
-           - 与`fast bins`不同,`small bins`会立即合并相邻的空闲`chunk`(消除外部碎片)(如果没有相邻的`chunk`,也会直接把这个`chunk`给回收到`unsorted bins`中),也即把它们从所属`small bins`的链表中摘除并合并成一个新的`chunk`,新`chunk`会添加在`unsorted bins`链表的前端(释放的内存大于128字节)
+           - 与`fast bins`不同,`small bins`会立即合并相邻的空闲`chunk`(减少外部碎片)(如果没有相邻的`chunk`,也会直接把这个`chunk`给回收到`unsorted bins`中),也即把它们从所属`small bins`的链表中摘除并合并成一个新的`chunk`,新`chunk`会添加在`unsorted bins`链表的前端(释放的内存大于128字节)
            ![](../markdown图像集/2025-04-17-22-42-37.png)
          * `large bins`:
            -  大小大于等于512字节的`chunk`被称为`large chunk`,位于`small bins`后面.`large bins`中的每一个`bin`分别包含了一个给定范围内的`chunk`,其中的`chunk`按大小递减排序,大小相同则按照最近使用时间排列 
@@ -72,7 +72,7 @@
          * 判断top chunk的大小是否大于mmap收缩阈值（默认为128KB），如果是的话，对于主分配区，则会试图归还top chunk中的一部分给操作系统。free结束
       - 优点:它是一个标准实现，所以兼容性较好
       - 缺点: 
-         * 管理长周期内存时，会导致内存爆增，因为如果与top chunk 相邻的 chunk 不能释放，top chunk 以下的 chunk 都无法释放( `ptmalloc`后分配的内存先释放,因为`ptmalloc`收缩内存是从`top chunk`开始,因此如果与`top chunk`相邻的`chunk`不能释放,那么`top chunk`以下的`chunk`都无法释放,从而使内存暴增)
+         * 管理长周期内存时，可能会导致内存爆增，因为如果与top chunk 相邻的 chunk 不能释放，top chunk 以下的 chunk 都无法释放( `ptmalloc`后分配的内存先释放,因为`ptmalloc`收缩内存是从`top chunk`开始,因此如果与`top chunk`相邻的`chunk`不能释放,那么`top chunk`以下的`chunk`都无法释放,从而使内存暴增)
          * 内存不能从一个分配区移动到另一个分配区， 就是说如果多线程使用内存不均衡，容易导致内存的浪费
          * 如果线程数量过多时，内存分配和释放时加锁的代价上升，导致效率低下
          * 每个chunk需要8B的额外空间，空间浪费大

@@ -16,7 +16,7 @@
    * SP:核心抽象是RDD,基于它进行运算
    * MR:依赖HDFS的数据多副本存储保证数据可靠性
    * SP:如果某个RDD分区丢失，Spark可以利用血统信息重新计算该分区，而不是依赖数据复制，节省空间（容错机制）
-   * MR:以原生Jave为主
+   * MR:以原生Java为主
    * SP:支持Scala、Python、Java等
 9. Spark是用来替换mapreduce模型的，以一个更优的设计来代替mapreduce模型
 10. spark中可以通过 RDD（RDD是只读的）API 实现 类似MapReduce的作用，Spark是基于RDD运算的，它把数据读进来后转换为RDD，之后再对这个RDD进行算子操作（其中包含了map、reduce等丰富的算子），最后一个RDD基本就是最终结果

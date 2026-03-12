@@ -1,0 +1,1 @@
+1. version_proxy一个重要功能就是用于提取配置档的库，它可以用于提取特定配置档的特定字段（只需要在pb（version_proxy_sheet.proto）中添加就行，然后稍微按照version_proxy代码框架对应添加一点就行）

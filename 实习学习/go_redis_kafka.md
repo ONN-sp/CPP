@@ -53,7 +53,7 @@
     6.Replication:每一个分区都有多个副本，副本的作用是做备胎。当主分区（Leader）故障的时候会选择一个备胎（Follower）上位，成为Leader
     7.Consumer Group
     ```
-5. kfaka原理:
+5. kafka原理:
     * Producer：Producer即生产者，消息的产生者，是消息的⼊口。
     * kafka cluster：kafka集群，一台或多台服务器组成
         - Broker：Broker是指部署了Kafka实例的服务器节点。每个服务器上有一个或多个kafka的实例，我们姑且认为每个broker对应一台服务器。每个kafka集群内的broker都有一个不重复的 编号，如图中的broker-0、broker-1等……
